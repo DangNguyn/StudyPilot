@@ -1,0 +1,162 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fcfbf8;
+  --foreground: #171717;
+  --surface: rgba(255, 255, 255, 0.52);
+  --surface-muted: rgba(240, 250, 242, 0.6);
+  --border: rgba(22, 198, 90, 0.2);
+  --primary: #16c65a;
+  --primary-dark: #119b47;
+  --primary-green: #16c65a;
+  --primary-green-hover: #119b47;
+  --primary-green-light: rgba(22, 198, 90, 0.1);
+  --primary-green-border: rgba(22, 198, 90, 0.25);
+  --muted: #555555;
+  --text-soft: #777777;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-montserrat);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(
+      ellipse 65% 45% at 100% 100%,
+      rgba(220, 242, 185, 0.75) 0%,
+      rgba(220, 242, 185, 0.25) 45%,
+      transparent 75%
+    ),
+    radial-gradient(
+      ellipse 55% 40% at 0% 100%,
+      rgba(248, 232, 201, 0.65) 0%,
+      rgba(248, 232, 201, 0.2) 50%,
+      transparent 80%
+    ),
+    linear-gradient(180deg, #fcfbf8 0%, #faf8f2 50%, #f4f3e9 100%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
+  color: var(--foreground);
+  font-family: var(--font-montserrat), Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  min-width: 320px;
+}
+
+h1,
+h2 {
+  font-family: var(--font-anton), Impact, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.025em;
+  line-height: 1.15;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  font-family: var(--font-montserrat), Arial, Helvetica, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+main {
+  min-height: calc(100vh - 76px);
+}
+
+::selection {
+  background: #e5f7eb;
+  color: #111111;
+}
+
+/*
+ * Shared visual layer. Existing pages use Tailwind utility classes directly,
+ * so these selectors centralize the redesign without changing their behavior.
+ */
+.app-background {
+  background: transparent !important;
+}
+
+[class~="bg-stone-50"],
+[class~="bg-[#F7F8F5]"],
+[class~="bg-[#F7F8F3]"] {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+[class~="bg-white"],
+[class~="bg-[#FCFBF7]"],
+[class~="bg-[#FCFBF7]"],
+[class~="bg-[#F8FAF6]"] {
+  background: rgba(255, 255, 255, 0.52) !important;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-color: rgba(255, 255, 255, 0.72) !important;
+  box-shadow:
+    0 4px 20px rgba(60, 75, 50, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+[class~="bg-[#E8EEE4]"],
+[class~="bg-[#E6EDE4]"],
+[class~="bg-[#E9EFE6]"],
+[class~="bg-[#EDF3EB]"] {
+  background: rgba(22, 198, 90, 0.1) !important;
+}
+
+[class~="bg-[#54765D]"],
+[class~="bg-[#2F7657]"] {
+  background-color: var(--primary) !important;
+  color: #111111 !important;
+}
+
+[class*="text-[#355642]"],
+[class*="text-[#26352B]"],
+[class*="text-[#183229]"],
+[class*="text-[var(--primary-dark)]"] {
+  color: #111111 !important;
+}
+
+[class*="text-[#54765D]"],
+[class*="text-[#2F7657]"],
+[class*="text-[#3F6048]"] {
+  color: var(--primary-green, #16c65a) !important;
+}
+
+[class*="text-[#829080]"],
+[class*="text-[#89958A]"],
+[class*="text-[#718074]"],
+[class*="text-[#536657]"] {
+  color: #555555 !important;
+}
+
+[class*="border-[#E2E5DC]"],
+[class*="border-[#E8E8DF]"],
+[class*="border-[#E1E7DF]"],
+[class*="border-[#DCE3D8]"] {
+  border-color: rgba(22, 198, 90, 0.2) !important;
+}
+
+button[class*="bg-[#54765D]"],
+a[class*="bg-[#54765D]"],
+button[class*="bg-[#2F7657]"],
+a[class*="bg-[#2F7657]"] {
+  border-radius: 999px;
+  font-weight: 600;
+  transition:
+    background-color 0.25s ease,
+    transform 0.25s ease;
+}
+
+button[class*="bg-[#54765D]"]:hover,
+a[class*="bg-[#54765D]"]:hover,
+button[class*="bg-[#2F7657]"]:hover,
+a[class*="bg-[#2F7657]"]:hover {
+  background-color: var(--primary-dark) !important;
+  color: #111111 !important;
+}
