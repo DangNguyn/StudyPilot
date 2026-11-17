@@ -71,23 +71,32 @@ def extract_word(file_path: str):
 def _extract_docx_content(file_path: str):
     """Trích xuất nội dung đoạn văn và bảng trong DOCX."""
 
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
     document = Document(file_path)
+    paragraphs = []
 
-    paragraphs = [
-        paragraph.text.strip()
-        for paragraph in document.paragraphs
-        if paragraph.text.strip()
-    ]
+    # Duyệt đoạn văn và bảng theo đúng thứ tự trong tài liệu,
+    # để bảng nằm đúng vị trí trong chương/mục của nó.
+    for element in document.element.body.iterchildren():
+        tag = element.tag.rsplit("}", 1)[-1]
 
-    for table in document.tables:
-        for row in table.rows:
-            row_text = " | ".join(
-                cell.text.strip()
-                for cell in row.cells
-            )
+        if tag == "p":
+            text = Paragraph(element, document).text.strip()
 
-            if row_text.strip():
-                paragraphs.append(row_text)
+            if text:
+                paragraphs.append(text)
+
+        elif tag == "tbl":
+            for row in Table(element, document).rows:
+                row_text = " | ".join(
+                    cell.text.strip()
+                    for cell in row.cells
+                )
+
+                if row_text.replace("|", "").strip():
+                    paragraphs.append(row_text)
 
     content = "\n".join(paragraphs)
 
@@ -238,19 +247,56 @@ def extract_text(file_path: str):
     return pages
 
 
+def normalize_text_layout(text: str) -> str:
+    """
+    Chuẩn hoá khoảng trắng nhưng GIỮ xuống dòng, để tiêu đề chương/mục
+    vẫn nằm trên dòng riêng (giúp AI nhận diện cấu trúc tài liệu).
+    """
+
+    lines = [
+        re.sub(r"[ \t\f\v ]+", " ", line).strip()
+        for line in str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ]
+
+    normalized = "\n".join(lines)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+
+    return normalized.strip()
+
+
+def _find_split_point(text: str, start: int, end: int) -> int:
+    """
+    Tìm vị trí cắt đẹp nhất trong [start, end]: ưu tiên ranh giới đoạn,
+    rồi xuống dòng, rồi hết câu, cuối cùng là khoảng trắng.
+    Chỉ chấp nhận điểm cắt nằm ở nửa sau để đoạn không quá ngắn.
+    """
+
+    minimum = start + (end - start) // 2
+
+    for separator in ("\n\n", "\n", ". ", "? ", "! ", "; ", " "):
+        position = text.rfind(separator, minimum, end)
+
+        if position != -1:
+            return position + len(separator)
+
+    return end
+
+
 def split_into_chunks(
     text: str,
-    chunk_size: int = 1000,
-    overlap: int = 150
+    chunk_size: int = 1200,
+    overlap: int = 0
 ):
     """
-    Chia văn bản thành các đoạn nhỏ có phần nội dung chồng lặp.
+    Chia văn bản thành các đoạn nhỏ, giữ nguyên xuống dòng và cắt tại
+    ranh giới đoạn/câu. Mặc định không chồng lặp vì các bài học được
+    ghép từ nhiều đoạn liên tiếp, chồng lặp sẽ làm nội dung bị lặp.
     """
 
     if chunk_size <= 0 or overlap < 0 or overlap >= chunk_size:
         raise ValueError("Tham số chia đoạn không hợp lệ.")
 
-    text = re.sub(r"\s+", " ", text).strip()
+    text = normalize_text_layout(text)
 
     if not text:
         return []
@@ -262,10 +308,7 @@ def split_into_chunks(
         end = min(start + chunk_size, len(text))
 
         if end < len(text):
-            boundary = text.rfind(" ", start, end)
-
-            if boundary > start:
-                end = boundary
+            end = _find_split_point(text, start, end)
 
         chunk = text[start:end].strip()
 
@@ -275,6 +318,6 @@ def split_into_chunks(
         if end >= len(text):
             break
 
-        start = end - overlap
+        start = max(end - overlap, start + 1)
 
     return chunks

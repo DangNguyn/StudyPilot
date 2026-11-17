@@ -417,7 +417,7 @@ export default function FlashcardsPage() {
       <div className="mx-auto max-w-4xl">
         {/* Tiêu đề */}
         <div className="mb-10 text-center">
-          <p className="text-sm font-semibold tracking-widest text-emerald-700 uppercase">
+          <p className="text-sm font-semibold tracking-widest text-[#4566D1] uppercase">
             StudyPilot
           </p>
 
@@ -456,7 +456,7 @@ export default function FlashcardsPage() {
                   setSelectedPlanId(event.target.value)
                 }
                 disabled={plans.length === 0 || optionsLoading}
-                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-emerald-700"
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-[#5B7FE3]"
               >
                 <option value="">Chọn kế hoạch ôn thi</option>
 
@@ -491,7 +491,7 @@ export default function FlashcardsPage() {
                   setGenerationError("");
                 }}
                 disabled={optionsLoading || materials.length === 0}
-                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-emerald-700"
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-[#5B7FE3]"
               >
                 <option value="">Chọn tài liệu</option>
 
@@ -526,7 +526,7 @@ export default function FlashcardsPage() {
                   !selectedMaterialId ||
                   availableTopics.length === 0
                 }
-                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-emerald-700"
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-[#5B7FE3]"
               >
                 <option value="">Chọn chủ đề</option>
 
@@ -549,7 +549,7 @@ export default function FlashcardsPage() {
                 onChange={(event) =>
                   setNumberOfCards(Number(event.target.value))
                 }
-                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-emerald-700"
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-gray-900 outline-none focus:border-[#5B7FE3]"
               >
                 {[5, 10, 15, 20].map((number) => (
                   <option key={number} value={number}>
@@ -597,7 +597,7 @@ export default function FlashcardsPage() {
           )}
 
           {generationMessage && (
-            <p className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">
+            <p className="mt-4 rounded-xl bg-[#EEF1FD] p-3 text-sm text-[#4A1068]">
               {generationMessage}
             </p>
           )}
@@ -612,7 +612,7 @@ export default function FlashcardsPage() {
               !selectedTopicId ||
               selectedMaterial?.processing_status !== "processed"
             }
-            className="mt-6 w-full rounded-xl bg-emerald-800 px-6 py-4 font-semibold text-white transition hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-6 w-full rounded-xl bg-[#4A1068] px-6 py-4 font-semibold text-white transition hover:bg-[#33094A] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {generating
               ? "AI đang tạo Flashcard..."
@@ -633,7 +633,7 @@ export default function FlashcardsPage() {
               }}
               className={`rounded-xl px-5 py-3 font-medium transition ${
                 !showDueOnly
-                  ? "bg-emerald-800 text-white"
+                  ? "bg-[#4A1068] text-white"
                   : "border border-gray-300 bg-white text-gray-700"
               }`}
             >
@@ -650,7 +650,7 @@ export default function FlashcardsPage() {
               }}
               className={`rounded-xl px-5 py-3 font-medium transition ${
                 showDueOnly
-                  ? "bg-emerald-800 text-white"
+                  ? "bg-[#4A1068] text-white"
                   : "border border-gray-300 bg-white text-gray-700"
               }`}
             >
@@ -697,7 +697,7 @@ export default function FlashcardsPage() {
 
               <div className="mb-8 h-2 w-full overflow-hidden rounded-full bg-gray-200">
                 <div
-                  className="h-full rounded-full bg-emerald-700 transition-all duration-300"
+                  className="h-full rounded-full bg-[#5B7FE3] transition-all duration-300"
                   style={{
                     width: `${
                       ((currentIndex + 1) / flashcards.length) * 100
@@ -712,7 +712,7 @@ export default function FlashcardsPage() {
                 onClick={() => setIsFlipped((prev) => !prev)}
                 className="min-h-[320px] w-full rounded-3xl border border-stone-200 bg-white p-10 text-center shadow-sm transition-all hover:shadow-md"
               >
-                <p className="mb-8 text-sm font-semibold uppercase tracking-wider text-emerald-700">
+                <p className="mb-8 text-sm font-semibold uppercase tracking-wider text-[#4566D1]">
                   {isFlipped ? "Đáp án" : "Câu hỏi"}
                 </p>
 
@@ -727,7 +727,7 @@ export default function FlashcardsPage() {
                           >
                             <span
                               aria-hidden="true"
-                              className="mt-3 h-2 w-2 shrink-0 rounded-full bg-emerald-700"
+                              className="mt-3 h-2 w-2 shrink-0 rounded-full bg-[#5B7FE3]"
                             />
                             <span>{point}</span>
                           </li>
@@ -783,7 +783,7 @@ export default function FlashcardsPage() {
                     type="button"
                     onClick={() => handleReview(4)}
                     disabled={isSubmitting}
-                    className="rounded-xl bg-emerald-100 px-4 py-4 font-semibold text-emerald-800 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-xl bg-[#EEF1FD] px-4 py-4 font-semibold text-[#4A1068] transition hover:bg-[#D5DDF8] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isSubmitting ? "Đang lưu..." : "😎 Rất dễ"}
                   </button>
@@ -811,7 +811,7 @@ export default function FlashcardsPage() {
                 <button
                   type="button"
                   onClick={() => setIsFlipped((prev) => !prev)}
-                  className="rounded-xl bg-emerald-800 px-6 py-3 font-medium text-white transition hover:bg-emerald-900"
+                  className="rounded-xl bg-[#4A1068] px-6 py-3 font-medium text-white transition hover:bg-[#33094A]"
                 >
                   {isFlipped ? "Xem câu hỏi" : "Xem đáp án"}
                 </button>

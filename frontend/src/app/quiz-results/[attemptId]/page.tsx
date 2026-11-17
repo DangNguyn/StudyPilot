@@ -1,14 +1,38 @@
-
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { getMainTopicTitle } from "@/lib/content-titles";
+import { getMainTopicTitle, stripOutlineNumbers } from "@/lib/content-titles";
+import {
+  IconAlert,
+  IconArrowLeft,
+  IconArrowRight,
+  IconBook,
+  IconCalendar,
+  IconCheck,
+  IconChevronDown,
+  IconChevronRight,
+  IconFile,
+  IconLock,
+  IconRepeat,
+  IconTarget,
+  IconX,
+  Sparkle,
+} from "@/components/icons";
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+/* ================= Kiểu dữ liệu ================= */
+
+type Option = { key: string; text: string };
 
 interface QuestionResult {
   question_id: string;
   question_text: string;
+  question_type?: string | null;
+  options?: Option[];
   selected_answer: string | string[] | null;
   correct_answer: string | string[];
   is_correct: boolean;
@@ -18,64 +42,71 @@ interface QuestionResult {
     page_number: number | null;
     chunk_index: number | null;
     material_id: string | null;
+    file_name?: string | null;
     content?: string | null;
   } | null;
 }
 
-interface AssessmentItem {
+interface WeakArea {
   topic_name?: string;
   hierarchy?: string;
+  chapter?: string | null;
   description?: string;
   recommendation?: string;
-  reason?: string;
-  content?: string;
   source_page?: number | null;
-  source_chunk_id?: string | null;
-  scheduled_date?: string | null;
+  pages?: number[];
+  material_name?: string | null;
+  question_numbers?: number[];
+  wrong_count?: number;
 }
 
-interface AIWeakArea extends AssessmentItem {
-  topic_name: string;
-  description: string;
-  recommendation: string;
+interface StudyPlan {
+  kind: "study_plan";
+  tier?: string;
+  minutes_per_day: number;
+  days: number;
+  advice?: string;
 }
 
 interface AIAssessment {
-  id: string;
-  mastery_level: "mastered" | "needs_review" | "not_mastered";
-  summary: string;
-  strengths: (AssessmentItem | string)[] | null;
-  weak_areas: (AIWeakArea | string)[] | null;
-  recommendations: string[] | null;
-  ai_model: string;
-  assessment_status: string;
-  created_at: string;
+  id?: string;
+  mastery_level?: string;
+  summary?: string;
+  verdict?: string;
+  ai_model?: string;
+  strengths?: (WeakArea | string)[] | null;
+  weak_areas?: (WeakArea | string)[] | null;
+  recommendations?: (string | StudyPlan)[] | null;
 }
 
-interface ReviewPlan {
-  id: string;
-  assessment_id: string;
-  review_items: AIWeakArea[];
-  overall_goal: string | null;
-  status: string;
-  retake_quiz_id: string | null;
-  review_study_seconds?: number;
+interface WeekDay {
+  date: string;
+  weekday: string;
+  has_study: boolean;
+  is_past: boolean;
+  after_exam: boolean;
 }
 
-function formatReviewDate(value?: string | null): string {
-  if (!value) {
-    return "Chưa xếp ngày";
-  }
-
-  return new Date(`${value}T00:00:00`).toLocaleDateString(
-    "vi-VN",
-    {
-      weekday: "long",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }
-  );
+interface ReviewContext {
+  study_session_id: string;
+  topic_name?: string | null;
+  chapter?: string | null;
+  exam_plan_id?: string | null;
+  subject_id?: string | null;
+  exam_date?: string | null;
+  scheduled_date?: string | null;
+  day_number?: number | null;
+  today: string;
+  week: WeekDay[];
+  is_retake?: boolean;
+  review_level?: "intensive" | "relaxed" | "none";
+  retake?: {
+    review_plan_id: string;
+    quiz_id: string;
+    title: string;
+    status?: string | null;
+    review_date?: string | null;
+  } | null;
 }
 
 interface QuizResult {
@@ -85,29 +116,94 @@ interface QuizResult {
   score: number;
   correct_count: number;
   total_questions: number;
-  earned_points: number;
-  total_points: number;
-  status: string;
   results: QuestionResult[];
   ai_assessment: AIAssessment | null;
-  review_plan: ReviewPlan | null;
+  review_plan: { id: string } | null;
+  review_context?: ReviewContext | null;
 }
 
-function formatAnswer(
-  value: string | string[] | null | undefined
-): string {
-  if (
-    value === null ||
-    value === undefined ||
-    value === ""
-  ) {
-    return "Chưa trả lời";
-  }
+/* ================= Tiện ích ================= */
 
-  return Array.isArray(value)
-    ? value.join(", ")
-    : value;
+function dayMonth(dateKey?: string | null) {
+  if (!dateKey) return "";
+  const [, month, day] = dateKey.split("-");
+  return `${day}/${month}`;
 }
+
+function weekdayLong(dateKey: string) {
+  const label = new Date(`${dateKey}T00:00:00`).toLocaleDateString("vi-VN", { weekday: "long" });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/* Giải thích ngắn: tối đa 2 câu, bỏ phần trích dẫn dài */
+function shortExplanation(text?: string | null) {
+  const clean = String(text || "")
+    .replace(/["“][^"”]{60,}["”]/g, "")
+    .replace(/\(?(?:trích|nguồn|theo tài liệu)[^)]*\)?:?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return "";
+  const sentences = clean.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const short = sentences.slice(0, 2).join(" ");
+  return short.length > 280 ? `${short.slice(0, 277).trimEnd()}…` : short;
+}
+
+/* "Kiểm tra lại ngày 2: ..." → "Kiểm tra lại ngày học 2: ..." */
+function retakeLabel(title?: string | null) {
+  return String(title || "").replace(/^Kiểm tra lại ngày (\d+)/i, "Kiểm tra lại ngày học $1");
+}
+
+function answerKeys(value: string | string[] | null | undefined) {
+  if (value === null || value === undefined || value === "") return [];
+  return Array.isArray(value) ? value.map(String) : [String(value)];
+}
+
+/* "B" → "B. Nội dung đáp án"; câu điền khuyết giữ nguyên chữ */
+function describeAnswer(value: string | string[] | null | undefined, options: Option[] = []) {
+  const keys = answerKeys(value);
+  if (keys.length === 0) return ["Chưa trả lời"];
+  return keys.map((key) => {
+    const option = options.find((item) => item.key.toUpperCase() === key.trim().toUpperCase());
+    return option ? `${option.key}. ${option.text}` : key;
+  });
+}
+
+function citation(question: QuestionResult, context?: ReviewContext | null) {
+  const parts: string[] = [];
+  if (context?.chapter) parts.push(context.chapter);
+  if (question.source_location?.page_number) parts.push(`trang ${question.source_location.page_number}`);
+  if (question.source_location?.file_name) parts.push(`tài liệu ${question.source_location.file_name}`);
+  return parts.length ? `Trích từ ${parts.join(", ")}` : "";
+}
+
+const LEVELS = {
+  none: {
+    label: "Nắm vững",
+    title: "Làm tốt lắm!",
+    text: "Bạn đã nắm vững bài này, không cần ôn lại. Cứ tiếp tục học theo lịch nhé.",
+    ring: "border-emerald-300 bg-emerald-50",
+    chip: "bg-emerald-600 text-white",
+    score: "text-emerald-700",
+  },
+  relaxed: {
+    label: "Cần ôn lại",
+    title: "Khá ổn, ôn thêm chút nữa",
+    text: "Bạn đã hiểu phần lớn bài học. Chọn một ngày trống trong tuần để ôn lại phần còn yếu rồi làm bài kiểm tra lại.",
+    ring: "border-[#f3dc9a] bg-[var(--sp-amber-bg)]",
+    chip: "bg-[var(--sp-yellow)] text-[var(--sp-purple-deep)]",
+    score: "text-[var(--sp-amber-dark)]",
+  },
+  intensive: {
+    label: "Ôn cấp tốc",
+    title: "Cần tập trung ôn lại ngay",
+    text: "Kết quả dưới 50% cho thấy bài này chưa vững. Hãy ôn cấp tốc trong tuần này trước khi học tiếp các bài sau.",
+    ring: "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)]",
+    chip: "bg-[var(--sp-pink)] text-white",
+    score: "text-[var(--sp-pink-dark)]",
+  },
+} as const;
+
+/* ================= Trang ================= */
 
 export default function QuizResultPage() {
   const params = useParams();
@@ -116,633 +212,900 @@ export default function QuizResultPage() {
   const [result, setResult] = useState<QuizResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showAssessment, setShowAssessment] = useState(false);
+  const [filter, setFilter] = useState<"all" | "wrong">("all");
+  const [showWeak, setShowWeak] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [reviewDate, setReviewDate] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  /* Đánh giá của Claude theo mức điểm (tạo một lần rồi lưu lại) */
+  const [aiAssessment, setAiAssessment] = useState<AIAssessment | null>(null);
+  const [assessState, setAssessState] = useState<{ state: "idle" | "loading" | "error"; message?: string }>({
+    state: "idle",
+  });
+  const [retakeState, setRetakeState] = useState<{ state: "idle" | "creating" | "done" | "error"; message?: string }>({
+    state: "idle",
+  });
 
-  // 1. Lấy kết quả bài kiểm tra
   useEffect(() => {
     let cancelled = false;
-
-    const fetchResult = async () => {
-      setLoading(true);
-      setError("");
-      setResult(null);
-      setShowAssessment(false);
-
-      if (!attemptId) {
-        setError("Không tìm thấy mã lượt làm bài.");
-        setLoading(false);
-        return;
-      }
-
+    (async () => {
       try {
-        const response = await fetch(
-          `http://127.0.0.1:8000/api/quiz-attempts/${attemptId}/result`
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            data.detail || "Không thể tải kết quả bài kiểm tra."
-          );
-        }
-
+        setLoading(true);
+        const response = await fetch(`${API_URL}/api/quiz-attempts/${attemptId}/result`);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.detail || "Không thể tải kết quả bài kiểm tra.");
         if (!cancelled) {
           setResult(data);
+          setReviewDate(data?.review_context?.retake?.review_date || null);
         }
-      } catch (err) {
+      } catch (loadError) {
         if (!cancelled) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Đã xảy ra lỗi khi tải kết quả."
-          );
+          setError(loadError instanceof Error ? loadError.message : "Không thể tải kết quả.");
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
-    };
-
-    void fetchResult();
-
+    })();
     return () => {
       cancelled = true;
     };
-  }, [attemptId]);
+  }, [attemptId, reloadKey]);
 
-  // 2. Trạng thái tải dữ liệu
-  if (loading) {
+  /* Chưa có đánh giá của Claude → nhờ AI đánh giá theo mức điểm */
+  useEffect(() => {
+    if (!result) return;
+    if (result.ai_assessment?.ai_model === "Claude") {
+      setAiAssessment(result.ai_assessment);
+      return;
+    }
+    if (assessState.state !== "idle" || aiAssessment) return;
+    setAssessState({ state: "loading" });
+    fetch(`${API_URL}/api/quiz-attempts/${attemptId}/assessment`, { method: "POST" })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.detail || "AI chưa đánh giá được bài làm.");
+        setAiAssessment(data?.data || null);
+        setAssessState({ state: "idle" });
+      })
+      .catch((assessError) =>
+        setAssessState({
+          state: "error",
+          message: assessError instanceof Error ? assessError.message : "AI chưa đánh giá được bài làm.",
+        })
+      );
+  }, [result, attemptId, assessState.state, aiAssessment]);
+
+  /* Lượt làm dưới 80% mà chưa có bài kiểm tra lại → tạo bù một lần */
+  useEffect(() => {
+    const context = result?.review_context;
+    if (!result || !context || context.retake || retakeState.state !== "idle") return;
+    const score = result.total_questions
+      ? (result.correct_count / result.total_questions) * 100
+      : Number(result.score || 0);
+    if (score >= 80) return;
+
+    setRetakeState({ state: "creating" });
+    fetch(`${API_URL}/api/quiz-attempts/${attemptId}/ensure-retake`, { method: "POST" })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.detail || "Chưa tạo được bài kiểm tra lại.");
+        // "done": không tự gọi lại nữa, tránh vòng lặp nếu vẫn chưa đọc được bài
+        setRetakeState({ state: "done" });
+        setReloadKey((value) => value + 1);
+      })
+      .catch((createError) =>
+        setRetakeState({
+          state: "error",
+          message: createError instanceof Error ? createError.message : "Chưa tạo được bài kiểm tra lại.",
+        })
+      );
+  }, [result, attemptId, retakeState.state]);
+
+  /* Làm bài xong → đồng hồ học của ngày đó về 0 (chỉ một lần cho mỗi lượt làm) */
+  useEffect(() => {
+    const context = result?.review_context;
+    if (!context?.exam_plan_id || !context.scheduled_date) return;
+    try {
+      const flag = `sp-timer-reset:${attemptId}`;
+      if (window.localStorage.getItem(flag)) return;
+      window.localStorage.removeItem(`sp-study-time:${context.exam_plan_id}:${context.scheduled_date}`);
+      window.localStorage.setItem(flag, "1");
+    } catch {
+      /* trình duyệt chặn lưu trữ: bỏ qua */
+    }
+  }, [result, attemptId]);
+
+  const percent = useMemo(() => {
+    if (!result) return 0;
+    return result.total_questions
+      ? Math.round((result.correct_count / result.total_questions) * 100)
+      : Math.round(Number(result.score || 0));
+  }, [result]);
+
+  if (loading && !result) {
     return (
-      <div className="mx-auto max-w-4xl rounded-2xl border border-[#E2E5DC] bg-white p-10 text-center text-[#829080]">
-        Đang tải kết quả bài kiểm tra...
+      <div className="sp-card mx-auto max-w-5xl p-10 text-center text-[var(--sp-muted)]">
+        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
+        Đang chấm và tổng hợp kết quả...
       </div>
     );
   }
 
   if (error || !result) {
     return (
-      <div className="mx-auto max-w-4xl rounded-2xl border border-red-200 bg-white p-8 text-center">
-        <p className="text-red-600">
-          {error || "Không tìm thấy kết quả bài kiểm tra."}
-        </p>
-
-        <Link
-          href="/quizzes"
-          className="mt-5 inline-block rounded-xl bg-[#54765D] px-5 py-3 text-sm font-semibold text-white"
-        >
-          Quay lại danh sách Quiz
+      <div className="sp-card mx-auto max-w-3xl p-8">
+        <p className="text-sm font-medium text-[var(--sp-pink-dark)]">{error || "Không tìm thấy kết quả."}</p>
+        <Link href="/quizzes" className="sp-btn sp-btn-primary mt-5 px-5 py-2.5 text-sm">
+          Về Kiểm tra kiến thức
         </Link>
       </div>
     );
   }
 
-  // 3. Chuẩn hóa dữ liệu AI
-  const assessment = result.ai_assessment;
+  const context = result.review_context || null;
+  const levelKey = percent >= 80 ? "none" : percent >= 50 ? "relaxed" : "intensive";
+  const level = LEVELS[levelKey];
+  const wrong = result.results.filter((item) => !item.is_correct);
+  const shown = filter === "wrong" ? wrong : result.results;
+  const assessment = aiAssessment || result.ai_assessment;
+  const studyPlan = (assessment?.recommendations || []).find(
+    (item): item is StudyPlan => typeof item === "object" && item?.kind === "study_plan"
+  );
+  const advices = (assessment?.recommendations || []).filter(
+    (item): item is string => typeof item === "string" && item.trim().length > 0
+  );
+  const strengths = (assessment?.strengths || [])
+    .map((item) => (typeof item === "string" ? item : item.topic_name || item.description || ""))
+    .filter(Boolean);
+  const weakAreas = (assessment?.weak_areas || [])
+    .map((item) => (typeof item === "string" ? { topic_name: item } : item))
+    .filter((item) => item.topic_name || item.description);
+  const retake = context?.retake || null;
+  const materialsHref = context?.subject_id
+    ? `/study-materials?subject=${encodeURIComponent(context.subject_id)}&session=${encodeURIComponent(context.study_session_id)}`
+    : "/study-materials";
+  const dayLabel = context?.day_number ? `ngày ${context.day_number}` : "bài học";
 
-  const strengths = assessment?.strengths ?? [];
-  const weakAreas = assessment?.weak_areas ?? [];
-  const recommendations = assessment?.recommendations ?? [];
-
-  const score = Number(result.score) || 0;
-
-  const accuracy =
-    result.total_questions > 0
-      ? Math.round(
-          (result.correct_count / result.total_questions) * 100
-        )
-      : 0;
-
-  const reviewPlan = result.review_plan;
-  const hasRetakeQuiz = Boolean(reviewPlan?.retake_quiz_id);
-
-  // 4. Giao diện kết quả
   return (
-    <div className="mx-auto max-w-4xl">
-      {/* Tiêu đề */}
-      <div className="mb-8">
-        <Link
-          href="/quizzes"
-          className="text-sm font-medium text-[#829080] hover:text-[#355642]"
-        >
-          ← Quay lại danh sách Quiz
-        </Link>
-
-        <p className="mt-6 text-sm font-medium text-[#829080]">
-          KẾT QUẢ KIỂM TRA
-        </p>
-
-        <h1 className="mt-2 text-3xl font-bold text-[#355642]">
-          {result.title}
-        </h1>
-      </div>
-
-      {/* Tổng kết điểm */}
-      <div className="mb-8 rounded-2xl border border-[#E2E5DC] bg-white p-7">
-        <div className="text-center">
-          <p className="text-sm font-medium text-[#829080]">
-            Điểm số của bạn
-          </p>
-
-          <p
-            className={`mt-3 text-6xl font-bold ${
-              score > 80
-                ? "text-[#54765D]"
-                : score >= 50
-                ? "text-[#C58D3D]"
-                : "text-[#B65C50]"
-            }`}
-          >
-            {score.toFixed(0)}
-            <span className="text-2xl">/100</span>
-          </p>
-
-          <p className="mt-3 text-sm text-[#829080]">
-            {score > 80
-              ? "Xuất sắc! Bạn đã nắm vững kiến thức."
-              : score >= 70
-              ? "Rất tốt! Bạn đã hoàn thành bài kiểm tra với kết quả tốt."
-              : score >= 50
-              ? "Bạn đã đạt yêu cầu. Hãy tiếp tục cải thiện những phần còn yếu."
-              : "Bạn chưa đạt yêu cầu. Hãy ôn tập lại tài liệu trước khi thử sức lần nữa."}
-          </p>
-        </div>
-
-        <div className="mt-8 grid grid-cols-2 gap-4 border-t border-[#EEF0E9] pt-6 sm:grid-cols-3">
-          <div className="text-center">
-            <p className="text-sm text-[#829080]">
-              Số câu đúng
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-[#355642]">
-              {result.correct_count}/{result.total_questions}
-            </p>
-          </div>
-
-          <div className="text-center">
-            <p className="text-sm text-[#829080]">
-              Điểm đạt được
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-[#355642]">
-              {result.earned_points}/{result.total_points}
-            </p>
-          </div>
-
-          <div className="col-span-2 text-center sm:col-span-1">
-            <p className="text-sm text-[#829080]">
-              Tỷ lệ chính xác
-            </p>
-
-            <p className="mt-2 text-2xl font-bold text-[#355642]">
-              {accuracy}%
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Nút xem đánh giá AI */}
-      <button
-        type="button"
-        onClick={() =>
-          setShowAssessment((previous) => !previous)
-        }
-        className="mb-8 w-full rounded-xl border border-[#54765D] bg-white px-5 py-4 text-sm font-semibold text-[#355642] transition hover:bg-[#E8EEE4]"
-      >
-        {showAssessment
-          ? "Ẩn đánh giá và lộ trình ↑"
-          : "✨ Xem đánh giá và lộ trình →"}
-      </button>
-
-      {/* Đánh giá kết quả bằng AI */}
-      {showAssessment && (
-        <div className="mb-8 rounded-2xl border border-[#E2E5DC] bg-white p-7">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#E8EEE4] text-xl">
-              ✨
-            </div>
-
-            <div>
-              <h2 className="text-xl font-bold text-[#355642]">
-                Đánh giá từ AI
-              </h2>
-
-              <p className="text-sm text-[#829080]">
-                Phân tích mức độ hiểu bài và đề xuất cải thiện
+    <div className="mx-auto max-w-[1100px] space-y-6">
+      {/* Đầu trang */}
+      <section>
+        <nav className="mb-3 flex items-center gap-1.5 text-sm font-medium text-[var(--sp-muted)]">
+          <Link href="/quizzes" className="hover:text-[var(--sp-peri-dark)]">
+            Kiểm tra kiến thức
+          </Link>
+          <IconChevronRight size={14} />
+          <span className="truncate text-[var(--sp-text-2)]">Kết quả</span>
+        </nav>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            {context?.is_retake && (
+              <span className="sp-chip mb-2 bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
+                <IconRepeat size={13} />
+                Bài kiểm tra lại
+              </span>
+            )}
+            <h1 className="text-[34px] leading-tight sm:text-[42px]">
+              {context?.is_retake ? retakeLabel(result.title) : getMainTopicTitle(result.title)}
+            </h1>
+            {context?.scheduled_date && (
+              <p className="mt-1 text-[15px] text-[var(--sp-muted)]">
+                Bài học {dayLabel} · {weekdayLong(context.scheduled_date)}, {dayMonth(context.scheduled_date)}
               </p>
-            </div>
+            )}
           </div>
-
-          {assessment ? (
-            <div className="mt-6 space-y-6">
-              {/* Nhận xét tổng quan */}
-              <div className="rounded-xl bg-[#F7F5EF] p-5">
-                <p className="text-sm font-semibold text-[#829080]">
-                  Mức độ nắm vững kiến thức
-                </p>
-
-                <p className="mt-2 text-lg font-bold text-[#355642]">
-                  {assessment.mastery_level === "mastered"
-                    ? "Đã nắm vững"
-                    : assessment.mastery_level === "needs_review"
-                    ? "Cần ôn tập thêm"
-                    : "Chưa nắm vững"}
-                </p>
-
-                <p className="mt-3 text-sm leading-7 text-[#647568]">
-                  {assessment.summary}
-                </p>
-              </div>
-
-              {/* Điểm mạnh */}
-              <div>
-                <h3 className="font-semibold text-[#54765D]">
-                  ✓ Kiến thức đã nắm vững
-                </h3>
-
-                {strengths.length > 0 ? (
-                  <div className="mt-3 space-y-3">
-                    {strengths.map((item, index) => (
-                      <div
-                        key={index}
-                        className="rounded-xl border border-[#E2E5DC] p-4"
-                      >
-                        {typeof item === "string" ? (
-                          <p className="text-sm leading-6 text-[#647568]">
-                            {item}
-                          </p>
-                        ) : (
-                          <>
-                            {item.topic_name && (
-                              <p className="font-semibold text-[#355642]">
-                                {getMainTopicTitle(item.topic_name)}
-                              </p>
-                            )}
-
-                            <p className="mt-1 text-sm leading-6 text-[#829080]">
-                              {item.description ||
-                                item.content ||
-                                "Đã nắm được nội dung này."}
-                            </p>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-sm text-[#829080]">
-                    Chưa có dữ liệu về điểm mạnh.
-                  </p>
-                )}
-              </div>
-
-              {/* Nội dung cần cải thiện */}
-              <div>
-                <h3 className="font-semibold text-[#B65C50]">
-                  ! Kiến thức cần ôn tập
-                </h3>
-
-                {weakAreas.length > 0 ? (
-                  <div className="mt-3 space-y-3">
-                    {weakAreas.map((item, index) => (
-                      <div
-                        key={index}
-                        className="rounded-xl border border-[#F0DCD7] bg-[#FFFAF8] p-4"
-                      >
-                        {typeof item === "string" ? (
-                          <p className="text-sm leading-6 text-[#647568]">
-                            {item}
-                          </p>
-                        ) : (
-                          <>
-                            <p className="font-semibold text-[#355642]">
-                              {getMainTopicTitle(
-                                item.topic_name || "Nội dung cần cải thiện"
-                              )}
-                            </p>
-
-                            {item.hierarchy && (
-                              <p className="mt-1 text-xs font-medium text-[#54765D]">
-                                Vị trí trong tài liệu: {item.hierarchy}
-                              </p>
-                            )}
-
-                            <p className="mt-2 text-sm leading-6 text-[#829080]">
-                              {item.description ||
-                                item.content ||
-                                item.reason ||
-                                ""}
-                            </p>
-
-                            {item.source_page != null && (
-                              <p className="mt-2 text-xs font-medium text-[#54765D]">
-                                Trang tài liệu: {item.source_page}
-                              </p>
-                            )}
-
-                            {item.recommendation && (
-                              <div className="mt-3 rounded-lg bg-white p-3">
-                                <p className="text-xs font-semibold text-[#54765D]">
-                                  Gợi ý ôn tập
-                                </p>
-
-                                <p className="mt-1 text-sm leading-6 text-[#647568]">
-                                  {item.recommendation}
-                                </p>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-sm text-[#829080]">
-                    Không có nội dung đáng kể cần cải thiện.
-                  </p>
-                )}
-              </div>
-
-              {/* Đề xuất cải thiện */}
-              <div>
-                <h3 className="font-semibold text-[#355642]">
-                  Đề xuất cải thiện
-                </h3>
-
-                {recommendations.length > 0 ? (
-                  <ul className="mt-3 space-y-2">
-                    {recommendations.map((item, index) => (
-                      <li
-                        key={index}
-                        className="flex gap-2 text-sm leading-6 text-[#647568]"
-                      >
-                        <span className="text-[#54765D]">•</span>
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-sm text-[#829080]">
-                    Bạn chưa cần thêm đề xuất cải thiện.
-                  </p>
-                )}
-              </div>
-
-              {/* Lộ trình học bổ trợ / ôn tập lại */}
-              {reviewPlan ? (
-                <div className="border-t border-[#EEF0E9] pt-6">
-                  <h3 className="font-semibold text-[#355642]">
-                    {hasRetakeQuiz
-                      ? "Lộ trình ôn tập và kiểm tra lại"
-                      : "Lộ trình học bổ trợ"}
-                  </h3>
-
-                  <p className="mt-2 text-sm leading-6 text-[#829080]">
-                    {reviewPlan.overall_goal ||
-                      "Củng cố những kiến thức cần cải thiện dựa trên kết quả bài kiểm tra."}
-                  </p>
-
-                  {reviewPlan.review_items?.length ? (
-                    <div className="mt-4 space-y-3">
-                      {reviewPlan.review_items.map((item, index) => (
-                        <div
-                          key={`${item.topic_name || "review"}-${index}`}
-                          className="rounded-xl border border-[#E2E5DC] bg-white p-4"
-                        >
-                          <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
-                            <div>
-                              <p className="font-semibold text-[#355642]">
-                                {index + 1}.{" "}
-                                {getMainTopicTitle(
-                                  item.topic_name ||
-                                    "Nội dung cần ôn lại"
-                                )}
-                              </p>
-
-                              {item.hierarchy && (
-                                <p className="mt-1 text-xs text-[#54765D]">
-                                  {item.hierarchy}
-                                </p>
-                              )}
-                            </div>
-
-                            <span className="w-fit rounded-full bg-[#E8EEE4] px-3 py-1 text-xs font-semibold capitalize text-[#54765D]">
-                              {formatReviewDate(item.scheduled_date)}
-                            </span>
-                          </div>
-
-                          {item.source_page != null && (
-                            <p className="mt-2 text-xs font-medium text-[#829080]">
-                              Học tại trang {item.source_page} trong tài liệu
-                            </p>
-                          )}
-
-                          <p className="mt-2 text-sm leading-6 text-[#647568]">
-                            {item.recommendation ||
-                              "Đọc lại phần này, ghi lại ý chính và làm lại các câu hỏi liên quan."}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  {reviewPlan.status === "completed" ? (
-                    <div className="mt-4 rounded-xl bg-[#E8EEE4] p-4">
-                      <p className="font-semibold text-[#54765D]">
-                        {hasRetakeQuiz
-                          ? "Bạn đã hoàn thành kế hoạch ôn tập!"
-                          : "Bạn đã hoàn thành lộ trình học bổ trợ!"}
-                      </p>
-
-                      <p className="mt-1 text-sm leading-6 text-[#647568]">
-                        {hasRetakeQuiz
-                          ? "Bạn đã hoàn thành bài kiểm tra lại và đạt yêu cầu."
-                          : "Bạn đã hoàn thành việc củng cố những kiến thức cần cải thiện."}
-                      </p>
-                    </div>
-                  ) : hasRetakeQuiz ? (
-                    <div className="mt-4 rounded-xl bg-[#F7F5EF] p-4">
-                      <p className="text-sm leading-6 text-[#647568]">
-                        Bạn có thể làm bài kiểm tra lại ngay sau khi xem
-                        nội dung ôn tập.
-                      </p>
-
-                      <p className="mt-2 text-xs text-[#829080]">
-                        Thời gian đã ôn:{" "}
-                        {Math.floor(
-                          (reviewPlan.review_study_seconds || 0) / 60
-                        )}{" "}
-                        phút
-                      </p>
-
-                      <Link
-                        href={`/review-plans/${reviewPlan.id}`}
-                        className="mt-4 block rounded-xl bg-[#54765D] px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-[#355642]"
-                      >
-                        Xem nội dung ôn tập →
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="mt-4 rounded-xl bg-[#F7F5EF] p-4">
-                      <p className="font-semibold text-[#355642]">
-                        ✨ AI đã tạo nội dung học bổ trợ cho bạn
-                      </p>
-
-                      <p className="mt-2 text-sm leading-6 text-[#647568]">
-                        Dựa trên kết quả bài kiểm tra, AI đã xác định
-                        những kiến thức bạn cần củng cố và chuẩn bị
-                        nội dung học tập bổ trợ theo từng phần.
-                        Bạn có thể bắt đầu học ngay mà không cần chờ
-                        thời gian ôn tập tối thiểu.
-                      </p>
-
-                      <Link
-                        href={`/review-plans/${reviewPlan.id}`}
-                        className="mt-4 block rounded-xl bg-[#54765D] px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-[#355642]"
-                      >
-                        Học nội dung bổ trợ →
-                      </Link>
-                    </div>
-                  )}
-                </div>
-              ) : weakAreas.length === 0 ? (
-                <div className="rounded-xl bg-[#E8EEE4] p-4">
-                  <p className="font-semibold text-[#54765D]">
-                    Chúc mừng! Bạn không cần tạo lộ trình ôn tập lại.
-                  </p>
-
-                  <p className="mt-1 text-sm text-[#647568]">
-                    Hãy tiếp tục duy trì kết quả học tập tốt nhé.
-                  </p>
-                </div>
-              ) : (
-                <div className="rounded-xl bg-[#F7F5EF] p-4">
-                  <p className="text-sm leading-6 text-[#829080]">
-                    Chưa tìm thấy kế hoạch ôn tập được liên kết với
-                    lượt kiểm tra này.
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="mt-5 rounded-xl bg-[#F7F5EF] p-4 text-sm leading-6 text-[#829080]">
-              Chưa có đánh giá AI cho lượt làm bài này.
-            </p>
-          )}
+          <Link href="/quizzes" className="sp-btn sp-btn-secondary w-fit px-4 py-2.5 text-sm">
+            <IconArrowLeft size={16} />
+            Danh sách bài kiểm tra
+          </Link>
         </div>
-      )}
+      </section>
 
-      {/* Chi tiết từng câu */}
-      <div className="mb-5">
-        <h2 className="text-xl font-bold text-[#355642]">
-          Chi tiết câu trả lời
-        </h2>
+      {/* Điểm + đánh giá chung */}
+      <section className={`flex flex-col gap-5 rounded-[24px] border-2 p-5 sm:flex-row sm:items-center sm:p-7 ${level.ring}`}>
+        <div className="flex items-center gap-5">
+          <div className="relative h-28 w-28 shrink-0">
+            <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+              <circle cx="60" cy="60" r="52" fill="none" stroke="white" strokeWidth="12" />
+              <circle
+                cx="60"
+                cy="60"
+                r="52"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="12"
+                strokeLinecap="round"
+                strokeDasharray={`${(percent / 100) * 326.7} 326.7`}
+                className={level.score}
+              />
+            </svg>
+            <span className={`absolute inset-0 flex items-center justify-center text-[28px] font-extrabold ${level.score}`}>
+              {percent}%
+            </span>
+          </div>
+          <div className="sm:hidden">
+            <span className={`sp-chip ${level.chip}`}>{level.label}</span>
+            <p className="mt-2 text-sm font-semibold text-[var(--sp-text-2)]">
+              Đúng {result.correct_count}/{result.total_questions} câu
+            </p>
+          </div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="hidden items-center gap-2.5 sm:flex">
+            <span className={`sp-chip ${level.chip}`}>{level.label}</span>
+            <span className="text-sm font-semibold text-[var(--sp-text-2)]">
+              Đúng {result.correct_count}/{result.total_questions} câu
+            </span>
+          </div>
+          <h2 className="mt-2 text-[22px] text-[var(--sp-ink)]">{level.title}</h2>
+          <p className="mt-1 text-[15px] leading-6 text-[var(--sp-text-2)]">{level.text}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setShowWeak(true);
+            window.setTimeout(
+              () => document.getElementById("weak-areas")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+              60
+            );
+          }}
+          className="sp-btn sp-btn-primary shrink-0 px-5 py-2.5 text-sm"
+        >
+          <IconTarget size={16} />
+          Xem đánh giá điểm yếu
+        </button>
+      </section>
 
-        <p className="mt-1 text-sm text-[#829080]">
-          Xem lại đáp án của bạn và đối chiếu với đáp án chính xác.
-        </p>
-      </div>
-
-      <div className="space-y-5">
-        {(result.results || []).map((question, index) => (
-          <div
-            key={question.question_id}
-            className="rounded-2xl border border-[#E2E5DC] bg-white p-6"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <h3 className="font-semibold leading-7 text-[#355642]">
-                Câu {index + 1}: {question.question_text}
-              </h3>
-
-              <span
-                className={`shrink-0 rounded-lg px-3 py-1 text-xs font-semibold ${
-                  question.is_correct
-                    ? "bg-[#E8EEE4] text-[#54765D]"
-                    : "bg-[#F8E8E5] text-[#B65C50]"
+      {/* Xem lại từng câu */}
+      <section className="sp-card p-5 sm:p-7">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="sp-accent text-[16px] text-[var(--sp-pink)]">Đáp án và giải thích</p>
+            <h2 className="text-[22px] text-[var(--sp-ink)]">Xem lại từng câu</h2>
+          </div>
+          <div className="flex rounded-xl bg-[var(--sp-surface-2)] p-1">
+            {(
+              [
+                ["all", `Tất cả (${result.results.length})`],
+                ["wrong", `Câu sai (${wrong.length})`],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={filter === value}
+                onClick={() => setFilter(value)}
+                className={`rounded-lg px-3.5 py-1.5 text-sm font-bold transition ${
+                  filter === value
+                    ? "bg-white text-[var(--sp-peri-dark)] shadow-sm"
+                    : "text-[var(--sp-muted)] hover:text-[var(--sp-ink)]"
                 }`}
               >
-                {question.is_correct ? "Chính xác" : "Chưa đúng"}
-              </span>
-            </div>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-            <div className="mt-5 space-y-3">
-              <div className="rounded-xl bg-[#F7F5EF] p-4">
-                <p className="text-xs font-medium text-[#829080]">
-                  Câu trả lời của bạn
-                </p>
+        {shown.length === 0 ? (
+          <p className="rounded-2xl bg-emerald-50 p-5 text-center text-sm font-semibold text-emerald-800">
+            Không có câu sai nào. Tuyệt vời!
+          </p>
+        ) : (
+          <ol className="space-y-3">
+            {shown.map((item) => {
+              const number = result.results.indexOf(item) + 1;
+              const yours = describeAnswer(item.selected_answer, item.options);
+              const correct = describeAnswer(item.correct_answer, item.options);
+              const explanation = shortExplanation(item.explanation);
+              const cite = citation(item, context);
+              return (
+                <li
+                  key={item.question_id}
+                  className={`rounded-2xl border-2 p-4 sm:p-5 ${
+                    item.is_correct ? "border-[var(--sp-line)] bg-white" : "border-[var(--sp-pink-line)] bg-white"
+                  }`}
+                >
+                  <div className="flex gap-3">
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-extrabold text-white ${
+                        item.is_correct ? "bg-emerald-500" : "bg-[var(--sp-pink)]"
+                      }`}
+                    >
+                      {item.is_correct ? <IconCheck size={16} /> : <IconX size={16} />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold uppercase tracking-wide text-[var(--sp-muted)]">Câu {number}</p>
+                      <p className="mt-0.5 font-semibold leading-6 text-[var(--sp-ink)]">{item.question_text}</p>
 
-                <p className="mt-1 font-semibold text-[#355642]">
-                  {formatAnswer(question.selected_answer)}
-                </p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <div
+                          className={`rounded-xl px-3 py-2 text-sm ${
+                            item.is_correct
+                              ? "bg-emerald-50 text-emerald-900"
+                              : "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
+                          }`}
+                        >
+                          <p className="text-[11px] font-bold uppercase tracking-wide opacity-75">Bạn chọn</p>
+                          {yours.map((line) => (
+                            <p key={line} className="font-semibold">{line}</p>
+                          ))}
+                        </div>
+                        <div className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                          <p className="text-[11px] font-bold uppercase tracking-wide opacity-75">Đáp án đúng</p>
+                          {correct.map((line) => (
+                            <p key={line} className="font-semibold">{line}</p>
+                          ))}
+                        </div>
+                      </div>
+
+                      {(explanation || cite) && (
+                        <p className="mt-2.5 text-[14px] leading-6 text-[var(--sp-text-2)]">
+                          {explanation}
+                          {cite && (
+                            <span className="ml-1 inline-flex items-center gap-1 text-[13px] italic text-[var(--sp-peri-dark)]">
+                              <IconFile size={12} className="not-italic" />({cite})
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </section>
+
+      {/* Đánh giá điểm yếu */}
+      <section id="weak-areas" className="sp-card scroll-mt-6 p-5 sm:p-7">
+        <button
+          type="button"
+          onClick={() => setShowWeak((value) => !value)}
+          aria-expanded={showWeak}
+          className="flex w-full items-center justify-between gap-3 text-left"
+        >
+          <span>
+            <span className="sp-accent block text-[16px] text-[var(--sp-pink)]">AI phân tích bài làm</span>
+            <span className="block text-[22px] font-bold text-[var(--sp-ink)]">
+              {levelKey === "none" ? "Nhận xét bài làm" : "Đánh giá điểm yếu"}
+            </span>
+          </span>
+          <IconChevronDown size={20} className={`shrink-0 text-[var(--sp-muted)] transition ${showWeak ? "rotate-180" : ""}`} />
+        </button>
+
+        {showWeak && (
+          <div className="sp-task-expand mt-4 space-y-4">
+            {assessState.state === "loading" && !aiAssessment ? (
+              <div className="flex items-center gap-3 rounded-2xl bg-[var(--sp-surface-2)] px-4 py-4 text-sm text-[var(--sp-muted)]">
+                <Sparkle size={18} className="sp-twinkle shrink-0 text-[var(--sp-pink)]" />
+                AI đang đọc từng câu bạn làm để nhận xét, mất khoảng 10–20 giây...
               </div>
+            ) : (
+              <>
+                {assessState.state === "error" && !aiAssessment && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-[var(--sp-pink-line)] px-4 py-3">
+                    <p className="text-sm text-[var(--sp-pink-dark)]">{assessState.message}</p>
+                    <button
+                      type="button"
+                      onClick={() => setAssessState({ state: "idle" })}
+                      className="sp-btn sp-btn-secondary px-3 py-1.5 text-[13px]"
+                    >
+                      <IconRepeat size={14} />
+                      Thử lại
+                    </button>
+                  </div>
+                )}
 
-              <div className="rounded-xl bg-[#E8EEE4] p-4">
-                <p className="text-xs font-medium text-[#54765D]">
-                  Đáp án chính xác
-                </p>
-
-                <p className="mt-1 font-semibold text-[#355642]">
-                  {formatAnswer(question.correct_answer)}
-                </p>
-              </div>
-            </div>
-
-            {question.explanation && (
-              <div className="mt-4 border-t border-[#EEF0E9] pt-4">
-                <p className="text-sm font-semibold text-[#355642]">
-                  Giải thích
-                </p>
-
-                <p className="mt-2 text-sm leading-6 text-[#829080]">
-                  {question.explanation}
-                </p>
-              </div>
-            )}
-
-            {question.source_location && (
-              <div className="mt-4 rounded-xl border border-[#E2E5DC] bg-[#F8F9F5] p-4">
-                <p className="text-sm font-semibold text-[#355642]">
-                  📚 Vị trí kiến thức trong tài liệu
-                </p>
-
-                <p className="mt-2 text-sm text-[#718074]">
-                  {question.source_location.page_number != null
-                    ? `Trang ${question.source_location.page_number}`
-                    : "Chưa xác định trang"}
-
-                  {question.source_location.chunk_index != null
-                    ? ` · Đoạn nội dung ${
-                        question.source_location.chunk_index + 1
-                      }`
-                    : ""}
-                </p>
-
-                {!question.is_correct &&
-                  question.source_location.content && (
-                    <div className="mt-3 rounded-lg bg-white p-3">
-                      <p className="text-xs font-semibold text-[#54765D]">
-                        Nội dung tham chiếu để ôn lại
+                {/* Nhận định chung theo mức điểm */}
+                {(assessment?.verdict || assessment?.summary) && (
+                  <div className={`rounded-2xl border-2 px-4 py-3.5 ${level.ring}`}>
+                    <p className={`flex items-center gap-2 font-bold ${level.score}`}>
+                      {levelKey === "none" ? <Sparkle size={16} /> : <IconAlert size={16} />}
+                      {assessment?.verdict || level.title}
+                    </p>
+                    {assessment?.summary && (
+                      <p className="mt-1 text-[15px] leading-6 text-[var(--sp-text-2)]">
+                        {assessment.verdict
+                          ? assessment.summary.replace(assessment.verdict, "").trim()
+                          : assessment.summary}
                       </p>
-                      <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#647568]">
-                        {question.source_location.content}
+                    )}
+                  </div>
+                )}
+
+                {/* Phần sai nhiều nhất */}
+                {levelKey !== "none" && weakAreas.length > 0 && (
+                  <div>
+                    <h3 className="mb-2.5 text-[16px] text-[var(--sp-ink)]">Bạn cần tập trung vào</h3>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {weakAreas.slice(0, 4).map((area, index) => {
+                        const pages = area.pages?.length ? area.pages : area.source_page ? [area.source_page] : [];
+                        const where = [
+                          pages.length ? `trang ${pages.join(", ")}` : "",
+                          area.chapter || area.hierarchy ? String(area.chapter || area.hierarchy) : "",
+                          area.material_name ? `tài liệu ${area.material_name}` : "",
+                        ].filter(Boolean);
+                        return (
+                          <article
+                            key={index}
+                            className={`rounded-2xl border-2 p-4 ${
+                              index === 0 ? "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)]" : "border-[var(--sp-line)] bg-white"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-xs font-bold uppercase tracking-wide text-[var(--sp-pink-dark)]">
+                                {index === 0 ? "Sai nhiều nhất" : `Cần củng cố ${index + 1}`}
+                              </p>
+                              {area.question_numbers?.length ? (
+                                <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-[var(--sp-pink-dark)]">
+                                  Sai câu {area.question_numbers.join(", ")}
+                                </span>
+                              ) : null}
+                            </div>
+                            <h4 className="mt-1.5 text-[16px] font-bold text-[var(--sp-ink)]">
+                              {stripOutlineNumbers(area.topic_name || "Kiến thức cần củng cố")}
+                            </h4>
+                            {area.description && (
+                              <p className="mt-1 text-sm leading-6 text-[var(--sp-text-2)]">{area.description}</p>
+                            )}
+                            {area.recommendation && (
+                              <p className="mt-1.5 flex gap-1.5 text-sm font-semibold leading-6 text-[var(--sp-purple)]">
+                                <IconArrowRight size={14} className="mt-1.5 shrink-0" />
+                                {area.recommendation}
+                              </p>
+                            )}
+                            {where.length > 0 && (
+                              <p className="mt-2 flex items-start gap-1.5 rounded-xl bg-white/80 px-2.5 py-1.5 text-[12.5px] text-[var(--sp-peri-dark)]">
+                                <IconFile size={13} className="mt-0.5 shrink-0" />
+                                <span>Xem lại {where.join(" · ")}</span>
+                              </p>
+                            )}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  {/* Thời gian học đề xuất */}
+                  {studyPlan && (
+                    <div className="rounded-2xl border-2 border-[var(--sp-lav-line)] bg-[var(--sp-lav)] p-4">
+                      <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-[var(--sp-peri-dark)]">
+                        <IconCalendar size={14} />
+                        Thời gian học đề xuất
                       </p>
+                      <p className="mt-1.5 text-[24px] font-extrabold text-[var(--sp-purple)]">
+                        {studyPlan.minutes_per_day} phút/ngày
+                        <span className="ml-1.5 text-[15px] font-semibold text-[var(--sp-text-2)]">
+                          × {studyPlan.days} ngày
+                        </span>
+                      </p>
+                      {studyPlan.advice && (
+                        <p className="mt-1 text-sm leading-6 text-[var(--sp-text-2)]">{studyPlan.advice}</p>
+                      )}
                     </div>
                   )}
-              </div>
+
+                  {/* Lời khuyên */}
+                  {advices.length > 0 && (
+                    <div className="rounded-2xl border-2 border-[var(--sp-line)] bg-white p-4">
+                      <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-[var(--sp-pink-dark)]">
+                        <Sparkle size={13} />
+                        {levelKey === "none" ? "Để giữ phong độ" : "Lời khuyên"}
+                      </p>
+                      <ul className="mt-2 space-y-1.5">
+                        {advices.map((advice) => (
+                          <li key={advice} className="flex gap-2 text-sm leading-6 text-[var(--sp-text-2)]">
+                            <IconCheck size={14} className="mt-1.5 shrink-0 text-emerald-600" />
+                            {advice}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                {strengths.length > 0 && (
+                  <p className="flex flex-wrap items-center gap-2 text-sm text-emerald-800">
+                    <span className="font-bold">Bạn đã làm tốt:</span>
+                    {strengths.map((item) => (
+                      <span key={item} className="rounded-full bg-emerald-50 px-2.5 py-0.5">
+                        {item}
+                      </span>
+                    ))}
+                  </p>
+                )}
+              </>
             )}
           </div>
-        ))}
+        )}
+      </section>
+
+      {/* Lộ trình ôn lại */}
+      {levelKey !== "none" && context && (
+        <RoadmapSection
+          levelKey={levelKey}
+          context={context}
+          weakAreas={weakAreas}
+          retake={retake}
+          materialsHref={materialsHref}
+          dayLabel={dayLabel}
+          reviewDate={reviewDate}
+          onPickDate={() => setPickerOpen(true)}
+          retakeState={retakeState}
+          onRetryRetake={() => setRetakeState({ state: "idle" })}
+        />
+      )}
+
+      {levelKey === "none" && (
+        <section className="flex flex-col items-center rounded-[24px] bg-[var(--sp-purple)] px-6 py-7 text-center text-white">
+          <Sparkle size={24} className="sp-twinkle text-[var(--sp-yellow)]" />
+          <p className="mt-2 text-lg font-bold">Không cần ôn lại bài này</p>
+          <p className="mt-1 text-sm text-white/75">Giữ phong độ và tiếp tục với bài học tiếp theo trong kế hoạch.</p>
+          <Link href={materialsHref} className="sp-btn mt-4 border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] px-5 py-2.5 text-sm text-[var(--sp-purple-deep)]">
+            Học bài tiếp theo
+            <IconArrowRight size={16} />
+          </Link>
+        </section>
+      )}
+
+      {pickerOpen && context && retake && (
+        <ReviewDayPicker
+          context={context}
+          reviewPlanId={retake.review_plan_id}
+          initial={reviewDate}
+          onClose={() => setPickerOpen(false)}
+          onSaved={(value) => {
+            setReviewDate(value);
+            setPickerOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ================= Lộ trình ================= */
+
+function RoadmapSection({
+  levelKey,
+  context,
+  weakAreas,
+  retake,
+  materialsHref,
+  dayLabel,
+  reviewDate,
+  onPickDate,
+  retakeState,
+  onRetryRetake,
+}: {
+  retakeState: { state: "idle" | "creating" | "done" | "error"; message?: string };
+  onRetryRetake: () => void;
+  levelKey: "intensive" | "relaxed";
+  context: ReviewContext;
+  weakAreas: WeakArea[];
+  retake: ReviewContext["retake"];
+  materialsHref: string;
+  dayLabel: string;
+  reviewDate: string | null;
+  onPickDate: () => void;
+}) {
+  const intensive = levelKey === "intensive";
+  const focus = weakAreas
+    .slice(0, 2)
+    .map((area) => stripOutlineNumbers(area.topic_name || ""))
+    .filter(Boolean);
+  const retakeOpen = retake?.status === "in_progress";
+
+  const steps = [
+    {
+      title: reviewDate
+        ? `Ôn vào ${weekdayLong(reviewDate)}, ${dayMonth(reviewDate)}`
+        : intensive
+          ? "Chọn ngày ôn sớm nhất trong tuần"
+          : "Chọn một ngày trống trong tuần để ôn",
+      text: intensive
+        ? "Ôn cấp tốc: nên ôn ngay trong 1–2 ngày tới, trước khi học bài mới."
+        : "Ôn thư thả: chọn ngày còn trống trong tuần, không cần dồn gấp.",
+    },
+    {
+      title: `Đọc lại tóm tắt ${dayLabel}`,
+      text: focus.length
+        ? `Tập trung vào: ${focus.join(" · ")}.`
+        : "Đọc lại các ý chính và công thức của bài.",
+    },
+    {
+      title: "Trả lời Tự kiểm tra nhanh",
+      text: "Trả lời xong các câu ôn nhanh cạnh nội dung bài để mở bài kiểm tra lại.",
+    },
+    {
+      title: retakeLabel(retake?.title) || retakeLabel(`Kiểm tra lại ${dayLabel}`),
+      text: "Cần đạt từ 80%. Làm lại bao nhiêu lần cũng được, mỗi lần cần ôn và tự kiểm tra trước.",
+    },
+  ];
+
+  return (
+    <section
+      className={`overflow-hidden rounded-[24px] border-2 bg-white ${
+        intensive ? "border-[var(--sp-pink)]" : "border-[#f3dc9a]"
+      }`}
+    >
+      <div
+        className={`flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7 ${
+          intensive ? "bg-[var(--sp-pink)] text-white" : "bg-[var(--sp-amber-bg)] text-[var(--sp-purple-deep)]"
+        }`}
+      >
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide opacity-80">
+            {intensive ? "Dưới 50% · cần tập trung" : "50–79% · ôn nhẹ nhàng"}
+          </p>
+          <h2 className="text-[22px]">{intensive ? "Lộ trình ôn cấp tốc" : "Lộ trình ôn thư thả"}</h2>
+        </div>
+        <button
+          type="button"
+          onClick={onPickDate}
+          disabled={!retake}
+          className={`sp-btn w-fit px-4 py-2.5 text-sm disabled:opacity-50 ${
+            intensive
+              ? "border-2 border-white bg-white text-[var(--sp-pink-dark)]"
+              : "sp-btn-primary"
+          }`}
+        >
+          <IconCalendar size={16} />
+          {!retake
+            ? "Chờ tạo bài kiểm tra lại…"
+            : reviewDate
+              ? `Đổi ngày ôn (${dayMonth(reviewDate)})`
+              : "Chọn ngày ôn lại"}
+        </button>
       </div>
 
-      {/* Nút quay lại */}
-      <div className="mb-10 mt-8">
-        <Link
-          href="/quizzes"
-          className="block rounded-xl bg-[#54765D] px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-[#355642]"
+      <ol className="grid gap-0 sm:grid-cols-4">
+        {steps.map((step, index) => (
+          <li
+            key={index}
+            className="relative border-t border-[var(--sp-line)] px-5 py-4 sm:border-l sm:border-t-0 sm:first:border-l-0"
+          >
+            <span
+              className={`flex h-7 w-7 items-center justify-center rounded-lg text-sm font-extrabold ${
+                index === 0 && reviewDate
+                  ? "bg-emerald-500 text-white"
+                  : intensive
+                    ? "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
+                    : "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]"
+              }`}
+            >
+              {index === 0 && reviewDate ? <IconCheck size={14} /> : index + 1}
+            </span>
+            <p className="mt-2 font-bold leading-snug text-[var(--sp-ink)]">{step.title}</p>
+            <p className="mt-1 text-[13px] leading-5 text-[var(--sp-muted)]">{step.text}</p>
+          </li>
+        ))}
+      </ol>
+
+      <div className="flex flex-col gap-3 border-t border-[var(--sp-line)] bg-[var(--sp-surface-2)] px-5 py-4 sm:flex-row sm:items-center sm:px-7">
+        <span
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+            retakeOpen ? "bg-emerald-50 text-emerald-700" : "bg-white text-[var(--sp-muted)]"
+          }`}
         >
-          Quay lại danh sách bài kiểm tra
-        </Link>
+          {retakeOpen ? <IconRepeat size={18} /> : <IconLock size={18} />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-bold text-[var(--sp-ink)]">
+            {retakeLabel(retake?.title) || (retakeState.state === "error" ? "Chưa tạo được bài kiểm tra lại" : "Đang tạo bài kiểm tra lại…")}
+          </p>
+          <p className={`text-[13px] ${retakeState.state === "error" && !retake ? "text-[var(--sp-pink-dark)]" : "text-[var(--sp-muted)]"}`}>
+            {!retake
+              ? retakeState.state === "error"
+                ? retakeState.message
+                : retakeState.state === "done"
+                  ? "Bài kiểm tra lại đã được tạo, tải lại trang để xem."
+                  : "AI đang soạn câu hỏi, mất khoảng 10–30 giây."
+              : retakeOpen
+                ? "Đã mở. Bạn có thể làm bài kiểm tra lại ngay."
+                : "Đang khóa. Học lại và trả lời Tự kiểm tra nhanh để mở."}
+          </p>
+        </div>
+        {!retake && retakeState.state === "error" ? (
+          <button type="button" onClick={onRetryRetake} className="sp-btn sp-btn-secondary shrink-0 px-4 py-2.5 text-sm">
+            <IconRepeat size={15} />
+            Thử tạo lại
+          </button>
+        ) : retake && retakeOpen ? (
+          <Link href={`/quizzes/${retake.quiz_id}`} className="sp-btn sp-btn-primary shrink-0 px-4 py-2.5 text-sm">
+            Làm bài kiểm tra lại
+            <IconArrowRight size={15} />
+          </Link>
+        ) : (
+          <Link href={materialsHref} className="sp-btn sp-btn-primary shrink-0 px-4 py-2.5 text-sm">
+            <IconBook size={15} />
+            Học lại & tự kiểm tra
+          </Link>
+        )}
+      </div>
+      {context.exam_date && (
+        <p className="sr-only">Ngày thi {dayMonth(context.exam_date)}</p>
+      )}
+    </section>
+  );
+}
+
+/* ================= Bảng chọn ngày ôn ================= */
+
+function ReviewDayPicker({
+  context,
+  reviewPlanId,
+  initial,
+  onClose,
+  onSaved,
+}: {
+  context: ReviewContext;
+  reviewPlanId: string;
+  initial: string | null;
+  onClose: () => void;
+  onSaved: (value: string) => void;
+}) {
+  const [selected, setSelected] = useState<string | null>(initial);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const available = context.week.filter((day) => !day.has_study && !day.is_past && !day.after_exam);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const save = async () => {
+    if (!selected) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/review-plans/${reviewPlanId}/review-date`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ review_date: selected }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.detail || "Không thể lưu ngày ôn lại.");
+      onSaved(selected);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Không thể lưu ngày ôn lại.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const first = context.week[0]?.date;
+  const last = context.week[context.week.length - 1]?.date;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Chọn ngày ôn lại"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--sp-purple-deep)]/45 p-3 sm:items-center"
+      onClick={onClose}
+    >
+      <div
+        className="sp-task-expand w-full max-w-[560px] rounded-[24px] border-2 border-[var(--sp-purple)] bg-white p-5 shadow-[6px_6px_0_var(--sp-lav-line)] sm:p-6"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="sp-accent text-[16px] text-[var(--sp-pink)]">
+              Tuần {dayMonth(first)} – {dayMonth(last)}
+            </p>
+            <h2 className="text-[22px] text-[var(--sp-ink)]">Chọn ngày ôn lại</h2>
+            <p className="mt-1 text-sm text-[var(--sp-muted)]">
+              Chỉ ôn trong tuần của bài học, vào ngày không trùng lịch học chính.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Đóng"
+            className="rounded-xl p-2 text-[var(--sp-muted)] hover:bg-[var(--sp-surface-2)]"
+          >
+            <IconX size={18} />
+          </button>
+        </div>
+
+        <div className="mt-5 grid grid-cols-7 gap-1.5 sm:gap-2">
+          {context.week.map((day) => {
+            const isLesson = day.date === context.scheduled_date;
+            const disabled = day.has_study || day.is_past || day.after_exam;
+            const isSelected = selected === day.date;
+            const isToday = day.date === context.today;
+            return (
+              <button
+                key={day.date}
+                type="button"
+                disabled={disabled}
+                onClick={() => setSelected(day.date)}
+                aria-pressed={isSelected}
+                title={
+                  day.has_study
+                    ? "Ngày học chính"
+                    : day.is_past
+                      ? "Ngày đã qua"
+                      : day.after_exam
+                        ? "Từ ngày thi trở đi"
+                        : "Có thể chọn"
+                }
+                className={`relative flex flex-col items-center rounded-2xl border-2 px-1 py-2.5 transition ${
+                  isSelected
+                    ? "border-[var(--sp-purple)] bg-[var(--sp-pink)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)]"
+                    : day.has_study
+                      ? "cursor-not-allowed border-[var(--sp-lav-line)] bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
+                      : disabled
+                        ? "cursor-not-allowed border-transparent bg-[var(--sp-surface-2)] text-[var(--sp-soft)]"
+                        : "border-[var(--sp-line)] bg-white text-[var(--sp-ink)] hover:border-[var(--sp-pink)]"
+                }`}
+              >
+                {isToday && (
+                  <span className="absolute -top-2 rounded-full bg-[var(--sp-purple)] px-1.5 text-[9px] font-bold text-white">
+                    Hôm nay
+                  </span>
+                )}
+                <span className="text-[11px] font-bold uppercase">{day.weekday}</span>
+                <span className="text-[17px] font-extrabold">{dayMonth(day.date).slice(0, 2)}</span>
+                <span className="mt-0.5 h-1.5 w-1.5 rounded-full">
+                  {isLesson ? (
+                    <span className="block h-1.5 w-1.5 rounded-full bg-[var(--sp-pink)]" />
+                  ) : day.has_study ? (
+                    <span className="block h-1.5 w-1.5 rounded-full bg-[var(--sp-peri)]" />
+                  ) : null}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px] text-[var(--sp-text-2)]">
+          <li className="flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded border-2 border-[var(--sp-lav-line)] bg-[var(--sp-lav)]" />
+            Ngày học chính (đã chọn khi tạo kế hoạch)
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-[var(--sp-pink)]" />
+            Ngày học bài này
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded bg-[var(--sp-surface-2)]" />
+            Đã qua / từ ngày thi
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="h-3 w-3 rounded border-2 border-[var(--sp-line)] bg-white" />
+            Có thể chọn
+          </li>
+        </ul>
+
+        {available.length === 0 && (
+          <p className="mt-4 rounded-2xl bg-[var(--sp-amber-bg)] px-4 py-3 text-sm text-[var(--sp-amber-dark)]">
+            Tuần này không còn ngày trống. Hãy ôn ngay hôm nay hoặc tranh thủ sau giờ học chính.
+          </p>
+        )}
+        {error && <p className="mt-3 text-sm font-medium text-[var(--sp-pink-dark)]">{error}</p>}
+
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <p className="text-sm text-[var(--sp-muted)]">
+            {selected ? `Đã chọn: ${weekdayLong(selected)}, ${dayMonth(selected)}` : "Chưa chọn ngày"}
+          </p>
+          <button
+            type="button"
+            disabled={!selected || saving}
+            onClick={save}
+            className="sp-btn sp-btn-primary px-5 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? "Đang lưu..." : "Lưu ngày ôn"}
+          </button>
+        </div>
       </div>
     </div>
   );

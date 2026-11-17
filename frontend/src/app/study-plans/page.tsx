@@ -8,6 +8,9 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { getMainTopicTitle } from "@/lib/content-titles";
+import StudyDayPicker from "@/components/study-day-picker";
+import PlanOverviewCards from "@/components/plan-overview-cards";
+import MaterialDropzone from "@/components/material-dropzone";
 
 type ExamPlan = {
   id: string;
@@ -26,6 +29,8 @@ type Topic = {
   estimated_minutes: number;
   priority: number;
   status: string;
+  hierarchy?: string | null;
+  exam_plan_id?: string;
 };
 
 type StudySession = {
@@ -195,7 +200,6 @@ export default function StudyPlansPage() {
     []
   );
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
-  const [expandedWeeks, setExpandedWeeks] = useState<number[]>([1]);
   const [isScheduleTableExpanded, setIsScheduleTableExpanded] =
     useState(true);
   const [isScheduleConfirmed, setIsScheduleConfirmed] = useState(false);
@@ -286,7 +290,11 @@ export default function StudyPlansPage() {
             `Không thể tải chủ đề của kế hoạch ${plan.title}.`
           );
 
-          return getDataList(result);
+          // Gắn mã kế hoạch để biết chủ đề thuộc môn nào
+          return getDataList(result).map((topic) => ({
+            ...topic,
+            exam_plan_id: plan.id,
+          }));
         })
       );
 
@@ -441,6 +449,7 @@ export default function StudyPlansPage() {
       setSelectedStudyDates(
         selectedStudyDates.filter((date) => date !== dateValue)
       );
+      setIsScheduleConfirmed(false);
       setFeedback("");
       return;
     }
@@ -461,11 +470,68 @@ export default function StudyPlansPage() {
     }
 
     setFeedback("");
+    setIsScheduleConfirmed(false);
     setSelectedStudyDates([
       ...otherSelectedDates,
       ...weekSelectedDates,
       dateValue,
     ]);
+  }
+
+  // Chọn / bỏ chọn một thứ (cột) cho tất cả các tuần.
+  function toggleWeekdayForAllWeeks(columnIndex: number) {
+    const weeks = getStudyWeeks();
+    const columnDates = weeks
+      .map((week) => week.dates[columnIndex])
+      .filter((date): date is string => Boolean(date));
+
+    if (columnDates.length === 0) {
+      return;
+    }
+
+    const isAllSelected = columnDates.every((date) =>
+      selectedStudyDates.includes(date)
+    );
+
+    setIsScheduleConfirmed(false);
+
+    if (isAllSelected) {
+      setSelectedStudyDates(
+        selectedStudyDates.filter((date) => !columnDates.includes(date))
+      );
+      setFeedback("");
+      return;
+    }
+
+    const nextDates = [...selectedStudyDates];
+    let skippedWeeks = 0;
+
+    for (const week of weeks) {
+      const date = week.dates[columnIndex];
+
+      if (!date || nextDates.includes(date)) {
+        continue;
+      }
+
+      const selectedInWeek = nextDates.filter((item) =>
+        week.dates.includes(item)
+      ).length;
+
+      if (selectedInWeek >= Math.min(Number(studyDays), week.dates.length)) {
+        skippedWeeks += 1;
+        continue;
+      }
+
+      nextDates.push(date);
+    }
+
+    setSelectedStudyDates(nextDates);
+    setFeedback(
+      skippedWeeks > 0
+        ? `Có ${skippedWeeks} tuần đã đủ ${studyDays} ngày nên chưa thêm được thứ này. Bỏ bớt một ngày ở tuần đó nếu muốn đổi.`
+        : "",
+      skippedWeeks > 0 ? "error" : "info"
+    );
   }
 
   function validateSelectedStudyDates(): string | null {
@@ -1021,69 +1087,69 @@ export default function StudyPlansPage() {
     <div className="mx-auto max-w-6xl space-y-8">
       {/* Page heading */}
       <section>
-        <p className="text-sm font-medium text-[#829080]">
+        <p className="text-sm font-medium text-[#716A82]">
           KHÔNG GIAN HỌC TẬP / KẾ HOẠCH
         </p>
 
-        <h1 className="mt-2 text-3xl font-bold text-[#355642]">
+        <h1 className="mt-2 text-3xl font-bold text-[#24123A]">
           Kế hoạch ôn thi
         </h1>
 
-        <p className="mt-2 text-sm text-[#89958A]">
+        <p className="mt-2 text-sm text-[#716A82]">
           Xây dựng lộ trình học tập cá nhân hóa cùng trợ lý AI
           StudyPilot.
         </p>
       </section>
 
       {/* Intro banner */}
-      <section className="flex flex-col justify-between gap-5 rounded-2xl bg-[#E8EEE4] p-6 sm:flex-row sm:items-center sm:p-8">
+      <section className="flex flex-col justify-between gap-5 rounded-2xl bg-[#EEF1FD] p-6 sm:flex-row sm:items-center sm:p-8">
         <div className="max-w-xl">
           <span className="text-3xl">🌱</span>
 
-          <h2 className="mt-3 text-xl font-bold text-[#355642]">
+          <h2 className="mt-3 text-xl font-bold text-[#24123A]">
             Chuẩn bị cho kỳ thi tiếp theo của bạn
           </h2>
 
-          <p className="mt-2 text-sm leading-6 text-[#718074]">
+          <p className="mt-2 text-sm leading-6 text-[#716A82]">
             Cho StudyPilot biết mục tiêu, thời gian và nội dung
             cần ôn tập. AI sẽ giúp bạn xây dựng kế hoạch học
             phù hợp với quỹ thời gian.
           </p>
         </div>
 
-        <div className="hidden h-28 w-28 shrink-0 items-center justify-center rounded-full bg-[#D7E3D2] text-5xl sm:flex">
+        <div className="hidden h-28 w-28 shrink-0 items-center justify-center rounded-full bg-[#EEF1FD] text-5xl sm:flex">
           📚
         </div>
       </section>
 
       <section
         aria-label="Các bước tạo kế hoạch"
-        className="grid gap-2 rounded-2xl border border-[#E8EDE5] bg-white p-3 shadow-sm sm:grid-cols-4"
+        className="grid gap-2 rounded-2xl border border-[#ECE6EF] bg-white p-3 shadow-sm sm:grid-cols-4"
       >
         {workflowSteps.map((step, index) => (
           <div
             key={step.number}
             className={`relative rounded-xl px-3 py-3 ${
               step.complete
-                ? "bg-[#F0F6EE]"
-                : "bg-[#FAFBF8]"
+                ? "bg-[#F7F5FA]"
+                : "bg-[#FFFFFF]"
             }`}
           >
             <div className="flex items-start gap-3">
               <span
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                   step.complete
-                    ? "bg-[#54765D] text-white"
-                    : "bg-[#E8EEE4] text-[#54765D]"
+                    ? "bg-[#5B7FE3] text-white"
+                    : "bg-[#EEF1FD] text-[#4566D1]"
                 }`}
               >
                 {step.complete ? "✓" : step.number}
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-[#355642]">
+                <p className="text-sm font-bold text-[#24123A]">
                   {step.title}
                 </p>
-                <p className="mt-1 truncate text-xs text-[#89958A]">
+                <p className="mt-1 truncate text-xs text-[#716A82]">
                   {step.detail}
                 </p>
               </div>
@@ -1091,7 +1157,7 @@ export default function StudyPlansPage() {
             {index < workflowSteps.length - 1 && (
               <span
                 aria-hidden="true"
-                className="absolute -right-2 top-7 z-10 hidden text-[#B8C8B6] sm:block"
+                className="absolute -right-2 top-7 z-10 hidden text-[#A39DB3] sm:block"
               >
                 →
               </span>
@@ -1101,19 +1167,19 @@ export default function StudyPlansPage() {
       </section>
 
       {/* Create plan form */}
-      <section className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-6 shadow-sm sm:p-8">
+      <section className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-6 shadow-sm sm:p-8">
         <div className="mb-7">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#E9EFE6] text-xl">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#EEF1FD] text-xl">
               ✨
             </span>
 
             <div>
-              <h2 className="text-lg font-bold text-[#355642]">
+              <h2 className="text-lg font-bold text-[#24123A]">
                 Tạo kế hoạch mới
               </h2>
 
-              <p className="mt-1 text-sm text-[#89958A]">
+              <p className="mt-1 text-sm text-[#716A82]">
                 Cung cấp thông tin để bắt đầu lập kế hoạch.
               </p>
             </div>
@@ -1123,7 +1189,7 @@ export default function StudyPlansPage() {
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Subject */}
           <div>
-            <label className="mb-2 block text-sm font-semibold text-[#536657]">
+            <label className="mb-2 block text-sm font-semibold text-[#4D4366]">
               Tên môn học <span className="text-red-500">*</span>
             </label>
 
@@ -1133,14 +1199,14 @@ export default function StudyPlansPage() {
               value={subjectName}
               onChange={(e) => setSubjectName(e.target.value)}
               placeholder="Ví dụ: Cấu trúc dữ liệu và giải thuật"
-              className="w-full rounded-xl border border-[#E2E5DC] bg-white px-4 py-3 text-sm text-[#355642] outline-none transition placeholder:text-[#B0B8AE] focus:border-[#78947B] focus:ring-2 focus:ring-[#E8EEE4]"
+              className="w-full rounded-xl border border-[#ECE6EF] bg-white px-4 py-3 text-sm text-[#24123A] outline-none transition placeholder:text-[#A39DB3] focus:border-[#5B7FE3] focus:ring-2 focus:ring-[#ECE6EF]"
             />
           </div>
 
           {/* Exam date and daily hours */}
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <div>
-              <label className="mb-2 block text-sm font-semibold text-[#536657]">
+              <label className="mb-2 block text-sm font-semibold text-[#4D4366]">
                 Ngày thi <span className="text-red-500">*</span>
               </label>
 
@@ -1150,19 +1216,19 @@ export default function StudyPlansPage() {
                 min={today || undefined}
                 value={examDate}
                 onChange={(e) => setExamDate(e.target.value)}
-                className="w-full rounded-xl border border-[#E2E5DC] bg-white px-4 py-3 text-sm text-[#536657] outline-none focus:border-[#78947B] focus:ring-2 focus:ring-[#E8EEE4]"
+                className="w-full rounded-xl border border-[#ECE6EF] bg-white px-4 py-3 text-sm text-[#4D4366] outline-none focus:border-[#5B7FE3] focus:ring-2 focus:ring-[#ECE6EF]"
               />
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-semibold text-[#536657]">
+              <label className="mb-2 block text-sm font-semibold text-[#4D4366]">
                 Thời gian học mỗi ngày
               </label>
 
               <select
                 value={dailyHours}
                 onChange={(e) => setDailyHours(e.target.value)}
-                className="w-full rounded-xl border border-[#E2E5DC] bg-white px-4 py-3 text-sm text-[#536657] outline-none focus:border-[#78947B]"
+                className="w-full rounded-xl border border-[#ECE6EF] bg-white px-4 py-3 text-sm text-[#4D4366] outline-none focus:border-[#5B7FE3]"
               >
                 <option value="1">1 giờ / ngày</option>
                 <option value="2">2 giờ / ngày</option>
@@ -1176,7 +1242,7 @@ export default function StudyPlansPage() {
 
           {/* Study days */}
           <div>
-            <label className="mb-2 block text-sm font-semibold text-[#536657]">
+            <label className="mb-2 block text-sm font-semibold text-[#4D4366]">
               Số ngày có thể học mỗi tuần
             </label>
 
@@ -1189,7 +1255,6 @@ export default function StudyPlansPage() {
                     onClick={() => {
                       setStudyDays(day);
                       setSelectedStudyDates([]);
-                      setExpandedWeeks([1]);
                       setIsScheduleTableExpanded(true);
                       setIsScheduleConfirmed(false);
                       setFeedback("");
@@ -1197,8 +1262,8 @@ export default function StudyPlansPage() {
                     }}
                     className={`rounded-xl border py-3 text-sm font-semibold transition ${
                       studyDays === day
-                        ? "border-[#54765D] bg-[#E6EDE4] text-[#355642]"
-                        : "border-[#E2E5DC] bg-white text-[#829080] hover:border-[#A9BBA7]"
+                        ? "border-[#5B7FE3] bg-[#EEF1FD] text-[#24123A]"
+                        : "border-[#ECE6EF] bg-white text-[#716A82] hover:border-[#D5DDF8]"
                     }`}
                   >
                     {day} ngày
@@ -1210,278 +1275,73 @@ export default function StudyPlansPage() {
           </div>
 
           {isScheduleDialogOpen && (
-            <div className="rounded-2xl border border-[#C9D7C6] bg-[#F7F8F3] p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="font-bold text-[#355642]">
-                    Chọn ngày học theo từng tuần
-                  </h3>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isScheduleConfirmed) {
-                      setIsScheduleTableExpanded((current) => !current);
-                    } else {
-                      setIsScheduleDialogOpen(false);
-                    }
-                  }}
-                  className="rounded-lg px-2 py-1 text-lg text-[#829080] hover:bg-white"
-                  aria-label={
-                    isScheduleConfirmed
-                      ? isScheduleTableExpanded
-                        ? "Thu gọn bảng chọn ngày học"
-                        : "Mở bảng chọn ngày học"
-                      : "Đóng bảng chọn ngày học"
-                  }
-                >
-                  {isScheduleConfirmed
-                    ? isScheduleTableExpanded
-                      ? "⌃"
-                      : "⌄"
-                    : "×"}
-                </button>
-              </div>
-
-              <div
-                className={
-                  isScheduleTableExpanded ? "block" : "hidden"
+            <StudyDayPicker
+              weeks={getStudyWeeks()}
+              selectedDates={selectedStudyDates}
+              studyDaysPerWeek={Number(studyDays)}
+              today={today}
+              examDate={examDate}
+              confirmed={isScheduleConfirmed}
+              expanded={isScheduleTableExpanded}
+              onToggleDate={updateStudyDate}
+              onToggleWeekday={toggleWeekdayForAllWeeks}
+              onClear={() => {
+                setSelectedStudyDates([]);
+                setIsScheduleConfirmed(false);
+                setIsScheduleTableExpanded(true);
+                setFeedback("");
+              }}
+              onConfirm={() => {
+                const error = validateSelectedStudyDates();
+                setFeedback(
+                  error || "Đã lưu lựa chọn ngày học.",
+                  error ? "error" : "success"
+                );
+                if (!error) {
+                  setIsScheduleConfirmed(true);
+                  setIsScheduleTableExpanded(false);
                 }
-              >
-              {!examDate ? (
-                <p className="mt-4 rounded-xl bg-white p-4 text-sm text-[#89958A]">
-                  Vui lòng chọn ngày thi trước.
-                </p>
-              ) : getStudyWeeks().length === 0 ? (
-                <p className="mt-4 rounded-xl bg-white p-4 text-sm text-red-600">
-                  Ngày thi phải sau hôm nay để tạo lịch học.
-                </p>
-              ) : (
-                <div className="mt-4 space-y-4">
-                  {getStudyWeeks().map((week) => {
-                    const selectedDates = selectedStudyDates
-                      .filter((date) => week.dates.includes(date))
-                      .sort();
-                    const requiredDates = Math.min(
-                      Number(studyDays),
-                      week.dates.length
-                    );
-
-                    return (
-                      <div
-                        key={week.weekNumber}
-                        className="overflow-hidden rounded-xl border border-[#DCE3D8] bg-white"
-                      >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedWeeks((current) =>
-                              current.includes(week.weekNumber)
-                                ? current.filter(
-                                    (weekNumber) =>
-                                      weekNumber !== week.weekNumber
-                                  )
-                                : [...current, week.weekNumber]
-                            )
-                          }
-                          className="flex w-full items-center justify-between border-b border-[#EAEAE2] bg-[#E8EEE4] px-4 py-3 text-left text-sm font-bold text-[#355642]"
-                          aria-expanded={expandedWeeks.includes(
-                            week.weekNumber
-                          )}
-                        >
-                          <span>
-                            Tuần {week.weekNumber} · Đã chọn{" "}
-                            {selectedDates.length}/{requiredDates} ngày
-                          </span>
-                          <span
-                            className="text-lg leading-none"
-                            aria-hidden="true"
-                          >
-                            {expandedWeeks.includes(week.weekNumber)
-                              ? "⌃"
-                              : "⌄"}
-                          </span>
-                        </button>
-
-                        {expandedWeeks.includes(week.weekNumber) && (
-                          <div className="divide-y divide-[#F0F1EC]">
-                            {Array.from(
-                              { length: requiredDates },
-                              (_, slotIndex) => {
-                                const selectedDate =
-                                  selectedDates[slotIndex] || "";
-
-                                return (
-                                  <div
-                                    key={`${week.weekNumber}-${slotIndex}`}
-                                    className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                                  >
-                                    <span className="text-sm font-semibold text-[#536657]">
-                                      Ngày học {slotIndex + 1}
-                                    </span>
-
-                                    <div className="flex flex-wrap gap-2">
-                                      {week.dates.map((date) => {
-                                        const isSelected =
-                                          selectedDates.includes(date);
-                                        const isUsedByAnotherSlot =
-                                          isSelected &&
-                                          date !== selectedDate;
-
-                                        return (
-                                          <button
-                                            key={date}
-                                            type="button"
-                                            disabled={isUsedByAnotherSlot}
-                                            onClick={() =>
-                                              updateStudyDate(
-                                                week.dates,
-                                                date
-                                              )
-                                            }
-                                            className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                                              isSelected
-                                                ? "border-[#54765D] bg-[#54765D] text-white"
-                                                : "border-[#E2E5DC] bg-white text-[#54765D] hover:border-[#A9BBA7]"
-                                            } disabled:cursor-not-allowed disabled:opacity-40`}
-                                          >
-                                            {getWeekdayName(date)}{" "}
-                                            {formatDate(date)}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                );
-                              }
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-[#89958A]">
-                  Ngày thi không được đưa vào lịch học.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const error = validateSelectedStudyDates();
-                    setFeedback(
-                      error || "Đã lưu lựa chọn ngày học.",
-                      error ? "error" : "success"
-                    );
-                    if (!error) {
-                      setExpandedWeeks([]);
-                      setIsScheduleConfirmed(true);
-                    }
-                  }}
-                  className="rounded-xl bg-[#54765D] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#3F6249]"
-                >
-                  Xác nhận ngày học
-                </button>
-              </div>
-              </div>
-            </div>
+              }}
+              onHeaderAction={() => {
+                if (isScheduleConfirmed) {
+                  setIsScheduleTableExpanded((current) => !current);
+                } else {
+                  setIsScheduleDialogOpen(false);
+                }
+              }}
+            />
           )}
 
           {/* Study materials */}
           <div>
-            <label className="mb-2 block text-sm font-semibold text-[#536657]">
+            <label
+              htmlFor="study-material"
+              className="mb-1 block text-sm font-semibold text-[#4D4366]"
+            >
               Tài liệu ôn tập{" "}
               <span className="text-red-500">*</span>
             </label>
 
-            <p className="mb-3 text-sm leading-6 text-[#89958A]">
-              Tải tài liệu môn học lên. StudyPilot AI sẽ phân
-              tích nội dung, nhận diện các chương và chủ đề để
-              xây dựng lộ trình ôn tập.
+            <p className="mb-3 text-sm leading-6 text-[#716A82]">
+              Claude sẽ đọc tài liệu, chia thành từng bài theo chương và
+              xếp vào các ngày học bạn đã chọn.
             </p>
 
-            <label
-              htmlFor="study-material"
-              className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#C9D7C6] bg-[#F7F8F3] px-5 py-8 text-center transition hover:border-[#78947B] hover:bg-[#F0F4ED]"
-            >
-              <span className="text-4xl">📄</span>
-
-              <span className="mt-3 text-sm font-semibold text-[#355642]">
-                Chọn tài liệu từ thiết bị
-              </span>
-
-              <span className="mt-2 text-xs text-[#89958A]">
-                Hỗ trợ PDF, DOC, DOCX, PPT và PPTX · Tối đa 50 MB
-              </span>
-
-              <input
-                key={fileInputKey}
-                id="study-material"
-                type="file"
-                accept=".pdf,.doc,.docx,.ppt,.pptx"
-                required
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
-
-                  if (!file) {
-                    setSelectedFile(null);
-                    return;
-                  }
-
-                  const validationError = validateFile(file);
-
-                  if (validationError) {
-                    setSelectedFile(null);
-                    setFeedback(validationError, "error");
-                    e.target.value = "";
-                    return;
-                  }
-
-                  setFeedback("");
-                  setSelectedFile(file);
-                }}
-              />
-            </label>
-
-            {selectedFile && (
-              <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-[#DCE3D8] bg-white p-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="text-2xl">📘</span>
-
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[#355642]">
-                      {selectedFile.name}
-                    </p>
-
-                    <p className="mt-1 text-xs text-[#89958A]">
-                      {(selectedFile.size / (1024 * 1024)).toFixed(
-                        2
-                      )}{" "}
-                      MB
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedFile(null);
-                    setFileInputKey((current) => current + 1);
-                  }}
-                  className="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                >
-                  Xóa
-                </button>
-              </div>
-            )}
+            <MaterialDropzone
+              file={selectedFile}
+              inputKey={fileInputKey}
+              validate={validateFile}
+              onChange={(file) => {
+                setSelectedFile(file);
+                if (!file) setFileInputKey((current) => current + 1);
+              }}
+              // Lỗi file đã hiện ngay dưới khu tải lên, chỉ xóa thông báo cũ ở cuối form
+              onError={() => setFeedback("")}
+            />
           </div>
 
           {/* Submit */}
-          <div className="border-t border-[#EAEAE2] pt-6">
+          <div className="border-t border-[#ECE6EF] pt-6">
             {message && (
               <p
                 role={feedbackType === "error" ? "alert" : "status"}
@@ -1489,8 +1349,8 @@ export default function StudyPlansPage() {
                   feedbackType === "error"
                     ? "border-red-200 bg-red-50 text-red-700"
                     : feedbackType === "success"
-                      ? "border-[#C9DCC7] bg-[#E8F3E6] text-[#355642]"
-                      : "border-[#DCE3D8] bg-[#F7F8F3] text-[#536657]"
+                      ? "border-[#ECE6EF] bg-[#EEF1FD] text-[#24123A]"
+                      : "border-[#ECE6EF] bg-[#F7F5FA] text-[#4D4366]"
                 }`}
               >
                 {message}
@@ -1500,14 +1360,14 @@ export default function StudyPlansPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#54765D] px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-[#3F6249] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#5B7FE3] px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-[#4566D1] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
             >
               {isSubmitting
                 ? submissionStep || "Đang tạo kế hoạch..."
                 : "✨ Tạo kế hoạch với AI"}
             </button>
 
-            <p className="mt-3 text-xs text-[#9AA397]">
+            <p className="mt-3 text-xs text-[#716A82]">
               {isSubmitting
                 ? "Bạn có thể chờ ở màn hình này; không cần bấm lại."
                 : "Thông tin được lưu vào hệ thống trong quá trình tạo kế hoạch."}
@@ -1516,288 +1376,19 @@ export default function StudyPlansPage() {
         </form>
       </section>
 
-      {/* Plan list */}
-      <section className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-6 shadow-sm sm:p-8">
-        <div>
-          <h2 className="text-lg font-bold text-[#355642]">
-            Kế hoạch của tôi
-          </h2>
-
-          <p className="mt-1 text-sm text-[#89958A]">
-            Quản lý và theo dõi các kế hoạch ôn thi của bạn.
-          </p>
-        </div>
-
-        {isLoadingPlans ? (
-          <p className="mt-6 text-sm text-[#89958A]">
-            Đang tải danh sách kế hoạch...
-          </p>
-        ) : planError ? (
-          <p className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-600">
-            {planError}
-          </p>
-        ) : examPlans.length === 0 ? (
-          <div className="mt-6 flex flex-col items-center justify-center rounded-xl border border-dashed border-[#DCE3D8] bg-[#F7F8F3] px-5 py-10 text-center">
-            <span className="text-4xl">🗓️</span>
-
-            <h3 className="mt-3 font-semibold text-[#536657]">
-              Chưa có kế hoạch ôn thi
-            </h3>
-
-            <p className="mt-2 text-sm text-[#89958A]">
-              Những kế hoạch bạn tạo sẽ xuất hiện tại đây.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-            {examPlans.map((plan) => (
-              <div
-                key={plan.id}
-                className="rounded-xl border border-[#E2E5DC] bg-white p-5"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-bold text-[#355642]">
-                      {plan.title}
-                    </h3>
-
-                    <p className="mt-2 text-sm text-[#829080]">
-                      📅 Ngày thi:{" "}
-                      {new Date(
-                        plan.exam_date
-                      ).toLocaleDateString("vi-VN")}
-                    </p>
-
-                    <p className="mt-1 text-sm text-[#829080]">
-                      ⏰ Thời gian học:{" "}
-                      {plan.daily_available_minutes / 60} giờ/ngày
-                    </p>
-                  </div>
-
-                  <span className="rounded-lg bg-[#E8EEE4] px-3 py-1 text-xs font-semibold text-[#54765D]">
-                    Đang học
-                  </span>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPlan(plan.id)}
-                    className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition ${
-                      selectedPlanId === plan.id
-                        ? "bg-[#54765D] text-white"
-                        : "bg-[#F0F4ED] text-[#54765D] hover:bg-[#E2EBDD]"
-                    }`}
-                  >
-                    Xem chủ đề
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      router.push(`/study-plans/${plan.id}`)
-                    }
-                    className="rounded-lg bg-[#E8EEE4] px-3 py-2.5 text-sm font-semibold text-[#54765D] transition hover:bg-[#DCE7D8]"
-                  >
-                    Xem lộ trình →
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Topics of selected plan */}
-        {selectedPlanId && (
-          <div className="mt-8 border-t border-[#EAEAE2] pt-6">
-            <h3 className="text-lg font-bold text-[#355642]">
-              Các chủ đề ôn tập
-            </h3>
-
-            {isLoadingTopics ? (
-              <p className="mt-4 text-sm text-[#89958A]">
-                Đang tải danh sách chủ đề...
-              </p>
-            ) : topicError ? (
-              <p className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-600">
-                {topicError}
-              </p>
-            ) : planTopics.length === 0 ? (
-              <p className="mt-4 text-sm text-[#89958A]">
-                Kế hoạch này chưa có chủ đề ôn tập.
-              </p>
-            ) : (
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {planTopics.map((topic, index) => (
-                  <div
-                    key={topic.id}
-                    className="rounded-xl border border-[#E2E5DC] bg-white p-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#E8EEE4] text-sm font-bold text-[#54765D]">
-                        {index + 1}
-                      </span>
-
-                      <div className="min-w-0">
-                        <h4 className="font-semibold text-[#355642]">
-                          {getMainTopicTitle(topic.name)}
-                        </h4>
-
-                        <p className="mt-1 text-xs text-[#89958A]">
-                          Độ khó: {topic.difficulty_level}/5
-                          {" · "}
-                          Thời gian: {topic.estimated_minutes} phút
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      {/* My study schedule */}
-      <section className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-6 shadow-sm sm:p-8">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <h2 className="text-lg font-bold text-[#355642]">
-              📅 Lịch ôn tập của tôi
-            </h2>
-
-            <p className="mt-1 text-sm text-[#89958A]">
-              Theo dõi các buổi học đã được lên lịch từ AI hoặc
-              tạo thủ công.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              loadAllTopics();
-              loadStudySessions();
-            }}
-            disabled={isLoadingSessions}
-            className="rounded-xl border border-[#DCE3D8] bg-white px-4 py-2.5 text-sm font-semibold text-[#54765D] transition hover:bg-[#E8EEE4] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isLoadingSessions
-              ? "Đang tải..."
-              : "↻ Làm mới lịch học"}
-          </button>
-        </div>
-
-        {sessionError ? (
-          <div className="mt-6 rounded-xl bg-red-50 p-4 text-sm text-red-600">
-            {sessionError}
-          </div>
-        ) : isLoadingSessions ? (
-          <p className="mt-6 text-sm text-[#89958A]">
-            Đang tải danh sách buổi học...
-          </p>
-        ) : sortedSessions.length === 0 ? (
-          <div className="mt-6 flex flex-col items-center justify-center rounded-xl border border-dashed border-[#DCE3D8] bg-[#F7F8F3] px-5 py-10 text-center">
-            <span className="text-4xl">📖</span>
-
-            <h3 className="mt-3 font-semibold text-[#536657]">
-              Chưa có buổi học nào
-            </h3>
-
-            <p className="mt-2 text-sm text-[#89958A]">
-              Khi bạn tạo kế hoạch và lịch học, thông tin sẽ
-              xuất hiện tại đây.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-6 space-y-3">
-            <div className="mb-4 flex items-center justify-between">
-              <p className="text-sm font-medium text-[#536657]">
-                Tổng số buổi học
-              </p>
-
-              <span className="rounded-full bg-[#E8EEE4] px-3 py-1 text-sm font-bold text-[#54765D]">
-                {sortedSessions.length} buổi
-              </span>
-            </div>
-
-            {groupedScheduleWeeks.map((week) => (
-              <div
-                key={week.weekNumber}
-                className="rounded-2xl border border-[#DCE7D8] bg-[#F8FBF7] p-5 sm:p-6"
-              >
-                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-                  <h3 className="text-lg font-bold text-[#355642]">
-                    Tuần {week.weekNumber}
-                  </h3>
-                  <span className="w-fit rounded-full bg-[#E8EEE4] px-3 py-1 text-sm font-semibold text-[#54765D]">
-                    {week.days.length} ngày học
-                  </span>
-                </div>
-
-                <div className="mt-5 space-y-5">
-                  {week.days.map((day, dayIndex) => (
-                    <div key={day.dateKey}>
-                      <h4 className="mb-3 font-bold capitalize text-[#355642]">
-                        Ngày {dayIndex + 1} · {day.label}
-                      </h4>
-
-                      <div className="space-y-3 border-l-2 border-[#DCE7D8] pl-4">
-                        {day.sessions.map((session) => (
-                          <div
-                            key={session.id}
-                            className="rounded-xl border border-[#E2E5DC] bg-white p-4 sm:p-5"
-                          >
-                            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                              <div className="min-w-0">
-                                <h3 className="font-semibold text-[#355642]">
-                                  {getTopicName(session.topic_id)}
-                                </h3>
-
-                                <p className="mt-2 text-sm text-[#718074]">
-                                  ⏱ Thời lượng:{" "}
-                                  {session.duration_minutes} phút
-                                </p>
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span
-                                  className={`rounded-full px-3 py-1 text-xs font-semibold ${getSessionStatusStyle(
-                                    session.status
-                                  )}`}
-                                >
-                                  {getSessionStatus(session.status)}
-                                </span>
-
-                                <span className="rounded-full bg-[#E8EEE4] px-3 py-1 text-xs font-semibold text-[#54765D]">
-                                  {session.source === "ai"
-                                    ? "✨ AI đề xuất"
-                                    : "Tạo thủ công"}
-                                </span>
-                              </div>
-                            </div>
-
-                            {session.notes && (
-                              <div className="mt-4 border-t border-[#EAEAE2] pt-3">
-                                <p className="text-xs font-semibold text-[#718074]">
-                                  Ghi chú
-                                </p>
-
-                                <p className="mt-1 text-sm leading-6 text-[#89958A]">
-                                  {session.notes}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      {/* Môn học đang ôn → bấm "Xem chi tiết" để mở lộ trình */}
+      <PlanOverviewCards
+        plans={examPlans}
+        topics={allTopics}
+        sessions={studySessions}
+        isLoading={isLoadingPlans || isLoadingSessions}
+        error={planError || sessionError}
+        onRefresh={() => {
+          loadExamPlans();
+          loadAllTopics();
+          loadStudySessions();
+        }}
+      />
     </div>
   );
 }

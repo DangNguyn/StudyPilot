@@ -1,60 +1,87 @@
 @import "tailwindcss";
 
+/*
+ * StudyPilot design tokens
+ * Tím đậm (thương hiệu) · Xanh dừa (hành động chính) · Hồng (ôn lại)
+ * Vàng (điểm nhấn, tiến độ) · Nền kem
+ */
 :root {
-  --background: #fcfbf8;
-  --foreground: #171717;
-  --surface: rgba(255, 255, 255, 0.52);
-  --surface-muted: rgba(240, 250, 242, 0.6);
-  --border: rgba(22, 198, 90, 0.2);
-  --primary: #16c65a;
-  --primary-dark: #119b47;
-  --primary-green: #16c65a;
-  --primary-green-hover: #119b47;
-  --primary-green-light: rgba(22, 198, 90, 0.1);
-  --primary-green-border: rgba(22, 198, 90, 0.25);
-  --muted: #555555;
-  --text-soft: #777777;
+  --sp-paper: #fbf8f1;
+  --sp-paper-dot: #e9e2d3;
+  --sp-sidebar: #f6f2ea;
+  --sp-surface: #ffffff;
+  --sp-surface-2: #f7f5fa;
+
+  --sp-ink: #24123a;
+  --sp-text-2: #4d4366;
+  --sp-muted: #716a82;
+  --sp-soft: #a39db3;
+  --sp-line: #ece6ef;
+
+  --sp-purple: #4a1068;
+  --sp-purple-deep: #33094a;
+  --sp-peri: #5b7fe3;
+  --sp-peri-dark: #4566d1;
+  --sp-lav: #eef1fd;
+  --sp-lav-line: #d5ddf8;
+
+  --sp-pink: #e0457b;
+  --sp-pink-dark: #c42a63;
+  --sp-pink-bg: #fdedf3;
+  --sp-pink-line: #f6c6d7;
+
+  --sp-yellow: #f6c343;
+  --sp-amber-dark: #9a6400;
+  --sp-amber-bg: #fff5d6;
+
+  --sp-radius: 20px;
+  --sp-shadow-card: 0 1px 2px rgba(36, 18, 58, 0.04),
+    0 8px 24px rgba(36, 18, 58, 0.05);
+  --sp-shadow-pop: 4px 4px 0 var(--sp-purple-deep);
+
+  /* Giữ tên biến cũ để các đoạn code cũ vẫn hoạt động */
+  --background: var(--sp-paper);
+  --foreground: var(--sp-ink);
+  --surface: var(--sp-surface);
+  --border: var(--sp-line);
+  --primary: var(--sp-peri);
+  --primary-dark: var(--sp-purple);
+  --muted: var(--sp-muted);
+  --text-soft: var(--sp-soft);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-montserrat);
+  --color-sp-ink: var(--sp-ink);
+  --color-sp-purple: var(--sp-purple);
+  --color-sp-peri: var(--sp-peri);
+  --color-sp-pink: var(--sp-pink);
+  --color-sp-yellow: var(--sp-yellow);
+  --font-sans: var(--font-sp-body);
+  --font-display: var(--font-sp-display);
+  --font-accent: var(--font-sp-accent);
   --font-mono: var(--font-geist-mono);
+}
+
+html {
+  background-color: var(--sp-paper);
 }
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(
-      ellipse 65% 45% at 100% 100%,
-      rgba(220, 242, 185, 0.75) 0%,
-      rgba(220, 242, 185, 0.25) 45%,
-      transparent 75%
-    ),
-    radial-gradient(
-      ellipse 55% 40% at 0% 100%,
-      rgba(248, 232, 201, 0.65) 0%,
-      rgba(248, 232, 201, 0.2) 50%,
-      transparent 80%
-    ),
-    linear-gradient(180deg, #fcfbf8 0%, #faf8f2 50%, #f4f3e9 100%);
+  background-color: var(--sp-paper);
+  background-image: radial-gradient(
+    var(--sp-paper-dot) 1px,
+    transparent 1.2px
+  );
+  background-size: 22px 22px;
   background-attachment: fixed;
-  background-repeat: no-repeat;
-  background-size: cover;
-  color: var(--foreground);
-  font-family: var(--font-montserrat), Arial, Helvetica, sans-serif;
+  color: var(--sp-ink);
+  font-family: var(--font-sp-body), "Segoe UI", Arial, sans-serif;
   font-size: 15px;
   line-height: 1.6;
   min-width: 320px;
-}
-
-h1,
-h2 {
-  font-family: var(--font-anton), Impact, sans-serif;
-  font-weight: 400;
-  letter-spacing: 0.025em;
-  line-height: 1.15;
 }
 
 button,
@@ -62,101 +89,231 @@ a,
 input,
 select,
 textarea {
-  font-family: var(--font-montserrat), Arial, Helvetica, sans-serif;
+  font-family: inherit;
   -webkit-tap-highlight-color: transparent;
 }
 
-main {
-  min-height: calc(100vh - 76px);
+/* Tiêu đề trang: chữ đậm cô đặc, màu tím thương hiệu */
+h1 {
+  font-family: var(--font-sp-display), Impact, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+
+main h1 {
+  color: var(--sp-purple);
+}
+
+/* Tiêu đề khối: chữ thường, đậm */
+h2,
+h3 {
+  font-family: var(--font-sp-body), "Segoe UI", Arial, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
 }
 
 ::selection {
-  background: #e5f7eb;
-  color: #111111;
+  background: var(--sp-pink-bg);
+  color: var(--sp-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--sp-peri);
+  outline-offset: 2px;
+}
+
+/* ===== Thành phần dùng chung =====
+ * Đặt trong @layer components để class tiện ích của Tailwind
+ * (hidden, md:inline-flex, px-*...) vẫn ghi đè được khi cần.
+ */
+@layer components {
+
+  .sp-card {
+    background: var(--sp-surface);
+    border: 1px solid var(--sp-line);
+    border-radius: var(--sp-radius);
+    box-shadow: var(--sp-shadow-card);
+  }
+
+  .sp-card-pop {
+    background: var(--sp-surface);
+    border: 2px solid var(--sp-purple);
+    border-radius: var(--sp-radius);
+    box-shadow: 6px 6px 0 var(--sp-lav-line);
+  }
+
+  .sp-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 14px;
+    font-weight: 700;
+    line-height: 1.2;
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease,
+      background-color 0.15s ease;
+  }
+
+  .sp-btn-primary {
+    background: var(--sp-peri);
+    color: #fff;
+    border: 2px solid var(--sp-purple-deep);
+    box-shadow: 3px 3px 0 var(--sp-purple-deep);
+  }
+
+  .sp-btn-primary:hover:not(:disabled) {
+    background: var(--sp-peri-dark);
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 var(--sp-purple-deep);
+  }
+
+  .sp-btn-primary:active:not(:disabled) {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 var(--sp-purple-deep);
+  }
+
+  .sp-btn-secondary {
+    background: #fff;
+    color: var(--sp-ink);
+    border: 2px solid var(--sp-line);
+  }
+
+  .sp-btn-secondary:hover:not(:disabled) {
+    border-color: var(--sp-lav-line);
+    background: var(--sp-lav);
+  }
+
+  .sp-btn:disabled {
+    cursor: not-allowed;
+    background: #ebe8ef;
+    color: var(--sp-soft);
+    border-color: #ddd8e3;
+    box-shadow: none;
+  }
+
+  .sp-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.2rem 0.7rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1.5;
+  }
+
+  .sp-accent {
+    font-family: var(--font-sp-accent), Georgia, serif;
+    font-style: italic;
+    font-weight: 600;
+  }
+
+  .sp-squiggle {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8' viewBox='0 0 24 8'%3E%3Cpath d='M0 5 Q6 0 12 4 T24 4' fill='none' stroke='%23e0457b' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: repeat-x;
+    background-position: 0 100%;
+    background-size: 24px 8px;
+    padding-bottom: 10px;
+  }
+
+  @keyframes sp-twinkle {
+    0%,
+    100% {
+      transform: scale(1) rotate(0deg);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(0.82) rotate(12deg);
+      opacity: 0.75;
+    }
+  }
+
+  .sp-twinkle {
+    animation: sp-twinkle 3.2s ease-in-out infinite;
+  }
+
+  /* Thẻ buổi học vừa được mở rộng */
+  @keyframes sp-task-expand {
+    from {
+      opacity: 0.4;
+      transform: translateY(6px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .sp-task-expand {
+    animation: sp-task-expand 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  /* Thanh "sẵn sàng" chạy đầy khi chọn file */
+  @keyframes sp-fill-bar {
+    from {
+      width: 0%;
+    }
+    to {
+      width: 100%;
+    }
+  }
+
+  .sp-fill-bar {
+    width: 100%;
+    animation: sp-fill-bar 0.9s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  /* Tô sáng đoạn giải thích khi trả lời sai câu ôn nhanh */
+  @keyframes sp-evidence-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(246, 195, 67, 0);
+    }
+    35% {
+      box-shadow: 0 0 0 6px rgba(246, 195, 67, 0.45);
+    }
+  }
+
+  .sp-evidence {
+    animation: sp-evidence-pulse 1.1s ease-out 2;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sp-evidence,
+    .sp-twinkle,
+    .sp-fill-bar,
+    .sp-task-expand {
+      animation: none;
+    }
+  }
 }
 
 /*
- * Shared visual layer. Existing pages use Tailwind utility classes directly,
- * so these selectors centralize the redesign without changing their behavior.
+ * Nút hành động chính ở các trang cũ (dùng class màu bg-[#5B7FE3]):
+ * thêm viền tím và bóng lệch cho đồng bộ với thiết kế mới.
  */
-.app-background {
-  background: transparent !important;
-}
-
-[class~="bg-stone-50"],
-[class~="bg-[#F7F8F5]"],
-[class~="bg-[#F7F8F3]"] {
-  background-color: rgba(255, 255, 255, 0.12) !important;
-}
-
-[class~="bg-white"],
-[class~="bg-[#FCFBF7]"],
-[class~="bg-[#FCFBF7]"],
-[class~="bg-[#F8FAF6]"] {
-  background: rgba(255, 255, 255, 0.52) !important;
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  border-color: rgba(255, 255, 255, 0.72) !important;
-  box-shadow:
-    0 4px 20px rgba(60, 75, 50, 0.055),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
-}
-
-[class~="bg-[#E8EEE4]"],
-[class~="bg-[#E6EDE4]"],
-[class~="bg-[#E9EFE6]"],
-[class~="bg-[#EDF3EB]"] {
-  background: rgba(22, 198, 90, 0.1) !important;
-}
-
-[class~="bg-[#54765D]"],
-[class~="bg-[#2F7657]"] {
-  background-color: var(--primary) !important;
-  color: #111111 !important;
-}
-
-[class*="text-[#355642]"],
-[class*="text-[#26352B]"],
-[class*="text-[#183229]"],
-[class*="text-[var(--primary-dark)]"] {
-  color: #111111 !important;
-}
-
-[class*="text-[#54765D]"],
-[class*="text-[#2F7657]"],
-[class*="text-[#3F6048]"] {
-  color: var(--primary-green, #16c65a) !important;
-}
-
-[class*="text-[#829080]"],
-[class*="text-[#89958A]"],
-[class*="text-[#718074]"],
-[class*="text-[#536657]"] {
-  color: #555555 !important;
-}
-
-[class*="border-[#E2E5DC]"],
-[class*="border-[#E8E8DF]"],
-[class*="border-[#E1E7DF]"],
-[class*="border-[#DCE3D8]"] {
-  border-color: rgba(22, 198, 90, 0.2) !important;
-}
-
-button[class*="bg-[#54765D]"],
-a[class*="bg-[#54765D]"],
-button[class*="bg-[#2F7657]"],
-a[class*="bg-[#2F7657]"] {
-  border-radius: 999px;
-  font-weight: 600;
+main button[class*="bg-[#5B7FE3]"],
+main a[class*="bg-[#5B7FE3]"] {
+  border: 2px solid var(--sp-purple-deep);
+  box-shadow: 3px 3px 0 var(--sp-purple-deep);
+  font-weight: 700;
   transition:
-    background-color 0.25s ease,
-    transform 0.25s ease;
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
 }
 
-button[class*="bg-[#54765D]"]:hover,
-a[class*="bg-[#54765D]"]:hover,
-button[class*="bg-[#2F7657]"]:hover,
-a[class*="bg-[#2F7657]"]:hover {
-  background-color: var(--primary-dark) !important;
-  color: #111111 !important;
+main button[class*="bg-[#5B7FE3]"]:hover:not(:disabled),
+main a[class*="bg-[#5B7FE3]"]:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--sp-purple-deep);
+}
+
+main button[class*="bg-[#5B7FE3]"]:disabled {
+  border-color: #ddd8e3;
+  box-shadow: none;
 }

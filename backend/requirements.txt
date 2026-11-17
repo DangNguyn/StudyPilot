@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+supabase
+groq
+google-genai
+anthropic
+pypdf
+python-docx
+python-pptx

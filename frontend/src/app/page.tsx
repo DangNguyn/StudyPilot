@@ -411,19 +411,19 @@ export default function Home() {
       case "completed":
         return {
           label: "Đã hoàn thành",
-          className: "bg-[#E5EFE5] text-[#3F7049]",
+          className: "bg-[#EEF1FD] text-[#4566D1]",
         };
 
       case "in_progress":
         return {
           label: "Đang học",
-          className: "bg-[#FFF0D9] text-[#A36A20]",
+          className: "bg-[#FFF5D6] text-[#9A6400]",
         };
 
       default:
         return {
           label: "Chưa bắt đầu",
-          className: "bg-[#EDF0EA] text-[#687568]",
+          className: "bg-[#EEF1FD] text-[#4D4366]",
         };
     }
   };
@@ -433,22 +433,22 @@ export default function Home() {
       {/* Welcome */}
       <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <p className="text-sm font-medium capitalize text-[#829080]">
+          <p className="text-sm font-medium capitalize text-[#716A82]">
             {today}
           </p>
 
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#355642]">
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#24123A]">
             Chào mừng trở lại! 👋
           </h1>
 
-          <p className="mt-2 text-sm text-[#829080]">
+          <p className="mt-2 text-sm text-[#716A82]">
             Sẵn sàng cho một ngày học tập hiệu quả cùng StudyPilot?
           </p>
         </div>
 
         <Link
           href="/study-plans"
-          className="inline-flex w-fit items-center gap-2 rounded-xl bg-[#54765D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#3F6249]"
+          className="inline-flex w-fit items-center gap-2 rounded-xl bg-[#5B7FE3] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4566D1]"
         >
           + Tạo kế hoạch mới
         </Link>
@@ -457,11 +457,11 @@ export default function Home() {
       {/* Statistics */}
       <section>
         <div className="mb-4">
-          <h2 className="text-lg font-bold text-[#355642]">
+          <h2 className="text-lg font-bold text-[#24123A]">
             Tổng quan học tập
           </h2>
 
-          <p className="mt-1 text-sm text-[#89958A]">
+          <p className="mt-1 text-sm text-[#716A82]">
             Theo dõi tình hình học tập của bạn.
           </p>
         </div>
@@ -470,23 +470,23 @@ export default function Home() {
           {statistics.map((item) => (
             <div
               key={item.title}
-              className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-5 shadow-sm"
+              className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-5 shadow-sm"
             >
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-[#829080]">
+                <p className="text-sm font-medium text-[#716A82]">
                   {item.title}
                 </p>
 
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#E9EFE6] text-lg">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#EEF1FD] text-lg">
                   {item.icon}
                 </span>
               </div>
 
-              <p className="mt-4 text-3xl font-bold text-[#355642]">
+              <p className="mt-4 text-3xl font-bold text-[#24123A]">
                 {loading ? "..." : item.value.toLocaleString("vi-VN")}
               </p>
 
-              <p className="mt-1 text-xs text-[#9AA397]">
+              <p className="mt-1 text-xs text-[#716A82]">
                 {item.note}
               </p>
             </div>
@@ -497,41 +497,41 @@ export default function Home() {
       {/* Main content */}
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         {/* Today's plan */}
-        <div className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-6 xl:col-span-2">
+        <div className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-6 xl:col-span-2">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-bold text-[#355642]">
+              <h2 className="text-lg font-bold text-[#24123A]">
                 Kế hoạch hôm nay
               </h2>
 
-              <p className="mt-1 text-sm text-[#89958A]">
+              <p className="mt-1 text-sm text-[#716A82]">
                 Những nội dung bạn cần hoàn thành.
               </p>
             </div>
 
             <Link
               href="/study-plans"
-              className="text-sm font-semibold text-[#54765D] hover:underline"
+              className="text-sm font-semibold text-[#4566D1] hover:underline"
             >
               Xem kế hoạch →
             </Link>
           </div>
 
           {loading ? (
-            <div className="mt-6 rounded-xl border border-dashed border-[#DCE3D8] bg-[#F7F8F3] px-5 py-10 text-center text-sm text-[#89958A]">
+            <div className="mt-6 rounded-xl border border-dashed border-[#ECE6EF] bg-[#F7F5FA] px-5 py-10 text-center text-sm text-[#716A82]">
               Đang tải kế hoạch học tập...
             </div>
           ) : dashboard.todaySessions.length === 0 ? (
-            <div className="mt-6 flex flex-col items-center justify-center rounded-xl border border-dashed border-[#DCE3D8] bg-[#F7F8F3] px-5 py-10 text-center">
+            <div className="mt-6 flex flex-col items-center justify-center rounded-xl border border-dashed border-[#ECE6EF] bg-[#F7F5FA] px-5 py-10 text-center">
               <span className="text-4xl">📖</span>
 
-              <h3 className="mt-4 font-semibold text-[#536657]">
+              <h3 className="mt-4 font-semibold text-[#4D4366]">
                 {dashboard.planCount === 0
                   ? "Bạn chưa có kế hoạch ôn thi"
                   : "Hôm nay chưa có buổi học nào"}
               </h3>
 
-              <p className="mt-2 max-w-sm text-sm leading-6 text-[#89958A]">
+              <p className="mt-2 max-w-sm text-sm leading-6 text-[#716A82]">
                 {dashboard.planCount === 0
                   ? "Hãy tạo kế hoạch ôn thi để StudyPilot giúp bạn sắp xếp lịch học phù hợp."
                   : "Bạn có thể xem các buổi học trong kế hoạch hoặc tiếp tục những bài học đã được mở khóa."}
@@ -539,7 +539,7 @@ export default function Home() {
 
               <Link
                 href="/study-plans"
-                className="mt-5 rounded-xl bg-[#E6EDE4] px-5 py-2.5 text-sm font-semibold text-[#355642] transition hover:bg-[#DCE7D9]"
+                className="mt-5 rounded-xl bg-[#EEF1FD] px-5 py-2.5 text-sm font-semibold text-[#24123A] transition hover:bg-[#EEF1FD]"
               >
                 Xem kế hoạch học tập
               </Link>
@@ -557,15 +557,15 @@ export default function Home() {
                 return (
                   <div
                     key={session.id}
-                    className="rounded-xl border border-[#E8E8DF] bg-white p-4"
+                    className="rounded-xl border border-[#ECE6EF] bg-white p-4"
                   >
                     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
                       <div className="min-w-0">
-                        <h3 className="font-semibold text-[#355642]">
+                        <h3 className="font-semibold text-[#24123A]">
                           {getTopicName(session)}
                         </h3>
 
-                        <p className="mt-1 text-xs text-[#89958A]">
+                        <p className="mt-1 text-xs text-[#716A82]">
                           {getPlanName(session)}
                         </p>
 
@@ -577,14 +577,14 @@ export default function Home() {
                           </span>
 
                           {!unlocked && (
-                            <span className="rounded-full bg-[#FBE9E5] px-3 py-1 text-xs font-medium text-[#A94F3D]">
+                            <span className="rounded-full bg-[#FDEDF3] px-3 py-1 text-xs font-medium text-[#C42A63]">
                               🔒 Chưa mở khóa
                             </span>
                           )}
                         </div>
 
                         {!unlocked && session.lock_reason && (
-                          <p className="mt-2 text-xs leading-5 text-[#A94F3D]">
+                          <p className="mt-2 text-xs leading-5 text-[#C42A63]">
                             {session.lock_reason}
                           </p>
                         )}
@@ -593,7 +593,7 @@ export default function Home() {
                       {unlocked ? (
                         <Link
                           href={`/study-sessions/${session.id}`}
-                          className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[#54765D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#3F6249]"
+                          className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[#5B7FE3] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#4566D1]"
                         >
                           {session.status === "completed"
                             ? "Xem lại"
@@ -602,7 +602,7 @@ export default function Home() {
                               : "Bắt đầu học"}
                         </Link>
                       ) : (
-                        <span className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[#F0F0EA] px-4 py-2.5 text-sm font-semibold text-[#92998F]">
+                        <span className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[#EEF1FD] px-4 py-2.5 text-sm font-semibold text-[#716A82]">
                           Đang khóa
                         </span>
                       )}
@@ -615,12 +615,12 @@ export default function Home() {
         </div>
 
         {/* Progress */}
-        <div className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-6">
-          <h2 className="text-lg font-bold text-[#355642]">
+        <div className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-6">
+          <h2 className="text-lg font-bold text-[#24123A]">
             Tiến độ ôn thi
           </h2>
 
-          <p className="mt-1 text-sm text-[#89958A]">
+          <p className="mt-1 text-sm text-[#716A82]">
             Theo dõi mục tiêu học tập.
           </p>
 
@@ -628,17 +628,17 @@ export default function Home() {
             <div
               className="flex h-32 w-32 items-center justify-center rounded-full p-[10px]"
               style={{
-                background: `conic-gradient(#54765D ${dashboard.progressPercent}%, #E8EDE5 ${dashboard.progressPercent}% 100%)`,
+                background: `conic-gradient(#5B7FE3 ${dashboard.progressPercent}%, #ECE6EF ${dashboard.progressPercent}% 100%)`,
               }}
             >
-              <div className="flex h-full w-full items-center justify-center rounded-full bg-[#FCFBF7]">
-                <span className="text-3xl font-bold text-[#54765D]">
+              <div className="flex h-full w-full items-center justify-center rounded-full bg-[#FFFFFF]">
+                <span className="text-3xl font-bold text-[#4566D1]">
                   {loading ? "..." : `${dashboard.progressPercent}%`}
                 </span>
               </div>
             </div>
 
-            <p className="mt-5 font-semibold text-[#536657]">
+            <p className="mt-5 font-semibold text-[#4D4366]">
               {dashboard.totalSessions === 0
                 ? "Chưa có dữ liệu tiến độ"
                 : dashboard.progressPercent === 100
@@ -646,7 +646,7 @@ export default function Home() {
                   : "Tiếp tục duy trì tiến độ"}
             </p>
 
-            <p className="mt-2 text-xs leading-5 text-[#89958A]">
+            <p className="mt-2 text-xs leading-5 text-[#716A82]">
               {dashboard.totalSessions > 0
                 ? `${dashboard.completedSessions}/${dashboard.totalSessions} buổi học đã hoàn thành`
                 : "Tiến độ sẽ được cập nhật khi bạn bắt đầu thực hiện kế hoạch."}
@@ -654,7 +654,7 @@ export default function Home() {
 
             <Link
               href="/study-plans"
-              className="mt-5 text-sm font-semibold text-[#54765D] hover:underline"
+              className="mt-5 text-sm font-semibold text-[#4566D1] hover:underline"
             >
               Xem chi tiết kế hoạch →
             </Link>
@@ -665,11 +665,11 @@ export default function Home() {
       {/* Quick actions */}
       <section>
         <div className="mb-4">
-          <h2 className="text-lg font-bold text-[#355642]">
+          <h2 className="text-lg font-bold text-[#24123A]">
             Truy cập nhanh
           </h2>
 
-          <p className="mt-1 text-sm text-[#89958A]">
+          <p className="mt-1 text-sm text-[#716A82]">
             Tiếp tục hành trình học tập của bạn.
           </p>
         </div>
@@ -679,21 +679,21 @@ export default function Home() {
             <Link
               key={action.title}
               href={action.href}
-              className="group rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-5 transition hover:-translate-y-1 hover:border-[#C8D6C6] hover:shadow-md"
+              className="group rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-5 transition hover:-translate-y-1 hover:border-[#ECE6EF] hover:shadow-md"
             >
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#E9EFE6] text-2xl">
+              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#EEF1FD] text-2xl">
                 {action.icon}
               </span>
 
-              <h3 className="mt-4 font-bold text-[#355642]">
+              <h3 className="mt-4 font-bold text-[#24123A]">
                 {action.title}
               </h3>
 
-              <p className="mt-2 text-sm text-[#89958A]">
+              <p className="mt-2 text-sm text-[#716A82]">
                 {action.description}
               </p>
 
-              <p className="mt-4 text-sm font-semibold text-[#54765D] group-hover:underline">
+              <p className="mt-4 text-sm font-semibold text-[#4566D1] group-hover:underline">
                 Truy cập →
               </p>
             </Link>
@@ -701,64 +701,23 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Backend status */}
-      <section className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-5">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-          <div>
-            <h2 className="font-bold text-[#355642]">
-              Trạng thái hệ thống
-            </h2>
-
-            <p className="mt-1 text-sm text-[#89958A]">
-              Kiểm tra kết nối giữa Frontend và Backend.
-            </p>
-          </div>
-
-          <div className="text-sm">
-            {loading && (
-              <span className="text-[#9A874D]">
-                Đang cập nhật...
-              </span>
-            )}
-
-            {!loading && error && (
-              <span className="text-red-600">
-                ● {error}
-              </span>
-            )}
-
-            {!loading && backendData && (
-              <span className="font-semibold text-[#54765D]">
-                ● Backend đã kết nối
-              </span>
-            )}
-          </div>
-        </div>
-
-        {backendData && (
-          <p className="mt-3 text-xs text-[#89958A]">
-            {backendData.message}
-            {backendData.source
-              ? ` · Nguồn: ${backendData.source}`
-              : ""}
+      {/* Chỉ báo khi không tải được dữ liệu (không hiện thông tin kỹ thuật cho người dùng) */}
+      {!loading && (error || dataWarning) && (
+        <section className="flex flex-col gap-3 rounded-2xl border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-medium text-[var(--sp-pink-dark)]">
+            {error
+              ? "Chưa tải được dữ liệu học tập. Vui lòng thử lại sau ít phút."
+              : "Một phần dữ liệu chưa tải được, số liệu có thể chưa đầy đủ."}
           </p>
-        )}
-
-        {dataWarning && (
-          <p className="mt-2 text-xs text-[#A36A20]">
-            ⚠ {dataWarning}
-          </p>
-        )}
-
-        <button
-          type="button"
-          onClick={refreshDashboard}
-          disabled={loading}
-          className="mt-4 rounded-lg border border-[#DCE3D8] px-4 py-2 text-xs font-semibold text-[#54765D] transition hover:bg-[#E9EFE6] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {loading ? "Đang cập nhật..." : "↻ Làm mới dữ liệu"}
-        </button>
-      </section>
+          <button
+            type="button"
+            onClick={refreshDashboard}
+            className="sp-btn sp-btn-secondary w-fit px-4 py-2 text-sm"
+          >
+            ↻ Thử lại
+          </button>
+        </section>
+      )}
     </div>
   );
 }

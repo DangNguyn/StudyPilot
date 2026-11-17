@@ -7,6 +7,7 @@ import {
   getContentKeyPoints,
   getLearningContentBullets,
   getPreferredContentTitle,
+  stripOutlineNumbers,
 } from "@/lib/content-titles";
 
 const API_URL = "http://127.0.0.1:8000";
@@ -103,19 +104,19 @@ function ContentSectionView({
       className={
         level === 0
           ? "space-y-3"
-          : "ml-4 mt-4 space-y-3 border-l-2 border-[#E8EEE4] pl-4"
+          : "ml-4 mt-4 space-y-3 border-l-2 border-[#ECE6EF] pl-4"
       }
     >
-      <h3 className="text-base font-bold leading-7 text-[#355642]">
-        {section.heading}
+      <h3 className="text-base font-bold leading-7 text-[#24123A]">
+        {stripOutlineNumbers(section.heading)}
       </h3>
 
       {contentBullets.length > 0 && (
-        <div className="rounded-xl bg-[#F7F8F3] p-4">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#829184]">
+        <div className="rounded-xl bg-[#F7F5FA] p-4">
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#716A82]">
             Nội dung
           </p>
-          <ul className="list-disc space-y-2 pl-5 text-sm leading-7 text-[#536657]">
+          <ul className="list-disc space-y-2 pl-5 text-sm leading-7 text-[#4D4366]">
             {contentBullets.map((bullet, index) => (
               <li key={`${index}-${bullet}`}>{bullet}</li>
             ))}
@@ -125,9 +126,9 @@ function ContentSectionView({
 
       {table?.headers?.length &&
         table.rows?.length && (
-          <div className="overflow-x-auto rounded-xl border border-[#E8EEE4]">
+          <div className="overflow-x-auto rounded-xl border border-[#ECE6EF]">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-[#F0FAF2] text-[#171717]">
+              <thead className="bg-[#F7F5FA] text-[#24123A]">
                 <tr>
                   {table.headers.map((header) => (
                     <th
@@ -139,13 +140,13 @@ function ContentSectionView({
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8EEE4]">
+              <tbody className="divide-y divide-[#ECE6EF]">
                 {table.rows.map((row, rowIndex) => (
                   <tr key={`row-${rowIndex}`} className="bg-white/60">
                     {table.headers.map((header, cellIndex) => (
                       <td
                         key={`${header}-${cellIndex}`}
-                        className="px-4 py-3 align-top leading-6 text-[#555555]"
+                        className="px-4 py-3 align-top leading-6 text-[#716A82]"
                       >
                         {row[cellIndex] || ""}
                       </td>
@@ -158,11 +159,11 @@ function ContentSectionView({
         )}
 
       {contentBullets.length === 0 && keyPoints.length > 0 && (
-        <div className="rounded-xl border border-[#E8EEE4] p-4">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#54765D]">
+        <div className="rounded-xl border border-[#ECE6EF] p-4">
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[#4566D1]">
             Ý chính cần ghi nhớ
           </p>
-          <ul className="list-disc space-y-2 pl-5 text-sm leading-7 text-[#536657]">
+          <ul className="list-disc space-y-2 pl-5 text-sm leading-7 text-[#4D4366]">
             {keyPoints.map((point, index) => (
               <li key={`${index}-${point}`}>{point}</li>
             ))}
@@ -513,13 +514,13 @@ export default function StudySessionPage() {
     <div className="mx-auto max-w-5xl space-y-6">
       <button
         onClick={() => router.back()}
-        className="text-sm font-medium text-[#829080] hover:text-[#355642]"
+        className="text-sm font-medium text-[#716A82] hover:text-[#24123A]"
       >
         ← Quay lại lộ trình
       </button>
 
       {isLoading ? (
-        <div className="rounded-2xl bg-[#FCFBF7] p-10 text-center text-[#89958A]">
+        <div className="rounded-2xl bg-[#FFFFFF] p-10 text-center text-[#716A82]">
           Đang tải thông tin buổi học...
         </div>
       ) : error ? (
@@ -528,27 +529,27 @@ export default function StudySessionPage() {
         </div>
       ) : session ? (
         <>
-          <section className="overflow-hidden rounded-3xl border border-[#DDE8DF] bg-gradient-to-br from-[#F5FAF4] via-white to-[#EEF6F0] p-6 shadow-sm sm:p-8">
+          <section className="overflow-hidden rounded-3xl border border-[#ECE6EF] bg-gradient-to-br from-[#F7F5FA] via-white to-[#F7F5FA] p-6 shadow-sm sm:p-8">
             <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#6B8872]">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#4566D1]">
                   KHÔNG GIAN HỌC TẬP
                 </p>
 
-                <h1 className="mt-3 text-3xl font-bold tracking-tight text-[#294A35]">
+                <h1 className="mt-3 text-3xl font-bold tracking-tight text-[#24123A]">
                   {getPreferredContentTitle(
                     topic?.name,
                     contentSections[0]?.heading
                   )}
                 </h1>
 
-                <p className="mt-3 max-w-2xl text-sm leading-7 text-[#6D7F71]">
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-[#716A82]">
                   Học theo trọng tâm, ghi nhớ ý chính và hoàn thành nội dung
                   được phân bổ cho ngày hôm nay.
                 </p>
               </div>
 
-              <span className="inline-flex w-fit items-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#54765D] shadow-sm">
+              <span className="inline-flex w-fit items-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#4566D1] shadow-sm">
                 {session.status === "completed"
                   ? "✓ Đã hoàn thành"
                   : session.status === "in_progress"
@@ -558,13 +559,13 @@ export default function StudySessionPage() {
             </div>
 
             <div className="mt-7 max-w-xl">
-              <div className="mb-2 flex items-center justify-between text-xs font-medium text-[#718075]">
+              <div className="mb-2 flex items-center justify-between text-xs font-medium text-[#716A82]">
                 <span>Tiến độ buổi học</span>
                 <span>{studyProgress}%</span>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-[#DDE9DE]">
+              <div className="h-2 overflow-hidden rounded-full bg-[#EEF1FD]">
                 <div
-                  className="h-full rounded-full bg-[#6B9072] transition-all"
+                  className="h-full rounded-full bg-[#5B7FE3] transition-all"
                   style={{ width: `${studyProgress}%` }}
                 />
               </div>
@@ -572,27 +573,27 @@ export default function StudySessionPage() {
           </section>
 
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-5">
-              <p className="text-sm text-[#89958A]">Ngày học</p>
-              <p className="mt-2 font-bold text-[#355642]">
+            <div className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-5">
+              <p className="text-sm text-[#716A82]">Ngày học</p>
+              <p className="mt-2 font-bold text-[#24123A]">
                 {new Date(session.scheduled_start).toLocaleDateString(
                   "vi-VN"
                 )}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-5">
-              <p className="text-sm text-[#89958A]">
+            <div className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-5">
+              <p className="text-sm text-[#716A82]">
                 Thời lượng yêu cầu
               </p>
-              <p className="mt-2 font-bold text-[#355642]">
+              <p className="mt-2 font-bold text-[#24123A]">
                 {session.duration_minutes} phút
               </p>
             </div>
 
-            <div className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-5">
-              <p className="text-sm text-[#89958A]">Trạng thái</p>
-              <p className="mt-2 font-bold text-[#355642]">
+            <div className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-5">
+              <p className="text-sm text-[#716A82]">Trạng thái</p>
+              <p className="mt-2 font-bold text-[#24123A]">
                 {session.status === "scheduled"
                   ? "Chưa bắt đầu"
                   : session.status === "in_progress"
@@ -604,7 +605,7 @@ export default function StudySessionPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-6">
+          <section className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-6">
             {actionError && (
               <p className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">
                 {actionError}
@@ -614,11 +615,11 @@ export default function StudySessionPage() {
             {session.status === "scheduled" && (
               <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
                 <div>
-                  <h2 className="font-bold text-[#355642]">
+                  <h2 className="font-bold text-[#24123A]">
                     Bạn đã sẵn sàng học chưa?
                   </h2>
 
-                  <p className="mt-1 text-sm text-[#89958A]">
+                  <p className="mt-1 text-sm text-[#716A82]">
                     Nhấn bắt đầu để StudyPilot ghi nhận thời gian học thực tế.
                   </p>
                 </div>
@@ -627,7 +628,7 @@ export default function StudySessionPage() {
                   type="button"
                   onClick={handleStartSession}
                   disabled={isStarting}
-                  className="rounded-xl bg-[#54765D] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#3F6249] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-xl bg-[#5B7FE3] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#4566D1] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isStarting
                     ? "Đang bắt đầu..."
@@ -639,11 +640,11 @@ export default function StudySessionPage() {
             {session.status === "in_progress" && (
               <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
                 <div>
-                  <p className="font-bold text-[#355642]">
+                  <p className="font-bold text-[#24123A]">
                     Buổi học đang diễn ra
                   </p>
 
-                  <p className="mt-1 text-sm text-[#89958A]">
+                  <p className="mt-1 text-sm text-[#716A82]">
                     StudyPilot đang ghi nhận thời gian học thực tế của bạn.
                   </p>
 
@@ -654,7 +655,7 @@ export default function StudySessionPage() {
                       isCompleting ||
                       studySeconds < MINIMUM_STUDY_SECONDS
                     }
-                    className="mt-4 rounded-xl bg-[#54765D] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#3F6249] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-4 rounded-xl bg-[#5B7FE3] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#4566D1] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isCompleting
                       ? "Đang hoàn thành..."
@@ -666,17 +667,17 @@ export default function StudySessionPage() {
                   </button>
                 </div>
 
-                <div className="rounded-xl bg-[#E8EEE4] px-6 py-4 text-center">
-                  <p className="text-xs font-medium text-[#54765D]">
+                <div className="rounded-xl bg-[#EEF1FD] px-6 py-4 text-center">
+                  <p className="text-xs font-medium text-[#4566D1]">
                     THỜI GIAN ĐÃ HỌC
                   </p>
 
-                  <p className="mt-2 font-mono text-3xl font-bold tracking-wider text-[#355642]">
+                  <p className="mt-2 font-mono text-3xl font-bold tracking-wider text-[#24123A]">
                     {formatStudyTime(studySeconds)}
                   </p>
 
-                  <p className="mt-2 text-xs text-[#829080]">
-                    Mục tiêu tối thiểu: 5 phút
+                  <p className="mt-2 text-xs text-[#716A82]">
+                    Không yêu cầu thời gian tối thiểu
                   </p>
                 </div>
               </div>
@@ -689,7 +690,7 @@ export default function StudySessionPage() {
                     Bạn đã hoàn thành buổi học này.
                   </p>
 
-                  <p className="mt-1 text-sm text-[#89958A]">
+                  <p className="mt-1 text-sm text-[#716A82]">
                     Bài kiểm tra kiến thức đã được StudyPilot tạo tự động
                     cho buổi học này. Bạn có thể vào mục Kiểm tra kiến thức
                     để thực hiện bài kiểm tra.
@@ -699,7 +700,7 @@ export default function StudySessionPage() {
                 <button
                   type="button"
                   onClick={() => router.push("/quizzes")}
-                  className="rounded-xl bg-[#54765D] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#3F6249]"
+                  className="rounded-xl bg-[#5B7FE3] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#4566D1]"
                 >
                   Đến Kiểm tra kiến thức →
                 </button>
@@ -709,8 +710,8 @@ export default function StudySessionPage() {
 
           <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
             {contentSections.length > 0 && (
-              <aside className="rounded-2xl border border-[#E1E9E1] bg-[#F8FBF7] p-5 lg:sticky lg:top-6">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#829184]">
+              <aside className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-5 lg:sticky lg:top-6">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#716A82]">
                   MỤC LỤC BÀI HỌC
                 </p>
                 <nav className="mt-4 space-y-1">
@@ -718,26 +719,26 @@ export default function StudySessionPage() {
                     <a
                       key={`${number}-${section.heading}`}
                       href={`#lesson-content-${number}`}
-                      className="block rounded-lg py-2 pr-2 text-sm leading-5 text-[#5F7464] transition hover:bg-white hover:text-[#355642]"
+                      className="block rounded-lg py-2 pr-2 text-sm leading-5 text-[#4D4366] transition hover:bg-white hover:text-[#24123A]"
                       style={{ paddingLeft: `${12 + level * 12}px` }}
                     >
-                      <span className="mr-2 text-xs font-bold text-[#91A596]">
+                      <span className="mr-2 text-xs font-bold text-[#716A82]">
                         {number}
                       </span>
-                      {section.heading}
+                      {stripOutlineNumbers(section.heading)}
                     </a>
                   ))}
                 </nav>
               </aside>
             )}
 
-          <section className="rounded-2xl border border-[#E8E8DF] bg-[#FCFBF7] p-6 shadow-sm sm:p-8">
+          <section className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-6 shadow-sm sm:p-8">
             <div className="mb-6">
-              <p className="text-sm font-medium text-[#829080]">
+              <p className="text-sm font-medium text-[#716A82]">
                 BÀI HỌC HÔM NAY
               </p>
 
-              <h2 className="mt-2 text-xl font-bold text-[#355642]">
+              <h2 className="mt-2 text-xl font-bold text-[#24123A]">
                 {getPreferredContentTitle(
                   topic?.name,
                   contentSections[0]?.heading
@@ -745,25 +746,25 @@ export default function StudySessionPage() {
               </h2>
 
               {topic?.hierarchy && (
-                <p className="mt-2 text-sm text-[#89958A]">
-                  {topic.hierarchy}
+                <p className="mt-2 text-sm text-[#716A82]">
+                  {stripOutlineNumbers(topic.hierarchy)}
                 </p>
               )}
 
               {topic?.description && (
-                <p className="mt-3 text-sm leading-7 text-[#536657]">
+                <p className="mt-3 text-sm leading-7 text-[#4D4366]">
                   {topic.description}
                 </p>
               )}
             </div>
 
             {!topic?.content_sections?.length && chunks.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-[#DCE3D8] bg-[#F7F8F3] p-8 text-center">
-                <p className="font-semibold text-[#536657]">
+              <div className="rounded-xl border border-dashed border-[#ECE6EF] bg-[#F7F5FA] p-8 text-center">
+                <p className="font-semibold text-[#4D4366]">
                   Chưa có nội dung tài liệu cho buổi học này
                 </p>
 
-                <p className="mt-2 text-sm text-[#89958A]">
+                <p className="mt-2 text-sm text-[#716A82]">
                   Bạn cần kiểm tra lại việc AI phân bổ nội dung tài liệu cho chủ đề.
                 </p>
               </div>
@@ -774,7 +775,7 @@ export default function StudySessionPage() {
                   <article
                     id={`lesson-section-${index + 1}`}
                     key={`${index}-${section.heading}`}
-                    className="scroll-mt-6 rounded-2xl border border-[#E2E5DC] bg-white p-5 shadow-[0_8px_24px_rgba(54,85,61,0.04)] sm:p-6"
+                    className="scroll-mt-6 rounded-2xl border border-[#ECE6EF] bg-white p-5 shadow-[0_8px_24px_rgba(54,85,61,0.04)] sm:p-6"
                   >
                     <ContentSectionView
                       section={section}
@@ -788,21 +789,21 @@ export default function StudySessionPage() {
                 {chunks.map((chunk, index) => (
                   <article
                     key={chunk.id}
-                    className="rounded-xl border border-[#E2E5DC] bg-white p-5"
+                    className="rounded-xl border border-[#ECE6EF] bg-white p-5"
                   >
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="font-semibold text-[#355642]">
+                      <h3 className="font-semibold text-[#24123A]">
                         Phần nội dung {index + 1}
                       </h3>
 
-                      <span className="rounded-full bg-[#E8EEE4] px-3 py-1 text-xs font-medium text-[#54765D]">
+                      <span className="rounded-full bg-[#EEF1FD] px-3 py-1 text-xs font-medium text-[#4566D1]">
                         {chunk.page_number
                           ? `Trang ${chunk.page_number}`
                           : "Tài liệu gốc"}
                       </span>
                     </div>
 
-                    <p className="whitespace-pre-wrap text-sm leading-8 text-[#536657]">
+                    <p className="whitespace-pre-wrap text-sm leading-8 text-[#4D4366]">
                       {chunk.content}
                     </p>
                   </article>

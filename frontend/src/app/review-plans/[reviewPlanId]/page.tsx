@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getMainTopicTitle } from "@/lib/content-titles";
+import { getMainTopicTitle, stripOutlineNumbers } from "@/lib/content-titles";
 
 const API_URL = "http://127.0.0.1:8000";
 interface ReviewChunk {
@@ -73,9 +73,9 @@ function ContentSectionView({
   level?: number;
 }) {
   return (
-    <div className={level > 0 ? "mt-4 border-l-2 border-[#E2E9DF] pl-4" : "mt-4"}>
-      <h4 className="font-bold text-[#1C3829]">
-        {section.heading}
+    <div className={level > 0 ? "mt-4 border-l-2 border-[#ECE6EF] pl-4" : "mt-4"}>
+      <h4 className="font-bold text-[#24123A]">
+        {stripOutlineNumbers(section.heading)}
       </h4>
 
       {section.content && (
@@ -285,9 +285,9 @@ export default function ReviewPlanPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#F3E9DF] px-6 py-16">
-        <div className="mx-auto max-w-4xl rounded-3xl bg-[#FFFCF8] p-10 text-center shadow-sm">
-          <p className="text-lg font-semibold text-[#1C3829]">
+      <main className="min-h-screen bg-[#EEF1FD] px-6 py-16">
+        <div className="mx-auto max-w-4xl rounded-3xl bg-[#FFFFFF] p-10 text-center shadow-sm">
+          <p className="text-lg font-semibold text-[#24123A]">
             Đang chuẩn bị nội dung học bổ trợ...
           </p>
           <p className="mt-2 text-sm text-gray-500">
@@ -300,9 +300,9 @@ export default function ReviewPlanPage() {
 
   if (error) {
     return (
-      <main className="min-h-screen bg-[#F3E9DF] px-6 py-16">
-        <div className="mx-auto max-w-3xl rounded-3xl bg-[#FFFCF8] p-8 shadow-sm">
-          <h1 className="text-xl font-bold text-[#A94F3D]">
+      <main className="min-h-screen bg-[#EEF1FD] px-6 py-16">
+        <div className="mx-auto max-w-3xl rounded-3xl bg-[#FFFFFF] p-8 shadow-sm">
+          <h1 className="text-xl font-bold text-[#C42A63]">
             Không thể tải nội dung học bổ trợ
           </h1>
 
@@ -310,7 +310,7 @@ export default function ReviewPlanPage() {
 
           <button
             onClick={() => router.back()}
-            className="mt-6 rounded-xl bg-[#1C3829] px-5 py-3 font-semibold text-white"
+            className="mt-6 rounded-xl bg-[#4A1068] px-5 py-3 font-semibold text-white"
           >
             Quay lại
           </button>
@@ -324,22 +324,22 @@ export default function ReviewPlanPage() {
   const reviewItems = material.review_items || [];
 
   return (
-    <main className="min-h-screen bg-[#F3E9DF] px-4 py-8 md:px-8">
+    <main className="min-h-screen bg-[#EEF1FD] px-4 py-8 md:px-8">
       <div className="mx-auto max-w-5xl space-y-6">
         {/* Header */}
-        <section className="rounded-3xl bg-[#FFFCF8] p-6 shadow-sm md:p-8">
+        <section className="rounded-3xl bg-[#FFFFFF] p-6 shadow-sm md:p-8">
           <button
             onClick={() => router.back()}
-            className="mb-5 text-sm font-semibold text-[#5D856C] hover:underline"
+            className="mb-5 text-sm font-semibold text-[#4566D1] hover:underline"
           >
             ← Quay lại kết quả bài kiểm tra
           </button>
 
-          <p className="text-sm font-semibold uppercase tracking-wider text-[#5D856C]">
+          <p className="text-sm font-semibold uppercase tracking-wider text-[#4566D1]">
             {requiresRetake ? "Khu vực ôn tập" : "Lộ trình học bổ trợ"}
           </p>
 
-          <h1 className="mt-2 text-2xl font-bold text-[#1C3829] md:text-3xl">
+          <h1 className="mt-2 text-2xl font-bold text-[#24123A] md:text-3xl">
             {requiresRetake
               ? "Ôn tập kiến thức chưa vững"
               : "Củng cố kiến thức"}
@@ -349,12 +349,12 @@ export default function ReviewPlanPage() {
             {material.original_quiz_title}
           </p>
 
-          <div className="mt-5 rounded-2xl bg-[#E2E9DF] p-4">
-            <p className="text-sm font-semibold text-[#1C3829]">
+          <div className="mt-5 rounded-2xl bg-[#EEF1FD] p-4">
+            <p className="text-sm font-semibold text-[#24123A]">
               Nội dung cần củng cố
             </p>
 
-            <p className="mt-1 text-lg font-bold text-[#1C3829]">
+            <p className="mt-1 text-lg font-bold text-[#24123A]">
               {getMainTopicTitle(
                 material.topic_name || "Kiến thức của bài học"
               )}
@@ -372,7 +372,7 @@ export default function ReviewPlanPage() {
         {reviewItems.length > 0 && (
           <section className="space-y-5">
             <div>
-              <h2 className="text-xl font-bold text-[#1C3829]">
+              <h2 className="text-xl font-bold text-[#24123A]">
                 Nội dung học bổ trợ do AI đề xuất
               </h2>
 
@@ -389,10 +389,10 @@ export default function ReviewPlanPage() {
               return (
                 <article
                   key={`${item.topic_name || "topic"}-${index}`}
-                  className="rounded-3xl bg-[#FFFCF8] p-6 shadow-sm md:p-8"
+                  className="rounded-3xl bg-[#FFFFFF] p-6 shadow-sm md:p-8"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h3 className="text-lg font-bold text-[#1C3829]">
+                    <h3 className="text-lg font-bold text-[#24123A]">
                       {index + 1}.{" "}
                       {getMainTopicTitle(
                         item.topic_name || "Kiến thức cần củng cố"
@@ -400,15 +400,15 @@ export default function ReviewPlanPage() {
                     </h3>
 
                     {item.source_page != null && (
-                      <span className="rounded-full bg-[#E2E9DF] px-3 py-1 text-xs font-medium text-[#355642]">
+                      <span className="rounded-full bg-[#EEF1FD] px-3 py-1 text-xs font-medium text-[#24123A]">
                         Trang {item.source_page}
                       </span>
                     )}
                   </div>
 
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-[#54765D]">
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-[#4566D1]">
                     {item.scheduled_date && (
-                      <span className="rounded-full bg-[#E2E9DF] px-3 py-1 capitalize">
+                      <span className="rounded-full bg-[#EEF1FD] px-3 py-1 capitalize">
                         Ôn lại:{" "}
                         {new Date(
                           `${item.scheduled_date}T00:00:00`
@@ -421,15 +421,15 @@ export default function ReviewPlanPage() {
                       </span>
                     )}
                     {item.hierarchy && (
-                      <span className="rounded-full bg-[#F3E9DF] px-3 py-1">
-                        {item.hierarchy}
+                      <span className="rounded-full bg-[#EEF1FD] px-3 py-1">
+                        {stripOutlineNumbers(item.hierarchy)}
                       </span>
                     )}
                   </div>
 
                   {supplemental?.learning_objective && (
-                    <div className="mt-4 rounded-2xl bg-[#F3E9DF] p-4">
-                      <p className="text-sm font-bold text-[#1C3829]">
+                    <div className="mt-4 rounded-2xl bg-[#EEF1FD] p-4">
+                      <p className="text-sm font-bold text-[#24123A]">
                         Mục tiêu học tập
                       </p>
 
@@ -457,8 +457,8 @@ export default function ReviewPlanPage() {
                       )}
 
                       {item.source_content && (
-                        <div className="mt-4 rounded-2xl bg-[#F3E9DF] p-4">
-                          <p className="text-sm font-bold text-[#1C3829]">
+                        <div className="mt-4 rounded-2xl bg-[#EEF1FD] p-4">
+                          <p className="text-sm font-bold text-[#24123A]">
                             Nội dung tham khảo
                           </p>
                           <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-gray-700">
@@ -470,8 +470,8 @@ export default function ReviewPlanPage() {
                   )}
 
                   {item.recommendation && (
-                    <div className="mt-5 border-t border-[#E2E9DF] pt-4">
-                      <p className="text-sm font-bold text-[#1C3829]">
+                    <div className="mt-5 border-t border-[#ECE6EF] pt-4">
+                      <p className="text-sm font-bold text-[#24123A]">
                         Gợi ý cải thiện
                       </p>
                       <p className="mt-2 text-sm leading-7 text-gray-700">
@@ -481,8 +481,8 @@ export default function ReviewPlanPage() {
                   )}
 
                   {item.scheduled_date && (
-                    <div className="mt-4 rounded-2xl bg-[#E8EEE4] p-4">
-                      <p className="text-sm font-bold text-[#1C3829]">
+                    <div className="mt-4 rounded-2xl bg-[#EEF1FD] p-4">
+                      <p className="text-sm font-bold text-[#24123A]">
                         Lịch ôn tập đề xuất
                       </p>
                       <p className="mt-1 text-sm leading-7 text-gray-700">
@@ -502,7 +502,7 @@ export default function ReviewPlanPage() {
         {material.chunks && material.chunks.length > 0 && (
           <section className="space-y-5">
             <div>
-              <h2 className="text-xl font-bold text-[#1C3829]">
+              <h2 className="text-xl font-bold text-[#24123A]">
                 Tài liệu gốc tham khảo
               </h2>
 
@@ -514,21 +514,21 @@ export default function ReviewPlanPage() {
             {material.chunks.map((chunk, index) => (
               <article
                 key={chunk.id}
-                className="rounded-3xl bg-[#FFFCF8] p-6 shadow-sm md:p-8"
+                className="rounded-3xl bg-[#FFFFFF] p-6 shadow-sm md:p-8"
               >
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="font-bold text-[#1C3829]">
+                  <h3 className="font-bold text-[#24123A]">
                     Phần {index + 1}
                   </h3>
 
                   <div className="flex gap-2 text-xs">
                     {chunk.page_number != null && (
-                      <span className="rounded-full bg-[#E2E9DF] px-3 py-1 font-medium text-[#355642]">
+                      <span className="rounded-full bg-[#EEF1FD] px-3 py-1 font-medium text-[#24123A]">
                         Trang {chunk.page_number}
                       </span>
                     )}
 
-                    <span className="rounded-full bg-[#F3E9DF] px-3 py-1 text-gray-600">
+                    <span className="rounded-full bg-[#EEF1FD] px-3 py-1 text-gray-600">
                       Nội dung {chunk.chunk_index + 1}
                     </span>
                   </div>
@@ -544,10 +544,10 @@ export default function ReviewPlanPage() {
 
         {/* Retake timer */}
         {requiresRetake && (
-          <section className="rounded-3xl bg-[#FFFCF8] p-6 shadow-sm md:p-8">
+          <section className="rounded-3xl bg-[#FFFFFF] p-6 shadow-sm md:p-8">
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
               <div>
-                <h2 className="text-lg font-bold text-[#1C3829]">
+                <h2 className="text-lg font-bold text-[#24123A]">
                   Thời gian ôn tập
                 </h2>
 
@@ -558,7 +558,7 @@ export default function ReviewPlanPage() {
               </div>
 
               <div className="text-left md:text-right">
-                <p className="text-4xl font-bold tabular-nums text-[#1C3829]">
+                <p className="text-4xl font-bold tabular-nums text-[#24123A]">
                   {formatTime(studySeconds)}
                 </p>
 
@@ -568,9 +568,9 @@ export default function ReviewPlanPage() {
               </div>
             </div>
 
-            <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#E2E9DF]">
+            <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#EEF1FD]">
               <div
-                className="h-full rounded-full bg-[#5D856C] transition-all duration-500"
+                className="h-full rounded-full bg-[#5B7FE3] transition-all duration-500"
                 style={{ width: `${progress}%` }}
               />
             </div>
@@ -580,7 +580,7 @@ export default function ReviewPlanPage() {
                 {Math.round(progress)}% hoàn thành
               </span>
 
-              <span className="font-semibold text-[#5D856C]">
+              <span className="font-semibold text-[#4566D1]">
                 Đã sẵn sàng làm bài kiểm tra lại
               </span>
             </div>
@@ -593,17 +593,17 @@ export default function ReviewPlanPage() {
         )}
 
         {activityError && (
-          <p className="rounded-xl bg-[#FCE8E4] p-4 text-sm text-[#A94F3D]">
+          <p className="rounded-xl bg-[#FDEDF3] p-4 text-sm text-[#C42A63]">
             {activityError}
           </p>
         )}
 
         {/* Completion actions */}
-        <section className="rounded-3xl bg-[#FFFCF8] p-6 text-center shadow-sm md:p-8">
+        <section className="rounded-3xl bg-[#FFFFFF] p-6 text-center shadow-sm md:p-8">
           {requiresRetake ? (
             isEligible ? (
               <>
-                <h2 className="text-xl font-bold text-[#1C3829]">
+                <h2 className="text-xl font-bold text-[#24123A]">
                   Bạn đã xem nội dung ôn tập!
                 </h2>
 
@@ -614,14 +614,14 @@ export default function ReviewPlanPage() {
                 <button
                   onClick={handleStartRetake}
                   disabled={!material.retake_quiz_id}
-                  className="mt-6 rounded-2xl bg-[#1C3829] px-8 py-4 font-bold text-white transition hover:bg-[#355642] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-6 rounded-2xl bg-[#4A1068] px-8 py-4 font-bold text-white transition hover:bg-[#4566D1] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Bắt đầu Quiz ôn tập lại →
                 </button>
               </>
             ) : (
               <>
-                <h2 className="text-xl font-bold text-[#1C3829]">
+                <h2 className="text-xl font-bold text-[#24123A]">
                   Hãy tiếp tục ôn tập nhé!
                 </h2>
 
@@ -640,7 +640,7 @@ export default function ReviewPlanPage() {
             )
           ) : completed ? (
             <>
-              <h2 className="text-xl font-bold text-[#1C3829]">
+              <h2 className="text-xl font-bold text-[#24123A]">
                 Bạn đã hoàn thành lộ trình học bổ trợ!
               </h2>
 
@@ -650,14 +650,14 @@ export default function ReviewPlanPage() {
 
               <button
                 onClick={() => router.push("/quizzes")}
-                className="mt-6 rounded-2xl bg-[#1C3829] px-8 py-4 font-bold text-white transition hover:bg-[#355642]"
+                className="mt-6 rounded-2xl bg-[#4A1068] px-8 py-4 font-bold text-white transition hover:bg-[#4566D1]"
               >
                 Quay lại danh sách bài kiểm tra →
               </button>
             </>
           ) : (
             <>
-              <h2 className="text-xl font-bold text-[#1C3829]">
+              <h2 className="text-xl font-bold text-[#24123A]">
                 Hoàn thành nội dung học bổ trợ
               </h2>
 
@@ -669,7 +669,7 @@ export default function ReviewPlanPage() {
               <button
                 onClick={handleCompleteSupplemental}
                 disabled={completing}
-                className="mt-6 rounded-2xl bg-[#1C3829] px-8 py-4 font-bold text-white transition hover:bg-[#355642] disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-6 rounded-2xl bg-[#4A1068] px-8 py-4 font-bold text-white transition hover:bg-[#4566D1] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {completing
                   ? "Đang cập nhật..."

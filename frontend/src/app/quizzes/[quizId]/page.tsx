@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { getMainTopicTitle } from "@/lib/content-titles";
+import { getMainTopicTitle, stripOutlineNumbers } from "@/lib/content-titles";
 
 interface QuizQuestion {
   id: string;
@@ -502,7 +502,7 @@ export default function QuizTakingPage() {
   // 5. Trạng thái tải dữ liệu
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center text-[#829080]">
+      <div className="flex min-h-[60vh] items-center justify-center text-[#716A82]">
         Đang chuẩn bị bài kiểm tra...
       </div>
     );
@@ -515,7 +515,7 @@ export default function QuizTakingPage() {
 
         <Link
           href="/quizzes"
-          className="mt-5 inline-block rounded-xl bg-[#54765D] px-5 py-3 text-sm font-semibold text-white"
+          className="mt-5 inline-block rounded-xl bg-[#5B7FE3] px-5 py-3 text-sm font-semibold text-white"
         >
           Quay lại danh sách Quiz
         </Link>
@@ -533,35 +533,35 @@ export default function QuizTakingPage() {
     return (
       <div className="mx-auto max-w-4xl">
         {/* Tổng quan kết quả */}
-        <div className="rounded-2xl border border-[#E2E5DC] bg-white p-8 text-center">
+        <div className="rounded-2xl border border-[#ECE6EF] bg-white p-8 text-center">
           <div className="text-5xl">🎉</div>
 
-          <h1 className="mt-4 text-2xl font-bold text-[#355642]">
+          <h1 className="mt-4 text-2xl font-bold text-[#24123A]">
             Hoàn thành bài kiểm tra!
           </h1>
 
-          <p className="mt-2 text-sm text-[#829080]">
+          <p className="mt-2 text-sm text-[#716A82]">
             {title}
           </p>
 
           <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-xl bg-[#E8EEE4] p-5">
-              <p className="text-sm text-[#718074]">Điểm số</p>
-              <p className="mt-2 text-3xl font-bold text-[#355642]">
+            <div className="rounded-xl bg-[#EEF1FD] p-5">
+              <p className="text-sm text-[#716A82]">Điểm số</p>
+              <p className="mt-2 text-3xl font-bold text-[#24123A]">
                 {result.score}/100
               </p>
             </div>
 
-            <div className="rounded-xl bg-[#F0F1E9] p-5">
-              <p className="text-sm text-[#718074]">Số câu đúng</p>
-              <p className="mt-2 text-3xl font-bold text-[#355642]">
+            <div className="rounded-xl bg-[#EEF1FD] p-5">
+              <p className="text-sm text-[#716A82]">Số câu đúng</p>
+              <p className="mt-2 text-3xl font-bold text-[#24123A]">
                 {result.correct_count}/{result.total_questions}
               </p>
             </div>
 
-            <div className="rounded-xl bg-[#F7EEE8] p-5">
-              <p className="text-sm text-[#718074]">Điểm đạt được</p>
-              <p className="mt-2 text-3xl font-bold text-[#A66F50]">
+            <div className="rounded-xl bg-[#F7F5FA] p-5">
+              <p className="text-sm text-[#716A82]">Điểm đạt được</p>
+              <p className="mt-2 text-3xl font-bold text-[#C42A63]">
                 {result.earned_points}/{result.total_points}
               </p>
             </div>
@@ -570,17 +570,17 @@ export default function QuizTakingPage() {
           <div
             className={`mx-auto mt-4 max-w-2xl rounded-xl p-4 text-center text-sm leading-6 ${
               result.score < 50
-                ? "bg-[#F9E9E5] text-[#A94F3D]"
+                ? "bg-[#FDEDF3] text-[#C42A63]"
                 : result.score < 70
-                  ? "bg-[#FFF4E5] text-[#9A6A24]"
-                  : "bg-[#E8EEE4] text-[#54765D]"
+                  ? "bg-[#FFF5D6] text-[#9A6400]"
+                  : "bg-[#EEF1FD] text-[#4566D1]"
             }`}
           >
             {result.score < 50 ? (
               <>
-                <strong>Chưa đạt 50%.</strong> Bạn cần ôn lại lộ trình
-                được đề xuất và đạt từ 50% ở bài kiểm tra lại để mở ngày
-                học tiếp theo.
+                <strong>Chưa đạt 50%.</strong> Bạn vẫn học tiếp được các ngày
+                sau, nhưng nên ôn lại lộ trình được đề xuất và làm bài
+                kiểm tra lại để củng cố phần còn yếu.
               </>
             ) : result.score < 70 ? (
               <>
@@ -604,7 +604,7 @@ export default function QuizTakingPage() {
 
         {/* Đáp án và giải thích */}
         <div className="mt-8">
-          <h2 className="mb-5 text-xl font-bold text-[#355642]">
+          <h2 className="mb-5 text-xl font-bold text-[#24123A]">
             Xem lại đáp án và kiến thức
           </h2>
 
@@ -612,55 +612,55 @@ export default function QuizTakingPage() {
             {result.results.map((item, index) => (
               <div
                 key={item.question_id}
-                className="rounded-2xl border border-[#E2E5DC] bg-white p-6"
+                className="rounded-2xl border border-[#ECE6EF] bg-white p-6"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="font-semibold text-[#355642]">
+                  <h3 className="font-semibold text-[#24123A]">
                     Câu {index + 1}. {item.question_text}
                   </h3>
 
                   <span
                     className={`shrink-0 rounded-lg px-3 py-1 text-xs font-semibold ${
                       item.is_correct
-                        ? "bg-[#E8EEE4] text-[#54765D]"
-                        : "bg-[#F9E9E5] text-[#A94F3D]"
+                        ? "bg-[#EEF1FD] text-[#4566D1]"
+                        : "bg-[#FDEDF3] text-[#C42A63]"
                     }`}
                   >
                     {item.is_correct ? "Chính xác" : "Chưa đúng"}
                   </span>
                 </div>
 
-                <p className="mt-4 text-sm text-[#829080]">
+                <p className="mt-4 text-sm text-[#716A82]">
                   Bạn chọn:{" "}
-                  <strong className="text-[#355642]">
+                  <strong className="text-[#24123A]">
                     {formatAnswer(item.selected_answer)}
                   </strong>
                 </p>
 
-                <p className="mt-2 text-sm text-[#54765D]">
+                <p className="mt-2 text-sm text-[#4566D1]">
                   Đáp án đúng:{" "}
                   <strong>{formatAnswer(item.correct_answer)}</strong>
                 </p>
 
                 {item.explanation && (
-                  <div className="mt-4 rounded-xl bg-[#F7F5EF] p-4">
-                    <p className="text-sm font-semibold text-[#355642]">
+                  <div className="mt-4 rounded-xl bg-[#F7F5FA] p-4">
+                    <p className="text-sm font-semibold text-[#24123A]">
                       Giải thích
                     </p>
 
-                    <p className="mt-2 text-sm leading-6 text-[#718074]">
+                    <p className="mt-2 text-sm leading-6 text-[#716A82]">
                       {item.explanation}
                     </p>
                   </div>
                 )}
 
                 {item.source_location && (
-                  <div className="mt-4 rounded-xl border border-[#E2E5DC] bg-[#F8F9F5] p-4">
-                    <p className="text-sm font-semibold text-[#355642]">
+                  <div className="mt-4 rounded-xl border border-[#ECE6EF] bg-[#F7F5FA] p-4">
+                    <p className="text-sm font-semibold text-[#24123A]">
                       📚 Vị trí kiến thức trong tài liệu
                     </p>
 
-                    <p className="mt-2 text-sm text-[#718074]">
+                    <p className="mt-2 text-sm text-[#716A82]">
                       {item.source_location.page_number != null
                         ? `Trang ${item.source_location.page_number}`
                         : "Chưa xác định trang"}
@@ -673,10 +673,10 @@ export default function QuizTakingPage() {
                     {!item.is_correct &&
                       item.source_location.content && (
                         <div className="mt-3 rounded-lg bg-white p-3">
-                          <p className="text-xs font-semibold text-[#54765D]">
+                          <p className="text-xs font-semibold text-[#4566D1]">
                             Nội dung tham chiếu để ôn lại
                           </p>
-                          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#647568]">
+                          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#4D4366]">
                             {item.source_location.content}
                           </p>
                         </div>
@@ -689,12 +689,12 @@ export default function QuizTakingPage() {
         </div>
 
         {/* Nút xem đánh giá AI */}
-        <div className="mt-8 rounded-2xl border border-[#E2E5DC] bg-white p-6 text-center">
-          <h2 className="text-xl font-bold text-[#355642]">
+        <div className="mt-8 rounded-2xl border border-[#ECE6EF] bg-white p-6 text-center">
+          <h2 className="text-xl font-bold text-[#24123A]">
             Bạn đã hoàn thành phần xem lại đáp án!
           </h2>
 
-          <p className="mt-2 text-sm leading-6 text-[#829080]">
+          <p className="mt-2 text-sm leading-6 text-[#716A82]">
             Xem đánh giá năng lực và lộ trình ôn tập được đề xuất
             dựa trên kết quả bài kiểm tra.
           </p>
@@ -703,7 +703,7 @@ export default function QuizTakingPage() {
             <button
               type="button"
               onClick={() => setShowAssessment(true)}
-              className="mt-5 rounded-xl bg-[#54765D] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#355642]"
+              className="mt-5 rounded-xl bg-[#5B7FE3] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#4566D1]"
             >
               Xem đánh giá và lộ trình
             </button>
@@ -712,19 +712,19 @@ export default function QuizTakingPage() {
               {result.ai_assessment ? (
                 <>
                   {/* Nhận xét tổng quan */}
-                  <div className="rounded-xl bg-[#E8EEE4] p-5">
-                    <p className="text-sm font-semibold text-[#355642]">
+                  <div className="rounded-xl bg-[#EEF1FD] p-5">
+                    <p className="text-sm font-semibold text-[#24123A]">
                       Nhận xét tổng quan
                     </p>
 
-                    <p className="mt-2 text-sm leading-6 text-[#536657]">
+                    <p className="mt-2 text-sm leading-6 text-[#4D4366]">
                       {result.ai_assessment.summary}
                     </p>
                   </div>
 
                   {/* Điểm mạnh */}
                   <div className="mt-5">
-                    <h3 className="font-semibold text-[#355642]">
+                    <h3 className="font-semibold text-[#24123A]">
                       Điểm mạnh
                     </h3>
 
@@ -733,16 +733,16 @@ export default function QuizTakingPage() {
                         {strengths.map((item, index) => (
                           <div
                             key={index}
-                            className="rounded-xl bg-[#F7F8F4] p-4"
+                            className="rounded-xl bg-[#F7F5FA] p-4"
                           >
-                            <p className="text-sm leading-6 text-[#536657]">
+                            <p className="text-sm leading-6 text-[#4D4366]">
                               {formatAssessmentItem(item)}
                             </p>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <p className="mt-2 text-sm text-[#829080]">
+                      <p className="mt-2 text-sm text-[#716A82]">
                         Chưa có dữ liệu về điểm mạnh.
                       </p>
                     )}
@@ -750,7 +750,7 @@ export default function QuizTakingPage() {
 
                   {/* Nội dung cần cải thiện */}
                   <div className="mt-5">
-                    <h3 className="font-semibold text-[#355642]">
+                    <h3 className="font-semibold text-[#24123A]">
                       Nội dung cần cải thiện
                     </h3>
 
@@ -759,15 +759,15 @@ export default function QuizTakingPage() {
                         {weakAreas.map((item, index) => (
                           <div
                             key={index}
-                            className="rounded-xl border border-[#E2E5DC] bg-[#F8F9F5] p-4"
+                            className="rounded-xl border border-[#ECE6EF] bg-[#F7F5FA] p-4"
                           >
                             {typeof item === "string" ? (
-                              <p className="text-sm leading-6 text-[#536657]">
+                              <p className="text-sm leading-6 text-[#4D4366]">
                                 {item}
                               </p>
                             ) : (
                               <>
-                                <p className="font-semibold text-[#355642]">
+                                <p className="font-semibold text-[#24123A]">
                                   {getMainTopicTitle(
                                     item.topic_name ||
                                       "Nội dung cần cải thiện"
@@ -775,12 +775,12 @@ export default function QuizTakingPage() {
                                 </p>
 
                                 {item.hierarchy && (
-                                  <p className="mt-1 text-xs font-medium text-[#54765D]">
-                                    Vị trí: {item.hierarchy}
+                                  <p className="mt-1 text-xs font-medium text-[#4566D1]">
+                                    Vị trí: {stripOutlineNumbers(item.hierarchy)}
                                   </p>
                                 )}
 
-                                <p className="mt-2 text-sm leading-6 text-[#536657]">
+                                <p className="mt-2 text-sm leading-6 text-[#4D4366]">
                                   {item.description ||
                                     item.content ||
                                     item.reason ||
@@ -788,14 +788,14 @@ export default function QuizTakingPage() {
                                 </p>
 
                                 {item.source_page != null && (
-                                  <p className="mt-2 text-xs text-[#829080]">
+                                  <p className="mt-2 text-xs text-[#716A82]">
                                     Học lại tại trang{" "}
                                     {item.source_page} trong tài liệu
                                   </p>
                                 )}
 
                                 {item.recommendation && (
-                                  <p className="mt-3 text-sm leading-6 text-[#A66F50]">
+                                  <p className="mt-3 text-sm leading-6 text-[#C42A63]">
                                     Gợi ý: {item.recommendation}
                                   </p>
                                 )}
@@ -805,7 +805,7 @@ export default function QuizTakingPage() {
                         ))}
                       </div>
                     ) : (
-                      <p className="mt-2 text-sm text-[#829080]">
+                      <p className="mt-2 text-sm text-[#716A82]">
                         Không có nội dung đáng kể cần cải thiện.
                       </p>
                     )}
@@ -813,7 +813,7 @@ export default function QuizTakingPage() {
 
                   {/* Lộ trình ôn tập */}
                   <div className="mt-5">
-                    <h3 className="font-semibold text-[#355642]">
+                    <h3 className="font-semibold text-[#24123A]">
                       Lộ trình ôn tập đề xuất
                     </h3>
 
@@ -822,34 +822,34 @@ export default function QuizTakingPage() {
                         {recommendations.map((item, index) => (
                           <p
                             key={index}
-                            className="text-sm leading-6 text-[#718074]"
+                            className="text-sm leading-6 text-[#716A82]"
                           >
                             {index + 1}. {item}
                           </p>
                         ))}
                       </div>
                     ) : (
-                      <p className="mt-2 text-sm text-[#829080]">
+                      <p className="mt-2 text-sm text-[#716A82]">
                         Bạn chưa cần thêm lộ trình ôn tập.
                       </p>
                     )}
                   </div>
                 </>
               ) : (
-                <p className="rounded-xl bg-[#F7F5EF] p-4 text-sm text-[#718074]">
+                <p className="rounded-xl bg-[#F7F5FA] p-4 text-sm text-[#716A82]">
                   Chưa có đánh giá AI cho lượt kiểm tra này.
                 </p>
               )}
 
               {/* Kế hoạch ôn tập lại */}
               {result.review_plan && (
-                <div className="mt-6 rounded-xl border border-[#E2E5DC] p-5">
-                  <h3 className="font-semibold text-[#355642]">
+                <div className="mt-6 rounded-xl border border-[#ECE6EF] p-5">
+                  <h3 className="font-semibold text-[#24123A]">
                     Kế hoạch ôn tập lại
                   </h3>
 
                   {result.review_plan.overall_goal && (
-                    <p className="mt-2 text-sm leading-6 text-[#718074]">
+                    <p className="mt-2 text-sm leading-6 text-[#716A82]">
                       {result.review_plan.overall_goal}
                     </p>
                   )}
@@ -861,11 +861,11 @@ export default function QuizTakingPage() {
                           (item, index) => (
                             <div
                               key={`${item.topic_name || "review"}-${index}`}
-                              className="rounded-xl border border-[#E2E5DC] bg-[#F8F9F5] p-4"
+                              className="rounded-xl border border-[#ECE6EF] bg-[#F7F5FA] p-4"
                             >
                               <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
                                 <div>
-                                  <p className="font-semibold text-[#355642]">
+                                  <p className="font-semibold text-[#24123A]">
                                     {index + 1}.{" "}
                                     {getMainTopicTitle(
                                       item.topic_name ||
@@ -874,24 +874,24 @@ export default function QuizTakingPage() {
                                   </p>
 
                                   {item.hierarchy && (
-                                    <p className="mt-1 text-xs text-[#54765D]">
-                                      {item.hierarchy}
+                                    <p className="mt-1 text-xs text-[#4566D1]">
+                                      {stripOutlineNumbers(item.hierarchy)}
                                     </p>
                                   )}
                                 </div>
 
-                                <span className="w-fit rounded-full bg-[#E8EEE4] px-3 py-1 text-xs font-semibold capitalize text-[#54765D]">
+                                <span className="w-fit rounded-full bg-[#EEF1FD] px-3 py-1 text-xs font-semibold capitalize text-[#4566D1]">
                                   {formatReviewDate(item.scheduled_date)}
                                 </span>
                               </div>
 
                               {item.source_page != null && (
-                                <p className="mt-2 text-xs text-[#829080]">
+                                <p className="mt-2 text-xs text-[#716A82]">
                                   Học tại trang {item.source_page}
                                 </p>
                               )}
 
-                              <p className="mt-2 text-sm leading-6 text-[#718074]">
+                              <p className="mt-2 text-sm leading-6 text-[#716A82]">
                                 {item.recommendation ||
                                   "Đọc lại phần này, ghi lại ý chính và làm lại các câu hỏi liên quan."}
                               </p>
@@ -902,26 +902,26 @@ export default function QuizTakingPage() {
                     )}
 
                   {result.review_plan.status === "completed" ? (
-                    <p className="mt-2 text-sm leading-6 text-[#54765D]">
+                    <p className="mt-2 text-sm leading-6 text-[#4566D1]">
                       Bạn đã hoàn thành kế hoạch ôn tập và đạt yêu cầu
                       bài kiểm tra lại.
                     </p>
                   ) : result.review_plan.retake_quiz_id ? (
                     <>
-                      <p className="mt-2 text-sm leading-6 text-[#718074]">
+                      <p className="mt-2 text-sm leading-6 text-[#716A82]">
                         Bài kiểm tra lại gồm 30% câu trắc nghiệm và 70% câu
                         điền vào chỗ trống. Bạn có thể làm ngay.
                       </p>
 
                       <Link
                         href={`/review-plans/${result.review_plan.id}`}
-                        className="mt-4 inline-block rounded-xl bg-[#A66F50] px-5 py-3 text-sm font-semibold text-white hover:bg-[#8D593E]"
+                        className="mt-4 inline-block rounded-xl bg-[#E0457B] px-5 py-3 text-sm font-semibold text-white hover:bg-[#E0457B]"
                       >
                         Vào ôn tập lại →
                       </Link>
                     </>
                   ) : (
-                    <p className="mt-2 text-sm leading-6 text-[#A66F50]">
+                    <p className="mt-2 text-sm leading-6 text-[#C42A63]">
                       Kế hoạch ôn tập đã được tạo nhưng bài kiểm tra lại
                       chưa khả dụng. Vui lòng thử lại sau.
                     </p>
@@ -934,7 +934,7 @@ export default function QuizTakingPage() {
 
         <Link
           href="/quizzes"
-          className="mt-8 inline-block rounded-xl bg-[#54765D] px-6 py-3 text-sm font-semibold text-white hover:bg-[#355642]"
+          className="mt-8 inline-block rounded-xl bg-[#5B7FE3] px-6 py-3 text-sm font-semibold text-white hover:bg-[#4566D1]"
         >
           Quay lại danh sách Quiz
         </Link>
@@ -951,7 +951,7 @@ export default function QuizTakingPage() {
   if (!currentQuestion) {
     return (
       <div className="rounded-2xl bg-white p-8 text-center">
-        <p className="text-[#829080]">
+        <p className="text-[#716A82]">
           Quiz hiện chưa có câu hỏi.
         </p>
       </div>
@@ -964,16 +964,16 @@ export default function QuizTakingPage() {
       <div className="mb-8">
         <Link
           href="/quizzes"
-          className="text-sm font-medium text-[#829080] hover:text-[#355642]"
+          className="text-sm font-medium text-[#716A82] hover:text-[#24123A]"
         >
           ← Danh sách bài kiểm tra
         </Link>
 
-        <h1 className="mt-4 text-2xl font-bold text-[#355642]">
+        <h1 className="mt-4 text-2xl font-bold text-[#24123A]">
           {title}
         </h1>
 
-        <div className="mt-4 flex flex-wrap gap-4 text-sm text-[#829080]">
+        <div className="mt-4 flex flex-wrap gap-4 text-sm text-[#716A82]">
           <span>📝 {questions.length} câu hỏi</span>
 
           <span>
@@ -994,15 +994,15 @@ export default function QuizTakingPage() {
           className={`mb-6 flex items-center justify-between rounded-2xl border p-4 ${
             remainingSeconds <= 60
               ? "border-red-200 bg-red-50"
-              : "border-[#E2E5DC] bg-white"
+              : "border-[#ECE6EF] bg-white"
           }`}
         >
           <div>
-            <p className="text-sm font-semibold text-[#355642]">
+            <p className="text-sm font-semibold text-[#24123A]">
               Thời gian còn lại
             </p>
 
-            <p className="mt-1 text-xs text-[#829080]">
+            <p className="mt-1 text-xs text-[#716A82]">
               Bài sẽ tự động nộp khi đồng hồ về 00:00.
             </p>
           </div>
@@ -1011,7 +1011,7 @@ export default function QuizTakingPage() {
             className={`text-2xl font-bold tabular-nums ${
               remainingSeconds <= 60
                 ? "text-red-600"
-                : "text-[#355642]"
+                : "text-[#24123A]"
             }`}
           >
             {String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:
@@ -1021,13 +1021,13 @@ export default function QuizTakingPage() {
       )}
 
       {submitting && (
-        <p className="mb-4 text-sm font-medium text-[#A66F50]">
+        <p className="mb-4 text-sm font-medium text-[#C42A63]">
           Đang nộp bài kiểm tra...
         </p>
       )}
 
       <div className="mb-6">
-        <div className="mb-2 flex justify-between text-xs text-[#829080]">
+        <div className="mb-2 flex justify-between text-xs text-[#716A82]">
           <span>Tiến độ làm bài</span>
 
           <span>
@@ -1035,9 +1035,9 @@ export default function QuizTakingPage() {
           </span>
         </div>
 
-        <div className="h-2 overflow-hidden rounded-full bg-[#E8EEE4]">
+        <div className="h-2 overflow-hidden rounded-full bg-[#EEF1FD]">
           <div
-            className="h-full rounded-full bg-[#54765D] transition-all"
+            className="h-full rounded-full bg-[#5B7FE3] transition-all"
             style={{
               width: `${(answeredCount / questions.length) * 100}%`,
             }}
@@ -1045,18 +1045,18 @@ export default function QuizTakingPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-[#E2E5DC] bg-white p-6 sm:p-8">
+      <div className="rounded-2xl border border-[#ECE6EF] bg-white p-6 sm:p-8">
         <div className="flex items-center justify-between">
-          <span className="rounded-lg bg-[#E8EEE4] px-3 py-1 text-sm font-semibold text-[#54765D]">
+          <span className="rounded-lg bg-[#EEF1FD] px-3 py-1 text-sm font-semibold text-[#4566D1]">
             Câu {currentIndex + 1}/{questions.length}
           </span>
 
-          <span className="text-sm text-[#829080]">
+          <span className="text-sm text-[#716A82]">
             {currentQuestion.points} điểm
           </span>
         </div>
 
-        <h2 className="mt-6 text-lg font-bold leading-8 text-[#355642]">
+        <h2 className="mt-6 text-lg font-bold leading-8 text-[#24123A]">
           {currentQuestion.question_text}
         </h2>
 
@@ -1066,7 +1066,7 @@ export default function QuizTakingPage() {
           currentQuestion.question_type === "multiple_choice"
         ) ? (
           <>
-            <p className="mt-2 text-xs text-[#9AA397]">
+            <p className="mt-2 text-xs text-[#716A82]">
               {currentQuestion.question_type === "multiple_choice"
                 ? "Có thể chọn nhiều đáp án đúng."
                 : "Chọn một đáp án đúng nhất."}
@@ -1107,21 +1107,21 @@ export default function QuizTakingPage() {
                       }}
                       className={`flex w-full items-start gap-4 rounded-xl border p-4 text-left transition ${
                         isSelected
-                          ? "border-[#54765D] bg-[#E8EEE4]"
-                          : "border-[#E2E5DC] bg-white hover:border-[#9BAF9A] hover:bg-[#F7F8F4]"
+                          ? "border-[#5B7FE3] bg-[#EEF1FD]"
+                          : "border-[#ECE6EF] bg-white hover:border-[#D5DDF8] hover:bg-[#F7F5FA]"
                       } ${saving ? "cursor-wait opacity-70" : ""}`}
                     >
                       <span
                         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
                           isSelected
-                            ? "bg-[#54765D] text-white"
-                            : "bg-[#F0F1E9] text-[#718074]"
+                            ? "bg-[#5B7FE3] text-white"
+                            : "bg-[#EEF1FD] text-[#716A82]"
                         }`}
                       >
                         {key}
                       </span>
 
-                      <span className="pt-1 text-sm leading-6 text-[#536657]">
+                      <span className="pt-1 text-sm leading-6 text-[#4D4366]">
                         {optionText}
                       </span>
                     </button>
@@ -1133,7 +1133,7 @@ export default function QuizTakingPage() {
         ) : (
           /* Câu hỏi điền khuyết */
           <>
-            <p className="mt-2 text-xs text-[#9AA397]">
+            <p className="mt-2 text-xs text-[#716A82]">
               Nhập câu trả lời của bạn vào ô bên dưới.
             </p>
 
@@ -1155,7 +1155,7 @@ export default function QuizTakingPage() {
               disabled={saving || submitting}
               placeholder="Nhập câu trả lời..."
               rows={3}
-              className="mt-6 w-full resize-y rounded-xl border border-[#E2E5DC] bg-white p-4 text-sm text-[#355642] outline-none transition placeholder:text-[#A5ADA2] focus:border-[#54765D] focus:ring-2 focus:ring-[#E8EEE4] disabled:opacity-60"
+              className="mt-6 w-full resize-y rounded-xl border border-[#ECE6EF] bg-white p-4 text-sm text-[#24123A] outline-none transition placeholder:text-[#A39DB3] focus:border-[#5B7FE3] focus:ring-2 focus:ring-[#ECE6EF] disabled:opacity-60"
             />
 
             <button
@@ -1170,7 +1170,7 @@ export default function QuizTakingPage() {
                   (draftAnswers[currentQuestion.id] ?? "").trim()
                 )
               }
-              className="mt-4 rounded-xl bg-[#54765D] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#355642] disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-4 rounded-xl bg-[#5B7FE3] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4566D1] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Lưu câu trả lời
             </button>
@@ -1178,7 +1178,7 @@ export default function QuizTakingPage() {
         )}
 
         {saving && (
-          <p className="mt-4 text-sm text-[#829080]">
+          <p className="mt-4 text-sm text-[#716A82]">
             Đang lưu câu trả lời...
           </p>
         )}
@@ -1189,12 +1189,12 @@ export default function QuizTakingPage() {
           </p>
         )}
 
-        <div className="mt-8 flex items-center justify-between border-t border-[#EEF0E9] pt-6">
+        <div className="mt-8 flex items-center justify-between border-t border-[#ECE6EF] pt-6">
           <button
             type="button"
             disabled={currentIndex === 0 || saving || submitting}
             onClick={() => setCurrentIndex((index) => index - 1)}
-            className="rounded-xl border border-[#E2E5DC] px-5 py-3 text-sm font-semibold text-[#718074] hover:bg-[#F7F5EF] disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-xl border border-[#ECE6EF] px-5 py-3 text-sm font-semibold text-[#716A82] hover:bg-[#EEF1FD] disabled:cursor-not-allowed disabled:opacity-40"
           >
             ← Câu trước
           </button>
@@ -1204,7 +1204,7 @@ export default function QuizTakingPage() {
               type="button"
               disabled={saving || submitting}
               onClick={() => setCurrentIndex((index) => index + 1)}
-              className="rounded-xl bg-[#54765D] px-5 py-3 text-sm font-semibold text-white hover:bg-[#355642] disabled:opacity-50"
+              className="rounded-xl bg-[#5B7FE3] px-5 py-3 text-sm font-semibold text-white hover:bg-[#4566D1] disabled:opacity-50"
             >
               Câu tiếp theo →
             </button>
@@ -1213,7 +1213,7 @@ export default function QuizTakingPage() {
               type="button"
               disabled={saving || submitting}
               onClick={() => void handleSubmit(false)}
-              className="rounded-xl bg-[#A66F50] px-5 py-3 text-sm font-semibold text-white hover:bg-[#8D593E] disabled:opacity-50"
+              className="rounded-xl bg-[#E0457B] px-5 py-3 text-sm font-semibold text-white hover:bg-[#E0457B] disabled:opacity-50"
             >
               {submitting ? "Đang nộp bài..." : "Nộp bài"}
             </button>
@@ -1222,8 +1222,8 @@ export default function QuizTakingPage() {
       </div>
 
       {/* Điều hướng câu hỏi */}
-      <div className="mt-6 rounded-2xl border border-[#E2E5DC] bg-white p-5">
-        <p className="mb-4 text-sm font-semibold text-[#355642]">
+      <div className="mt-6 rounded-2xl border border-[#ECE6EF] bg-white p-5">
+        <p className="mb-4 text-sm font-semibold text-[#24123A]">
           Điều hướng câu hỏi
         </p>
 
@@ -1243,24 +1243,39 @@ export default function QuizTakingPage() {
                 type="button"
                 disabled={saving || submitting}
                 onClick={() => setCurrentIndex(index)}
-                className={`flex h-10 w-10 items-center justify-center rounded-lg text-sm font-semibold ${
+                aria-label={`Câu ${index + 1}${isAnswered ? ", đã trả lời" : ", chưa trả lời"}${isCurrent ? ", đang xem" : ""}`}
+                className={`relative flex h-10 w-10 items-center justify-center rounded-lg border-2 text-sm font-bold transition ${
                   isCurrent
-                    ? "bg-[#54765D] text-white"
+                    ? "border-[var(--sp-purple)] bg-[var(--sp-peri)] text-white shadow-[2px_2px_0_var(--sp-purple-deep)]"
                     : isAnswered
-                    ? "bg-[#E8EEE4] text-[#54765D]"
-                    : "bg-[#F0F1E9] text-[#829080]"
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:border-emerald-500"
+                      : "border-[var(--sp-line)] bg-white text-[var(--sp-muted)] hover:border-[var(--sp-lav-line)]"
                 }`}
               >
                 {index + 1}
+                {isAnswered && (
+                  <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-white bg-emerald-500" />
+                )}
               </button>
             );
           })}
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-4 text-xs text-[#829080]">
-          <span>🟢 Đã trả lời</span>
-          <span>⚪ Chưa trả lời</span>
-          <span>🟩 Câu đang xem</span>
+        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-[var(--sp-text-2)]">
+          <span className="flex items-center gap-2">
+            <span className="relative h-5 w-5 rounded-md border-2 border-emerald-300 bg-emerald-50">
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
+            </span>
+            Đã trả lời
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="h-5 w-5 rounded-md border-2 border-[var(--sp-line)] bg-white" />
+            Chưa trả lời
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="h-5 w-5 rounded-md border-2 border-[var(--sp-purple)] bg-[var(--sp-peri)]" />
+            Câu đang xem
+          </span>
         </div>
       </div>
     </div>

@@ -1,0 +1,201 @@
+"""
+Đánh giá bài làm bằng Claude theo mức điểm (hiển thị ở trang kết quả, mục "Đánh giá điểm yếu").
+
+- Dưới 50%  : ôn cấp tốc, chỉ rõ phần sai nhiều (trang, chương, tài liệu), thời gian học dày.
+- 50% - 79% : ôn thư thả, vẫn chỉ ra phần cần củng cố, thời gian học vừa phải.
+- Từ 80%    : chỉ khen và khuyến khích giữ nhịp, không liệt kê điểm yếu.
+
+Vị trí trong tài liệu (trang, chương, tên file) lấy từ dữ liệu thật của câu hỏi,
+Claude chỉ chọn câu nào thuộc nhóm điểm yếu nào nên không thể bịa số trang.
+"""
+
+from __future__ import annotations
+
+from claude_client import generate_structured, is_claude_configured
+
+ASSESSMENT_MODEL_TAG = "Claude"
+
+ASSESSMENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string"},
+        "summary": {"type": "string"},
+        "strengths": {"type": "array", "items": {"type": "string"}},
+        "weak_areas": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "topic_name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "recommendation": {"type": "string"},
+                    "question_numbers": {"type": "array", "items": {"type": "integer"}},
+                },
+                "required": ["topic_name", "description", "recommendation", "question_numbers"],
+            },
+        },
+        "study_plan": {
+            "type": "object",
+            "properties": {
+                "minutes_per_day": {"type": "integer"},
+                "days": {"type": "integer"},
+                "advice": {"type": "string"},
+            },
+            "required": ["minutes_per_day", "days", "advice"],
+        },
+        "recommendations": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["verdict", "summary", "strengths", "weak_areas", "study_plan", "recommendations"],
+}
+
+ASSESSMENT_SYSTEM = """Bạn là giảng viên nhận xét bài kiểm tra cho sinh viên, giọng thân thiện,
+xưng "bạn", viết tiếng Việt ngắn gọn, cụ thể.
+
+QUY TẮC THEO MỨC ĐIỂM:
+1. Dưới 50% (ôn cấp tốc): nói thẳng là bài chưa vững, cần tập trung ngay. Chỉ ra
+   các phần sai nhiều nhất. Đề xuất ôn 45-60 phút/ngày trong 1-2 ngày tới, đọc lại
+   phần sai trước rồi mới học bài mới, sau đó làm Tự kiểm tra nhanh và bài kiểm tra lại.
+2. Từ 50% đến 79% (ôn thư thả): ghi nhận phần đã làm tốt, chỉ ra phần cần củng cố.
+   Đề xuất ôn 20-30 phút/ngày trong 2-3 ngày, chọn một ngày trống trong tuần.
+3. Từ 80% trở lên: CHỈ KHEN và khuyến khích giữ nhịp. weak_areas để RỖNG. Đề xuất
+   ôn nhẹ 10-15 phút/ngày trong 1 ngày để giữ kiến thức (không bắt buộc).
+
+YÊU CẦU:
+- verdict: 1 câu đánh giá chung đúng với mức điểm.
+- summary: 2-3 câu nhận xét bài làm dựa trên các câu đúng/sai thực tế.
+- strengths: 1-3 ý bạn đã làm tốt (rút từ các câu đúng).
+- weak_areas (chỉ khi dưới 80%): gom các câu SAI theo cùng một nội dung kiến thức, tối đa
+  4 nhóm, nhóm sai nhiều nhất đứng đầu. topic_name là tên phần kiến thức (không đánh số);
+  description 1 câu nói bạn đang hiểu sai/nhầm điều gì; recommendation 1 câu nên ôn gì;
+  question_numbers là số thứ tự các câu sai thuộc nhóm đó (lấy đúng số trong dữ liệu).
+- study_plan: minutes_per_day và days theo đúng khung của mức điểm; advice 1-2 câu
+  về cách sắp xếp thời gian học.
+- recommendations: 2-4 lời khuyên ngắn, hành động được ngay.
+- Không bịa số trang, chương hay tên tài liệu; ứng dụng tự gắn vị trí từ dữ liệu."""
+
+
+def review_tier(score: float) -> str:
+    if score < 50:
+        return "intensive"
+    if score < 80:
+        return "relaxed"
+    return "none"
+
+
+TIER_LIMITS = {
+    "intensive": {"minutes": (45, 60), "days": (1, 2)},
+    "relaxed": {"minutes": (20, 30), "days": (2, 3)},
+    "none": {"minutes": (10, 15), "days": (1, 1)},
+}
+
+
+def _answer_text(value, options) -> str:
+    keys = value if isinstance(value, list) else ([value] if value not in (None, "") else [])
+    if not keys:
+        return "(bỏ trống)"
+    parts = []
+    for key in keys:
+        option = next(
+            (item for item in options or [] if str(item.get("key")).upper() == str(key).strip().upper()),
+            None,
+        )
+        parts.append(f"{option['key']}. {option['text']}" if option else str(key))
+    return "; ".join(parts)
+
+
+def _clamp(value, low, high):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        value = low
+    return max(low, min(high, value))
+
+
+def build_attempt_assessment(result: dict) -> dict:
+    """result: dữ liệu của GET /api/quiz-attempts/{id}/result."""
+    if not is_claude_configured():
+        raise RuntimeError("Chưa cấu hình ANTHROPIC_API_KEY để AI đánh giá bài làm.")
+
+    total = int(result.get("total_questions") or 0)
+    correct = int(result.get("correct_count") or 0)
+    score = round(correct / total * 100) if total else round(float(result.get("score") or 0))
+    tier = review_tier(score)
+    context = result.get("review_context") or {}
+    questions = result.get("results") or []
+
+    lines = []
+    for number, item in enumerate(questions, start=1):
+        source = item.get("source_location") or {}
+        snippet = " ".join(str(source.get("content") or "").split())[:350]
+        lines.append(
+            f"Câu {number} [{'ĐÚNG' if item.get('is_correct') else 'SAI'}]"
+            f"{' (trang ' + str(source.get('page_number')) + ')' if source.get('page_number') else ''}\n"
+            f"Hỏi: {item.get('question_text')}\n"
+            f"Bạn trả lời: {_answer_text(item.get('selected_answer'), item.get('options'))}\n"
+            f"Đáp án đúng: {_answer_text(item.get('correct_answer'), item.get('options'))}\n"
+            f"Đoạn tài liệu liên quan: {snippet}"
+        )
+
+    prompt = (
+        f"Bài học: {context.get('topic_name') or result.get('title')}\n"
+        f"Điểm: {score}% (đúng {correct}/{total} câu) → mức "
+        f"{'dưới 50%' if tier == 'intensive' else '50-79%' if tier == 'relaxed' else 'từ 80%'}\n\n"
+        + "\n\n".join(lines)
+    )
+
+    data = generate_structured(
+        system=ASSESSMENT_SYSTEM,
+        prompt=prompt,
+        input_schema=ASSESSMENT_SCHEMA,
+        max_tokens=3000,
+    )
+
+    # Gắn vị trí thật (trang, chương, tài liệu) cho từng nhóm điểm yếu
+    weak_areas = []
+    if tier != "none":
+        for area in data.get("weak_areas") or []:
+            numbers = sorted({
+                number for number in area.get("question_numbers") or []
+                if isinstance(number, int) and 1 <= number <= len(questions)
+                and not questions[number - 1].get("is_correct")
+            })
+            if not numbers:
+                continue
+            sources = [questions[number - 1].get("source_location") or {} for number in numbers]
+            pages = sorted({source.get("page_number") for source in sources if source.get("page_number")})
+            files = sorted({source.get("file_name") for source in sources if source.get("file_name")})
+            weak_areas.append({
+                "topic_name": str(area.get("topic_name") or "").strip()[:150],
+                "description": str(area.get("description") or "").strip()[:400],
+                "recommendation": str(area.get("recommendation") or "").strip()[:400],
+                "question_numbers": numbers,
+                "wrong_count": len(numbers),
+                "pages": pages,
+                "source_page": pages[0] if pages else None,
+                "chapter": context.get("chapter"),
+                "hierarchy": context.get("chapter"),
+                "material_name": files[0] if files else None,
+            })
+        weak_areas.sort(key=lambda item: -item["wrong_count"])
+
+    limits = TIER_LIMITS[tier]
+    plan = data.get("study_plan") or {}
+    study_plan = {
+        "kind": "study_plan",
+        "tier": tier,
+        "minutes_per_day": _clamp(plan.get("minutes_per_day"), *limits["minutes"]),
+        "days": _clamp(plan.get("days"), *limits["days"]),
+        "advice": str(plan.get("advice") or "").strip()[:400],
+    }
+
+    return {
+        "mastery_level": "mastered" if tier == "none" else "needs_review" if tier == "relaxed" else "not_mastered",
+        "summary": f"{str(data.get('verdict') or '').strip()} {str(data.get('summary') or '').strip()}".strip(),
+        "verdict": str(data.get("verdict") or "").strip(),
+        "strengths": [str(item).strip() for item in data.get("strengths") or [] if str(item).strip()][:3],
+        "weak_areas": weak_areas,
+        "recommendations": [
+            str(item).strip() for item in data.get("recommendations") or [] if str(item).strip()
+        ][:4] + [study_plan],
+        "ai_model": ASSESSMENT_MODEL_TAG,
+    }

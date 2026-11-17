@@ -1,3 +1,56 @@
+/*
+ * Bỏ mọi số đề mục của tài liệu ("1.1.1.", "2.", "I.", "a)", "Chương 2:", "Unit 4 -")
+ * ở đầu tiêu đề và ở đầu từng phần sau dấu phân cách (" - ", " – ", ":", ">", "|"),
+ * vì ứng dụng đã tự đánh số. Ví dụ: "TECHNOLOGY - 1.1.1. The basic concept"
+ * → "TECHNOLOGY - The basic concept".
+ */
+const OUTLINE_KEYWORD_NUMBER =
+  /^\s*(?:chương|chapter|mục|phần|part|section|bài|lesson|unit|module)\s*(\d+(?:\.\d+)*|[ivxlc]+)\.?(?![\p{L}\p{N}_])\s*[:\-–—.]?\s*/iu;
+const OUTLINE_PLAIN_NUMBER =
+  /^\s*(?:\d+(?:\.\d+)+\.?|\d+[.)]|[ivxlc]+[.)]|[a-zđ][.)])\s*[:\-–—]?\s*/iu;
+
+function stripLeadingOutlineNumber(segment: string): string {
+  let text = segment.trim();
+  for (let round = 0; round < 3; round += 1) {
+    const keyword = text.match(OUTLINE_KEYWORD_NUMBER);
+    let next = text;
+    if (keyword) {
+      if (/^\d/.test(keyword[1]) || /^[IVXLC]+$/.test(keyword[1])) {
+        next = text.slice(keyword[0].length);
+      }
+    } else {
+      next = text.replace(OUTLINE_PLAIN_NUMBER, "");
+    }
+    next = next.trim();
+    if (!next || next === text) break;
+    text = next;
+  }
+  return text;
+}
+
+export function stripOutlineNumbers(value?: string | null): string {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const pieces = text.split(/(\s+[-–—>|:]\s+|\s*>\s*|:\s+)/u);
+  const kept: string[] = [];
+  for (let index = 0; index < pieces.length; index += 2) {
+    const raw = pieces[index].trim();
+    // Phần chỉ là nhãn đánh số ("Chương 2", "Unit 4", "Part II") thì bỏ hẳn
+    const isBareLabel =
+      OUTLINE_KEYWORD_NUMBER.test(raw) &&
+      raw.replace(OUTLINE_KEYWORD_NUMBER, "").trim() === "";
+    const cleaned = isBareLabel ? "" : stripLeadingOutlineNumber(raw);
+    if (!cleaned) continue;
+    if (kept.length > 0) kept.push(pieces[index - 1] || " - ");
+    kept.push(cleaned);
+  }
+  return (kept.join("") || text)
+    .replace(/^\s*[-–—>|:]\s*/u, "")
+    .replace(/\s*[-–—>|:]\s*$/u, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function getMainTopicTitle(
   value?: string | null
 ): string {
@@ -28,7 +81,7 @@ export function getMainTopicTitle(
     title = title.slice(0, contentMarker);
   }
 
-  return title
+  return stripOutlineNumbers(title)
     .replace(/[.;:,|]+\s*$/, "")
     .replace(/\s{2,}/g, " ")
     .trim() || "Chủ đề học tập";
