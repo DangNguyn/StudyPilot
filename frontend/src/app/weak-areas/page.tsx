@@ -606,6 +606,16 @@ function WeakAreasPageContent() {
     .reverse()
     .filter((row) => historyFilter === "all" || row.percent < MASTERY_SCORE);
 
+  const historyDays = [
+    ...history
+      .reduce((map, row) => {
+        const day = row.attempt.submitted_at ? formatDate(row.attempt.submitted_at) : "";
+        map.set(day, [...(map.get(day) || []), row]);
+        return map;
+      }, new Map<string, AttemptRow[]>())
+      .entries(),
+  ];
+
   const nextAdvice = (() => {
     const first = priorities[0];
     const next = analysis.nextLessonChapter || analysis.nextChapter;
@@ -870,15 +880,34 @@ function WeakAreasPageContent() {
               : "Không có bài nào dưới 80%. Tuyệt vời!"}
           </p>
         ) : (
-          <ul className="space-y-2.5">
-            {history.map((row) => (
-              <HistoryRow
-                key={row.attempt.attempt_id}
-                row={row}
-                chapter={chapters.find((item) => item.key === row.chapterKey)}
-              />
+          <div className="space-y-4">
+            {historyDays.map(([day, items]) => (
+              <div key={day} className="flex flex-col gap-2 sm:flex-row sm:gap-4">
+                <div className="flex shrink-0 flex-col items-center justify-center rounded-2xl border-2 border-[var(--sp-line)] bg-white px-2 py-3 text-center sm:w-[110px]">
+                  <p className="text-xs font-semibold text-[var(--sp-muted)]">
+                    {formatWeekday(items[0].attempt.submitted_at!)}
+                  </p>
+                  <p className="font-extrabold text-[var(--sp-purple)]">
+                    {formatDate(items[0].attempt.submitted_at).slice(0, 5)}
+                  </p>
+                  <p className="text-xs text-[var(--sp-muted)]">
+                    {items.length} bài
+                    {items.some((row) => row.percent < MASTERY_SCORE) &&
+                      ` · ${items.filter((row) => row.percent < MASTERY_SCORE).length} cần ôn`}
+                  </p>
+                </div>
+                <ul className="min-w-0 flex-1 space-y-2.5">
+                  {items.map((row) => (
+                    <HistoryRow
+                      key={row.attempt.attempt_id}
+                      row={row}
+                      chapter={chapters.find((item) => item.key === row.chapterKey)}
+                    />
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </section>
     </div>
@@ -1278,15 +1307,6 @@ function HistoryRow({ row, chapter }: { row: AttemptRow; chapter: ChapterStat | 
 
   return (
     <li className="group flex flex-col gap-3 rounded-2xl border-2 border-[var(--sp-line)] bg-white px-4 py-3.5 transition hover:border-[var(--sp-lav-line)] sm:flex-row sm:items-center">
-      <div className="w-[92px] shrink-0">
-        <p className="text-xs font-semibold text-[var(--sp-muted)]">
-          {row.attempt.submitted_at ? formatWeekday(row.attempt.submitted_at) : ""}
-        </p>
-        <p className="font-extrabold text-[var(--sp-purple)]">
-          {formatDate(row.attempt.submitted_at).slice(0, 5)}
-        </p>
-      </div>
-
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-center gap-2 font-semibold text-[var(--sp-ink)]">
           {title}
