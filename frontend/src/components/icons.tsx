@@ -288,6 +288,22 @@ export function IconX(props: IconProps) {
   );
 }
 
+export function IconBolt(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
+    </Svg>
+  );
+}
+
+export function IconList(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />
+    </Svg>
+  );
+}
+
 /* Ngôi sao 4 cánh dùng để trang trí (tô đặc). */
 export function Sparkle({
   size = 20,

@@ -1,157 +1,119 @@
-
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { getMainTopicTitle, stripOutlineNumbers } from "@/lib/content-titles";
+import { getMainTopicTitle } from "@/lib/content-titles";
+import {
+  IconBook,
+  IconCheck,
+  IconChevronLeft,
+  IconChevronRight,
+  IconClock,
+  IconFlag,
+  IconInfo,
+  IconTarget,
+  Sparkle,
+} from "@/components/icons";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface QuizQuestion {
   id: string;
   question_text: string;
   question_type: "single_choice" | "multiple_choice" | "fill_blank";
-  options:
-    | Record<string, string>
-    | Array<{ key: string; text: string }>
-    | null;
+  options: Record<string, string> | Array<{ key: string; text: string }> | null;
   points: number;
   question_order: number;
   difficulty_level: number | null;
 }
 
-interface QuestionResult {
-  question_id: string;
-  question_text: string;
-  selected_answer: string | string[] | null;
-  correct_answer: string | string[];
-  is_correct: boolean;
-  earned_points: number;
-  explanation: string | null;
-  source_location: {
-    page_number: number | null;
-    chunk_index: number | null;
-    material_id: string | null;
-    content?: string | null;
-  } | null;
-}
+type QuestionTag = { question_id: string; weak: boolean; page: number | null };
 
-interface AssessmentItem {
-  topic_name?: string;
-  hierarchy?: string;
-  description?: string;
-  recommendation?: string;
-  reason?: string;
-  content?: string;
-  source_page?: number | null;
-  source_chunk_id?: string | null;
-  scheduled_date?: string | null;
-}
+type Overview = {
+  is_retake: boolean;
+  question_tags?: QuestionTag[];
+  context: {
+    topic_name: string | null;
+    chapter: string | null;
+    subject_name?: string | null;
+  };
+};
 
-interface QuizResult {
-  score: number;
-  correct_count: number;
-  total_questions: number;
-  earned_points: number;
-  total_points: number;
-  results: QuestionResult[];
-  ai_assessment: {
-    mastery_level: string;
-    summary: string;
-    strengths: (AssessmentItem | string)[] | null;
-    weak_areas: (AssessmentItem | string)[] | null;
-    recommendations: string[] | null;
-  } | null;
-  review_plan: {
-    id: string;
-    retake_quiz_id: string | null;
-    status: string;
-    review_items?: AssessmentItem[];
-    overall_goal?: string | null;
-  } | null;
-  assessment_save_error?: string | null;
-  next_session_unlocked?: boolean;
-  requires_retake?: boolean;
-}
+/* ================= Tiện ích ================= */
 
 function shuffleArray<T>(items: T[]): T[] {
   const shuffled = [...items];
-
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
-
   return shuffled;
 }
 
-function getOptionEntries(
-  options: QuizQuestion["options"]
-): [string, string][] {
-  if (!options) {
-    return [];
-  }
-
+function getOptionEntries(options: QuizQuestion["options"]): [string, string][] {
+  if (!options) return [];
   if (Array.isArray(options)) {
-    return options.map((option, index) => [
-      option.key || String.fromCharCode(65 + index),
-      option.text,
-    ]);
+    return options.map((option, index) => [option.key || String.fromCharCode(65 + index), option.text]);
   }
-
-  return Object.entries(options).map(([key, value]) => [
-    key,
-    typeof value === "string" ? value : String(value),
-  ]);
+  return Object.entries(options).map(([key, value]) => [key, typeof value === "string" ? value : String(value)]);
 }
 
-function formatAnswer(
-  value: string | string[] | null | undefined
-): string {
-  if (value === null || value === undefined || value === "") {
-    return "Chưa trả lời";
-  }
+const DIFFICULTY = ["", "Nhận biết", "Nhận biết", "Thông hiểu", "Vận dụng", "Vận dụng cao"];
 
-  return Array.isArray(value) ? value.join(", ") : value;
+/* Tách phần tình huống (các câu dẫn) khỏi câu hỏi chính (câu có dấu "?") */
+function splitQuestion(text: string) {
+  const clean = String(text || "").trim();
+  const sentences = clean.split(/(?<=[.!?:])\s+/).filter(Boolean);
+  if (sentences.length < 2) return { context: "", question: clean };
+  const lastAsk = sentences.map((sentence) => sentence.includes("?")).lastIndexOf(true);
+  if (lastAsk <= 0) return { context: "", question: clean };
+  const context = sentences.slice(0, lastAsk).join(" ");
+  if (context.length < 40) return { context: "", question: clean };
+  return { context, question: sentences.slice(lastAsk).join(" ") };
 }
 
-function formatReviewDate(value?: string | null): string {
-  if (!value) {
-    return "Chưa xếp ngày";
-  }
-
-  return new Date(`${value}T00:00:00`).toLocaleDateString(
-    "vi-VN",
-    {
-      weekday: "long",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    }
+/* In đậm các con số (kèm đơn vị) trong phần tình huống */
+function emphasizeNumbers(text: string): ReactNode[] {
+  const pattern = /(\d[\d.,]*(?:\s?(?:%|đồng|triệu đồng|triệu|nghìn|tỷ|vé|USD|kg|người|sản phẩm|đơn vị|năm|tháng|ngày))?)/g;
+  return text.split(pattern).map((part, index) =>
+    index % 2 === 1 ? (
+      <b key={index} className="font-bold text-[var(--sp-ink)]">
+        {part}
+      </b>
+    ) : (
+      <Fragment key={index}>{part}</Fragment>
+    )
   );
 }
 
-function formatAssessmentItem(
-  item: AssessmentItem | string
-): string {
-  if (typeof item === "string") {
-    return item;
+/* [1,2,3,5] → "1 – 3, 5" */
+function compactNumbers(numbers: number[]) {
+  const sorted = [...numbers].sort((a, b) => a - b);
+  const parts: string[] = [];
+  let start = sorted[0];
+  let previous = sorted[0];
+  for (const value of [...sorted.slice(1), Number.NaN]) {
+    if (value === previous + 1) {
+      previous = value;
+      continue;
+    }
+    parts.push(previous - start >= 2 ? `${start} – ${previous}` : start === previous ? `${start}` : `${start}, ${previous}`);
+    start = value;
+    previous = value;
   }
-
-  const topic = item.topic_name
-    ? `${getMainTopicTitle(item.topic_name)}: `
-    : "";
-  const detail =
-    item.description ||
-    item.reason ||
-    item.content ||
-    item.recommendation ||
-    "";
-
-  return `${topic}${detail}`.trim() || "Chưa có thông tin chi tiết.";
+  return parts.join(", ");
 }
+
+function formatClock(seconds: number) {
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/* ================= Trang ================= */
 
 export default function QuizTakingPage() {
   const params = useParams();
+  const router = useRouter();
   const quizId = params.quizId as string;
 
   const startedQuizIdRef = useRef("");
@@ -164,222 +126,121 @@ export default function QuizTakingPage() {
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
 
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
-  const [answers, setAnswers] = useState<
-    Record<string, string | string[]>
-  >({});
-  const [draftAnswers, setDraftAnswers] = useState<
-    Record<string, string>
-  >({});
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const [draftAnswers, setDraftAnswers] = useState<Record<string, string>>({});
+  const [flagged, setFlagged] = useState<Set<string>>(new Set());
+  const [overview, setOverview] = useState<Overview | null>(null);
 
   const [currentIndex, setCurrentIndex] = useState(0);
-
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [finished, setFinished] = useState(false);
   const [error, setError] = useState("");
 
-  const [result, setResult] = useState<QuizResult | null>(null);
-  const [showAssessment, setShowAssessment] = useState(false);
-
-  // 1. Bắt đầu Quiz và lấy câu hỏi
+  // 1. Bắt đầu bài và lấy câu hỏi
   useEffect(() => {
-    if (!quizId || startedQuizIdRef.current === quizId) {
-      return;
-    }
-
+    if (!quizId || startedQuizIdRef.current === quizId) return;
     startedQuizIdRef.current = quizId;
-
-    // Reset dữ liệu khi chuyển sang Quiz khác.
-    setAttemptId("");
-    setTitle("");
-    setTimeLimit(null);
-    setRemainingSeconds(null);
-    setQuestions([]);
-    setAnswers({});
-    setDraftAnswers({});
-    setCurrentIndex(0);
-    setLoading(true);
-    setSaving(false);
-    setSubmitting(false);
-    setError("");
-    setResult(null);
-    setShowAssessment(false);
-
     submitStartedRef.current = false;
     submitCompletedRef.current = false;
 
     const initializeQuiz = async () => {
       try {
-        const startResponse = await fetch(
-          `http://127.0.0.1:8000/api/quizzes/${quizId}/start`,
-          { method: "POST" }
-        );
-
+        const startResponse = await fetch(`${API_URL}/api/quizzes/${quizId}/start`, { method: "POST" });
         const startData = await startResponse.json();
+        if (startedQuizIdRef.current !== quizId) return;
+        if (!startResponse.ok) throw new Error(startData.detail || "Không thể bắt đầu bài kiểm tra.");
 
-        if (startedQuizIdRef.current !== quizId) {
-          return;
-        }
-
-        if (!startResponse.ok) {
-          throw new Error(
-            startData.detail || "Không thể bắt đầu bài kiểm tra."
-          );
-        }
-
-        const receivedAttemptId = String(
-          startData.attempt_id || ""
-        ).trim();
-
+        const receivedAttemptId = String(startData.attempt_id || "").trim();
         if (!receivedAttemptId || receivedAttemptId === "null") {
-          throw new Error(
-            "Không thể tạo lượt làm bài hợp lệ. Vui lòng tải lại Quiz."
-          );
+          throw new Error("Không thể tạo lượt làm bài hợp lệ. Vui lòng tải lại trang.");
         }
 
         setAttemptId(receivedAttemptId);
         setTitle(startData.title);
         setTimeLimit(startData.time_limit_minutes);
 
-        const questionResponse = await fetch(
-          `http://127.0.0.1:8000/api/quizzes/${quizId}/questions`
-        );
-
+        const questionResponse = await fetch(`${API_URL}/api/quizzes/${quizId}/questions`);
         const questionData = await questionResponse.json();
+        if (startedQuizIdRef.current !== quizId) return;
+        if (!questionResponse.ok) throw new Error(questionData.detail || "Không thể tải câu hỏi.");
 
-        if (startedQuizIdRef.current !== quizId) {
-          return;
-        }
-
-        if (!questionResponse.ok) {
-          throw new Error(
-            questionData.detail || "Không thể tải câu hỏi."
-          );
-        }
-
-        const shuffledQuestions = shuffleArray<QuizQuestion>(
-          ((questionData.data || []) as QuizQuestion[]).map(
-            (question): QuizQuestion => ({
-              ...question,
-              // Xáo trộn thứ tự đáp án nhưng giữ nguyên key.
-              options: question.options
-                ? Object.fromEntries(
-                    shuffleArray(getOptionEntries(question.options))
-                  )
-                : null,
-            })
-          )
-        );
-
-        setQuestions(shuffledQuestions);
+        // Xáo trộn thứ tự câu; giữ nguyên thứ tự A–D để chữ cái khớp với trang kết quả
+        setQuestions(shuffleArray<QuizQuestion>((questionData.data || []) as QuizQuestion[]));
 
         if (startData.time_limit_minutes && startData.started_at) {
-          const startedAt = new Date(startData.started_at).getTime();
-          const deadline =
-            startedAt + startData.time_limit_minutes * 60 * 1000;
-
-          setRemainingSeconds(
-            Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
-          );
+          const deadline = new Date(startData.started_at).getTime() + startData.time_limit_minutes * 60 * 1000;
+          setRemainingSeconds(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
         }
       } catch (err) {
-        if (startedQuizIdRef.current !== quizId) {
-          return;
-        }
-
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Đã xảy ra lỗi khi tải bài kiểm tra."
-        );
+        if (startedQuizIdRef.current !== quizId) return;
+        setError(err instanceof Error ? err.message : "Đã xảy ra lỗi khi tải bài kiểm tra.");
       } finally {
-        if (startedQuizIdRef.current === quizId) {
-          setLoading(false);
-        }
+        if (startedQuizIdRef.current === quizId) setLoading(false);
       }
     };
 
     void initializeQuiz();
+
+    // Thông tin phụ: phần yếu, trang tài liệu, tên môn (không chặn việc làm bài)
+    fetch(`${API_URL}/api/quizzes/${quizId}/overview`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data?.data && startedQuizIdRef.current === quizId) setOverview(data.data);
+      })
+      .catch(() => undefined);
   }, [quizId]);
 
   // 2. Lưu câu trả lời
-  const handleSelectAnswer = async (
-    answer: string | string[]
-  ) => {
+  const handleSelectAnswer = async (answer: string | string[]) => {
     const question = questions[currentIndex];
+    if (!question || !attemptId || saving || submitting || finished) return;
 
-    if (
-      !question ||
-      !attemptId ||
-      saving ||
-      submitting ||
-      result
-    ) {
-      return;
-    }
-
+    const previous = answers[question.id];
+    setAnswers((current) => ({ ...current, [question.id]: answer }));
     setSaving(true);
     setError("");
 
     try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/quiz-attempts/${attemptId}/answers`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            question_id: question.id,
-            selected_answer: answer,
-          }),
-        }
-      );
-
+      const response = await fetch(`${API_URL}/api/quiz-attempts/${attemptId}/answers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question_id: question.id, selected_answer: answer }),
+      });
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail || "Không thể lưu câu trả lời."
-        );
-      }
-
-      setAnswers((previous) => ({
-        ...previous,
-        [question.id]: answer,
-      }));
+      if (!response.ok) throw new Error(data.detail || "Không thể lưu câu trả lời.");
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Không thể lưu câu trả lời."
-      );
+      setAnswers((current) => {
+        const next = { ...current };
+        if (previous === undefined) delete next[question.id];
+        else next[question.id] = previous;
+        return next;
+      });
+      setError(err instanceof Error ? err.message : "Không thể lưu câu trả lời.");
     } finally {
       setSaving(false);
     }
   };
 
-  // 3. Nộp bài và nhận kết quả
+  const answeredCount = questions.filter((question) => {
+    const answer = answers[question.id];
+    return Array.isArray(answer) ? answer.length > 0 : Boolean(answer);
+  }).length;
+
+  // 3. Nộp bài → chuyển sang trang kết quả
   const handleSubmit = useCallback(
     async (autoSubmit = false) => {
-      if (
-        !attemptId ||
-        submitting ||
-        saving ||
-        result ||
-        submitStartedRef.current
-      ) {
-        return;
-      }
+      if (!attemptId || submitting || saving || finished || submitStartedRef.current) return;
 
       if (!autoSubmit && !submitCompletedRef.current) {
+        const missing = questions.length - answeredCount;
         const confirmed = window.confirm(
-          "Bạn có chắc chắn muốn nộp bài kiểm tra không?"
+          missing > 0
+            ? `Bạn còn ${missing} câu chưa trả lời. Vẫn nộp bài?`
+            : "Bạn chắc chắn muốn nộp bài?"
         );
-
-        if (!confirmed) {
-          return;
-        }
+        if (!confirmed) return;
       }
 
       submitStartedRef.current = true;
@@ -387,122 +248,60 @@ export default function QuizTakingPage() {
       setError("");
 
       try {
-        // Chỉ gửi yêu cầu nộp bài một lần.
         if (!submitCompletedRef.current) {
-          const response = await fetch(
-            `http://127.0.0.1:8000/api/quiz-attempts/${attemptId}/submit`,
-            { method: "POST" }
-          );
-
+          const response = await fetch(`${API_URL}/api/quiz-attempts/${attemptId}/submit`, { method: "POST" });
           const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(
-              data.detail || "Không thể nộp bài."
-            );
-          }
-
+          if (!response.ok) throw new Error(data.detail || "Không thể nộp bài.");
           submitCompletedRef.current = true;
         }
-
-        // Nếu tải kết quả lỗi, lần tiếp theo chỉ tải lại kết quả.
-        const resultResponse = await fetch(
-          `http://127.0.0.1:8000/api/quiz-attempts/${attemptId}/result`
-        );
-
-        const resultData = await resultResponse.json();
-
-        if (!resultResponse.ok) {
-          throw new Error(
-            resultData.detail || "Không thể tải kết quả bài kiểm tra."
-          );
-        }
-
-        setShowAssessment(false);
-        setResult(resultData);
+        setFinished(true);
+        router.replace(`/quiz-results/${attemptId}`);
       } catch (err) {
-        // Nếu chấm điểm đã hoàn tất nhưng lưu đánh giá bị lỗi,
-        // vẫn tải lại kết quả đã nộp để người dùng không bị mất điểm.
+        // Có thể bài đã được chấm dù bước sau lỗi: kiểm tra lại rồi mới báo lỗi
         try {
-          const recoveryResponse = await fetch(
-            `http://127.0.0.1:8000/api/quiz-attempts/${attemptId}/result`
-          );
-          const recoveryData = await recoveryResponse.json();
-
-          if (
-            recoveryResponse.ok &&
-            recoveryData.status === "submitted"
-          ) {
-            setShowAssessment(false);
-            setResult(recoveryData as QuizResult);
+          const recovery = await fetch(`${API_URL}/api/quiz-attempts/${attemptId}/result`);
+          const recoveryData = await recovery.json();
+          if (recovery.ok && recoveryData.status === "submitted") {
+            setFinished(true);
+            router.replace(`/quiz-results/${attemptId}`);
             return;
           }
         } catch {
-          // Giữ lại lỗi nộp bài gốc nếu không thể tải kết quả.
+          /* giữ lỗi gốc */
         }
-
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Không thể nộp bài."
-        );
-
-        if (remainingSeconds !== null && remainingSeconds <= 0) {
-          setRemainingSeconds(null);
-        }
+        setError(err instanceof Error ? err.message : "Không thể nộp bài.");
+        if (remainingSeconds !== null && remainingSeconds <= 0) setRemainingSeconds(null);
       } finally {
         submitStartedRef.current = false;
         setSubmitting(false);
       }
     },
-    [
-      attemptId,
-      submitting,
-      saving,
-      result,
-      remainingSeconds,
-    ]
+    [attemptId, submitting, saving, finished, questions.length, answeredCount, remainingSeconds, router]
   );
 
-  // 4. Đồng hồ đếm ngược và tự động nộp bài
+  // 4. Đồng hồ đếm ngược, hết giờ tự nộp
   useEffect(() => {
-    if (
-      remainingSeconds === null ||
-      result ||
-      loading ||
-      !attemptId ||
-      submitting ||
-      saving
-    ) {
-      return;
-    }
-
+    if (remainingSeconds === null || finished || loading || !attemptId || submitting || saving) return;
     if (remainingSeconds <= 0) {
       void handleSubmit(true);
       return;
     }
-
     const timer = window.setTimeout(() => {
-      setRemainingSeconds((previous) =>
-        previous === null ? null : Math.max(0, previous - 1)
-      );
+      setRemainingSeconds((previous) => (previous === null ? null : Math.max(0, previous - 1)));
     }, 1000);
-
     return () => window.clearTimeout(timer);
-  }, [
-    remainingSeconds,
-    result,
-    loading,
-    attemptId,
-    submitting,
-    saving,
-    handleSubmit,
-  ]);
+  }, [remainingSeconds, finished, loading, attemptId, submitting, saving, handleSubmit]);
 
-  // 5. Trạng thái tải dữ liệu
+  const tagById = useMemo(
+    () => new Map((overview?.question_tags || []).map((tag) => [tag.question_id, tag])),
+    [overview]
+  );
+
+  // 5. Trạng thái tải
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center text-[#716A82]">
+      <div className="sp-card mx-auto max-w-4xl p-10 text-center text-[var(--sp-muted)]">
+        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
         Đang chuẩn bị bài kiểm tra...
       </div>
     );
@@ -510,433 +309,10 @@ export default function QuizTakingPage() {
 
   if (error && questions.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl rounded-2xl border border-red-200 bg-white p-8 text-center">
-        <p className="font-semibold text-red-600">{error}</p>
-
-        <Link
-          href="/quizzes"
-          className="mt-5 inline-block rounded-xl bg-[#5B7FE3] px-5 py-3 text-sm font-semibold text-white"
-        >
-          Quay lại danh sách Quiz
-        </Link>
-      </div>
-    );
-  }
-
-  // 6. Màn hình kết quả sau khi nộp bài
-  if (result) {
-    const strengths = result.ai_assessment?.strengths ?? [];
-    const weakAreas = result.ai_assessment?.weak_areas ?? [];
-    const recommendations =
-      result.ai_assessment?.recommendations ?? [];
-
-    return (
-      <div className="mx-auto max-w-4xl">
-        {/* Tổng quan kết quả */}
-        <div className="rounded-2xl border border-[#ECE6EF] bg-white p-8 text-center">
-          <div className="text-5xl">🎉</div>
-
-          <h1 className="mt-4 text-2xl font-bold text-[#24123A]">
-            Hoàn thành bài kiểm tra!
-          </h1>
-
-          <p className="mt-2 text-sm text-[#716A82]">
-            {title}
-          </p>
-
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-xl bg-[#EEF1FD] p-5">
-              <p className="text-sm text-[#716A82]">Điểm số</p>
-              <p className="mt-2 text-3xl font-bold text-[#24123A]">
-                {result.score}/100
-              </p>
-            </div>
-
-            <div className="rounded-xl bg-[#EEF1FD] p-5">
-              <p className="text-sm text-[#716A82]">Số câu đúng</p>
-              <p className="mt-2 text-3xl font-bold text-[#24123A]">
-                {result.correct_count}/{result.total_questions}
-              </p>
-            </div>
-
-            <div className="rounded-xl bg-[#F7F5FA] p-5">
-              <p className="text-sm text-[#716A82]">Điểm đạt được</p>
-              <p className="mt-2 text-3xl font-bold text-[#C42A63]">
-                {result.earned_points}/{result.total_points}
-              </p>
-            </div>
-          </div>
-
-          <div
-            className={`mx-auto mt-4 max-w-2xl rounded-xl p-4 text-center text-sm leading-6 ${
-              result.score < 50
-                ? "bg-[#FDEDF3] text-[#C42A63]"
-                : result.score < 70
-                  ? "bg-[#FFF5D6] text-[#9A6400]"
-                  : "bg-[#EEF1FD] text-[#4566D1]"
-            }`}
-          >
-            {result.score < 50 ? (
-              <>
-                <strong>Chưa đạt 50%.</strong> Bạn vẫn học tiếp được các ngày
-                sau, nhưng nên ôn lại lộ trình được đề xuất và làm bài
-                kiểm tra lại để củng cố phần còn yếu.
-              </>
-            ) : result.score < 70 ? (
-              <>
-                <strong>Cần củng cố thêm.</strong> Bạn vẫn được học ngày
-                tiếp theo. Hãy ôn lại những phần còn yếu để củng cố kiến
-                thức.
-              </>
-            ) : result.score <= 80 ? (
-              <>
-                <strong>Đạt yêu cầu.</strong> Bạn được phép học ngày tiếp
-                theo; hãy tiếp tục củng cố các phần còn yếu.
-              </>
-            ) : (
-              <>
-                <strong>Xuất sắc!</strong> Bạn đã nắm vững phần lớn kiến
-                thức và được phép học ngày tiếp theo.
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Đáp án và giải thích */}
-        <div className="mt-8">
-          <h2 className="mb-5 text-xl font-bold text-[#24123A]">
-            Xem lại đáp án và kiến thức
-          </h2>
-
-          <div className="space-y-5">
-            {result.results.map((item, index) => (
-              <div
-                key={item.question_id}
-                className="rounded-2xl border border-[#ECE6EF] bg-white p-6"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="font-semibold text-[#24123A]">
-                    Câu {index + 1}. {item.question_text}
-                  </h3>
-
-                  <span
-                    className={`shrink-0 rounded-lg px-3 py-1 text-xs font-semibold ${
-                      item.is_correct
-                        ? "bg-[#EEF1FD] text-[#4566D1]"
-                        : "bg-[#FDEDF3] text-[#C42A63]"
-                    }`}
-                  >
-                    {item.is_correct ? "Chính xác" : "Chưa đúng"}
-                  </span>
-                </div>
-
-                <p className="mt-4 text-sm text-[#716A82]">
-                  Bạn chọn:{" "}
-                  <strong className="text-[#24123A]">
-                    {formatAnswer(item.selected_answer)}
-                  </strong>
-                </p>
-
-                <p className="mt-2 text-sm text-[#4566D1]">
-                  Đáp án đúng:{" "}
-                  <strong>{formatAnswer(item.correct_answer)}</strong>
-                </p>
-
-                {item.explanation && (
-                  <div className="mt-4 rounded-xl bg-[#F7F5FA] p-4">
-                    <p className="text-sm font-semibold text-[#24123A]">
-                      Giải thích
-                    </p>
-
-                    <p className="mt-2 text-sm leading-6 text-[#716A82]">
-                      {item.explanation}
-                    </p>
-                  </div>
-                )}
-
-                {item.source_location && (
-                  <div className="mt-4 rounded-xl border border-[#ECE6EF] bg-[#F7F5FA] p-4">
-                    <p className="text-sm font-semibold text-[#24123A]">
-                      📚 Vị trí kiến thức trong tài liệu
-                    </p>
-
-                    <p className="mt-2 text-sm text-[#716A82]">
-                      {item.source_location.page_number != null
-                        ? `Trang ${item.source_location.page_number}`
-                        : "Chưa xác định trang"}
-
-                      {item.source_location.chunk_index != null
-                        ? ` · Đoạn nội dung ${item.source_location.chunk_index + 1}`
-                        : ""}
-                    </p>
-
-                    {!item.is_correct &&
-                      item.source_location.content && (
-                        <div className="mt-3 rounded-lg bg-white p-3">
-                          <p className="text-xs font-semibold text-[#4566D1]">
-                            Nội dung tham chiếu để ôn lại
-                          </p>
-                          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#4D4366]">
-                            {item.source_location.content}
-                          </p>
-                        </div>
-                      )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Nút xem đánh giá AI */}
-        <div className="mt-8 rounded-2xl border border-[#ECE6EF] bg-white p-6 text-center">
-          <h2 className="text-xl font-bold text-[#24123A]">
-            Bạn đã hoàn thành phần xem lại đáp án!
-          </h2>
-
-          <p className="mt-2 text-sm leading-6 text-[#716A82]">
-            Xem đánh giá năng lực và lộ trình ôn tập được đề xuất
-            dựa trên kết quả bài kiểm tra.
-          </p>
-
-          {!showAssessment ? (
-            <button
-              type="button"
-              onClick={() => setShowAssessment(true)}
-              className="mt-5 rounded-xl bg-[#5B7FE3] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#4566D1]"
-            >
-              Xem đánh giá và lộ trình
-            </button>
-          ) : (
-            <div className="mt-6 text-left">
-              {result.ai_assessment ? (
-                <>
-                  {/* Nhận xét tổng quan */}
-                  <div className="rounded-xl bg-[#EEF1FD] p-5">
-                    <p className="text-sm font-semibold text-[#24123A]">
-                      Nhận xét tổng quan
-                    </p>
-
-                    <p className="mt-2 text-sm leading-6 text-[#4D4366]">
-                      {result.ai_assessment.summary}
-                    </p>
-                  </div>
-
-                  {/* Điểm mạnh */}
-                  <div className="mt-5">
-                    <h3 className="font-semibold text-[#24123A]">
-                      Điểm mạnh
-                    </h3>
-
-                    {strengths.length > 0 ? (
-                      <div className="mt-3 space-y-3">
-                        {strengths.map((item, index) => (
-                          <div
-                            key={index}
-                            className="rounded-xl bg-[#F7F5FA] p-4"
-                          >
-                            <p className="text-sm leading-6 text-[#4D4366]">
-                              {formatAssessmentItem(item)}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-[#716A82]">
-                        Chưa có dữ liệu về điểm mạnh.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Nội dung cần cải thiện */}
-                  <div className="mt-5">
-                    <h3 className="font-semibold text-[#24123A]">
-                      Nội dung cần cải thiện
-                    </h3>
-
-                    {weakAreas.length > 0 ? (
-                      <div className="mt-3 space-y-3">
-                        {weakAreas.map((item, index) => (
-                          <div
-                            key={index}
-                            className="rounded-xl border border-[#ECE6EF] bg-[#F7F5FA] p-4"
-                          >
-                            {typeof item === "string" ? (
-                              <p className="text-sm leading-6 text-[#4D4366]">
-                                {item}
-                              </p>
-                            ) : (
-                              <>
-                                <p className="font-semibold text-[#24123A]">
-                                  {getMainTopicTitle(
-                                    item.topic_name ||
-                                      "Nội dung cần cải thiện"
-                                  )}
-                                </p>
-
-                                {item.hierarchy && (
-                                  <p className="mt-1 text-xs font-medium text-[#4566D1]">
-                                    Vị trí: {stripOutlineNumbers(item.hierarchy)}
-                                  </p>
-                                )}
-
-                                <p className="mt-2 text-sm leading-6 text-[#4D4366]">
-                                  {item.description ||
-                                    item.content ||
-                                    item.reason ||
-                                    "Chưa có mô tả chi tiết."}
-                                </p>
-
-                                {item.source_page != null && (
-                                  <p className="mt-2 text-xs text-[#716A82]">
-                                    Học lại tại trang{" "}
-                                    {item.source_page} trong tài liệu
-                                  </p>
-                                )}
-
-                                {item.recommendation && (
-                                  <p className="mt-3 text-sm leading-6 text-[#C42A63]">
-                                    Gợi ý: {item.recommendation}
-                                  </p>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-[#716A82]">
-                        Không có nội dung đáng kể cần cải thiện.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Lộ trình ôn tập */}
-                  <div className="mt-5">
-                    <h3 className="font-semibold text-[#24123A]">
-                      Lộ trình ôn tập đề xuất
-                    </h3>
-
-                    {recommendations.length > 0 ? (
-                      <div className="mt-3 space-y-2">
-                        {recommendations.map((item, index) => (
-                          <p
-                            key={index}
-                            className="text-sm leading-6 text-[#716A82]"
-                          >
-                            {index + 1}. {item}
-                          </p>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-[#716A82]">
-                        Bạn chưa cần thêm lộ trình ôn tập.
-                      </p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <p className="rounded-xl bg-[#F7F5FA] p-4 text-sm text-[#716A82]">
-                  Chưa có đánh giá AI cho lượt kiểm tra này.
-                </p>
-              )}
-
-              {/* Kế hoạch ôn tập lại */}
-              {result.review_plan && (
-                <div className="mt-6 rounded-xl border border-[#ECE6EF] p-5">
-                  <h3 className="font-semibold text-[#24123A]">
-                    Kế hoạch ôn tập lại
-                  </h3>
-
-                  {result.review_plan.overall_goal && (
-                    <p className="mt-2 text-sm leading-6 text-[#716A82]">
-                      {result.review_plan.overall_goal}
-                    </p>
-                  )}
-
-                  {result.review_plan.review_items &&
-                    result.review_plan.review_items.length > 0 && (
-                      <div className="mt-4 space-y-3">
-                        {result.review_plan.review_items.map(
-                          (item, index) => (
-                            <div
-                              key={`${item.topic_name || "review"}-${index}`}
-                              className="rounded-xl border border-[#ECE6EF] bg-[#F7F5FA] p-4"
-                            >
-                              <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
-                                <div>
-                                  <p className="font-semibold text-[#24123A]">
-                                    {index + 1}.{" "}
-                                    {getMainTopicTitle(
-                                      item.topic_name ||
-                                        "Nội dung cần ôn lại"
-                                    )}
-                                  </p>
-
-                                  {item.hierarchy && (
-                                    <p className="mt-1 text-xs text-[#4566D1]">
-                                      {stripOutlineNumbers(item.hierarchy)}
-                                    </p>
-                                  )}
-                                </div>
-
-                                <span className="w-fit rounded-full bg-[#EEF1FD] px-3 py-1 text-xs font-semibold capitalize text-[#4566D1]">
-                                  {formatReviewDate(item.scheduled_date)}
-                                </span>
-                              </div>
-
-                              {item.source_page != null && (
-                                <p className="mt-2 text-xs text-[#716A82]">
-                                  Học tại trang {item.source_page}
-                                </p>
-                              )}
-
-                              <p className="mt-2 text-sm leading-6 text-[#716A82]">
-                                {item.recommendation ||
-                                  "Đọc lại phần này, ghi lại ý chính và làm lại các câu hỏi liên quan."}
-                              </p>
-                            </div>
-                          )
-                        )}
-                      </div>
-                    )}
-
-                  {result.review_plan.status === "completed" ? (
-                    <p className="mt-2 text-sm leading-6 text-[#4566D1]">
-                      Bạn đã hoàn thành kế hoạch ôn tập và đạt yêu cầu
-                      bài kiểm tra lại.
-                    </p>
-                  ) : result.review_plan.retake_quiz_id ? (
-                    <>
-                      <p className="mt-2 text-sm leading-6 text-[#716A82]">
-                        Bài kiểm tra lại gồm 30% câu trắc nghiệm và 70% câu
-                        điền vào chỗ trống. Bạn có thể làm ngay.
-                      </p>
-
-                      <Link
-                        href={`/review-plans/${result.review_plan.id}`}
-                        className="mt-4 inline-block rounded-xl bg-[#E0457B] px-5 py-3 text-sm font-semibold text-white hover:bg-[#E0457B]"
-                      >
-                        Vào ôn tập lại →
-                      </Link>
-                    </>
-                  ) : (
-                    <p className="mt-2 text-sm leading-6 text-[#C42A63]">
-                      Kế hoạch ôn tập đã được tạo nhưng bài kiểm tra lại
-                      chưa khả dụng. Vui lòng thử lại sau.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <Link
-          href="/quizzes"
-          className="mt-8 inline-block rounded-xl bg-[#5B7FE3] px-6 py-3 text-sm font-semibold text-white hover:bg-[#4566D1]"
-        >
-          Quay lại danh sách Quiz
+      <div className="sp-card mx-auto max-w-3xl p-8 text-center">
+        <p className="font-semibold text-[var(--sp-pink-dark)]">{error}</p>
+        <Link href="/quizzes" className="sp-btn sp-btn-primary mt-5 px-5 py-2.5 text-sm">
+          Về Kiểm tra kiến thức
         </Link>
       </div>
     );
@@ -944,339 +320,408 @@ export default function QuizTakingPage() {
 
   const currentQuestion = questions[currentIndex];
 
-  const answeredCount = Object.values(answers).filter((answer) =>
-    Array.isArray(answer) ? answer.length > 0 : Boolean(answer)
-  ).length;
-
   if (!currentQuestion) {
+    return <div className="sp-card mx-auto max-w-3xl p-8 text-center text-[var(--sp-muted)]">Bài này chưa có câu hỏi.</div>;
+  }
+
+  if (finished) {
     return (
-      <div className="rounded-2xl bg-white p-8 text-center">
-        <p className="text-[#716A82]">
-          Quiz hiện chưa có câu hỏi.
-        </p>
+      <div className="sp-card mx-auto max-w-3xl p-10 text-center text-[var(--sp-muted)]">
+        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
+        Đã nộp bài, đang chấm điểm...
       </div>
     );
   }
 
-  // 7. Giao diện làm bài
+  const total = questions.length;
+  const choiceCount = questions.filter((question) => question.question_type !== "fill_blank").length;
+  const fillCount = total - choiceCount;
+  const typeSummary = fillCount === 0 ? `${total} câu trắc nghiệm` : `${choiceCount} trắc nghiệm · ${fillCount} điền khuyết`;
+  const displayTitle = overview?.context.topic_name ? getMainTopicTitle(overview.context.topic_name) : getMainTopicTitle(title);
+  const kind = overview?.is_retake ? "Kiểm tra lại" : "Kiểm tra kiến thức";
+  const tag = tagById.get(currentQuestion.id);
+  const isFlagged = flagged.has(currentQuestion.id);
+  const { context: stem, question: ask } = splitQuestion(currentQuestion.question_text);
+  const difficulty = DIFFICULTY[currentQuestion.difficulty_level || 0] || "";
+  const ratio = remainingSeconds !== null && timeLimit ? remainingSeconds / (timeLimit * 60) : 1;
+  const lowTime = remainingSeconds !== null && remainingSeconds <= 60;
+
+  /* "Bài này gồm" */
+  const numbered = questions.map((question, index) => ({ number: index + 1, tag: tagById.get(question.id) }));
+  const groups: { icon: ReactNode; tone: string; title: string; text: string }[] = [];
+  if (overview?.is_retake) {
+    const weak = numbered.filter((item) => item.tag?.weak).map((item) => item.number);
+    const rest = numbered.filter((item) => !item.tag?.weak).map((item) => item.number);
+    if (weak.length) {
+      groups.push({
+        icon: <IconTarget size={16} />,
+        tone: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]",
+        title: `Câu ${compactNumbers(weak)} · phần yếu`,
+        text: "Phần bạn làm sai ở lần trước",
+      });
+    }
+    if (rest.length) {
+      groups.push({
+        icon: <IconBook size={16} />,
+        tone: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]",
+        title: `Câu ${compactNumbers(rest)}`,
+        text: "Phần còn lại của bài học",
+      });
+    }
+  } else if (overview) {
+    const byPage = new Map<string, number[]>();
+    for (const item of numbered) {
+      const key = item.tag?.page ? `Trang ${item.tag.page}` : "Nội dung bài học";
+      byPage.set(key, [...(byPage.get(key) || []), item.number]);
+    }
+    Array.from(byPage.entries())
+      .sort(([a], [b]) => a.localeCompare(b, "vi", { numeric: true }))
+      .slice(0, 3)
+      .forEach(([page, numbers]) =>
+        groups.push({
+          icon: <IconBook size={16} />,
+          tone: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]",
+          title: `Câu ${compactNumbers(numbers)}`,
+          text: `${page}${overview.context.chapter ? ` · ${overview.context.chapter}` : ""}`,
+        })
+      );
+  }
+  const flaggedNumbers = numbered.filter((item) => flagged.has(questions[item.number - 1].id)).map((item) => item.number);
+  groups.push({
+    icon: <IconFlag size={16} />,
+    tone: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]",
+    title: flaggedNumbers.length ? `${flaggedNumbers.length} câu đã đánh dấu` : "Chưa đánh dấu câu nào",
+    text: flaggedNumbers.length
+      ? `Câu ${compactNumbers(flaggedNumbers)}, xem lại trước khi nộp`
+      : "Bấm \"Đánh dấu xem lại\" với câu bạn còn phân vân",
+  });
+
+  const isLast = currentIndex === total - 1;
+
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-8">
-        <Link
-          href="/quizzes"
-          className="text-sm font-medium text-[#716A82] hover:text-[#24123A]"
-        >
-          ← Danh sách bài kiểm tra
-        </Link>
-
-        <h1 className="mt-4 text-2xl font-bold text-[#24123A]">
-          {title}
-        </h1>
-
-        <div className="mt-4 flex flex-wrap gap-4 text-sm text-[#716A82]">
-          <span>📝 {questions.length} câu hỏi</span>
-
-          <span>
-            ⏱️{" "}
-            {timeLimit
-              ? `${timeLimit} phút`
-              : "Không giới hạn thời gian"}
-          </span>
-
-          <span>
-            ✓ Đã trả lời {answeredCount}/{questions.length} câu
-          </span>
+    <div className="mx-auto max-w-7xl space-y-5">
+      {/* ---------- Thanh trên ---------- */}
+      <header className="flex flex-col gap-4 rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-white p-4 shadow-[5px_5px_0_var(--sp-peri)] sm:p-5 lg:flex-row lg:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
+          <Link href="/quizzes" className="sp-btn sp-btn-secondary shrink-0 px-4 py-2.5 text-sm">
+            <IconChevronLeft size={16} />
+            Thoát
+          </Link>
+          <div className="min-w-0">
+            <h1 className="truncate text-[19px] font-extrabold leading-tight text-[var(--sp-purple)] sm:text-[22px]">
+              {kind} · {displayTitle}
+            </h1>
+            <p className="mt-0.5 truncate text-[13px] text-[var(--sp-muted)]">
+              {[overview?.context.subject_name, typeSummary, "chỉ gồm phần đã học"].filter(Boolean).join(" · ")}
+            </p>
+          </div>
         </div>
-      </div>
 
-      {remainingSeconds !== null && (
-        <div
-          className={`mb-6 flex items-center justify-between rounded-2xl border p-4 ${
-            remainingSeconds <= 60
-              ? "border-red-200 bg-red-50"
-              : "border-[#ECE6EF] bg-white"
-          }`}
-        >
-          <div>
-            <p className="text-sm font-semibold text-[#24123A]">
-              Thời gian còn lại
-            </p>
-
-            <p className="mt-1 text-xs text-[#716A82]">
-              Bài sẽ tự động nộp khi đồng hồ về 00:00.
-            </p>
+        <div className="flex items-center gap-4">
+          <div className="min-w-0 flex-1 lg:w-[260px] lg:flex-none">
+            <div className="flex justify-between text-[13px] font-semibold text-[var(--sp-text-2)]">
+              <span>Đã trả lời</span>
+              <span className="font-bold text-[var(--sp-ink)]">
+                {answeredCount} / {total} câu
+              </span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
+              <div
+                className="h-full rounded-full bg-[var(--sp-peri)] transition-all duration-500"
+                style={{ width: `${(answeredCount / total) * 100}%` }}
+              />
+            </div>
           </div>
 
           <div
-            className={`text-2xl font-bold tabular-nums ${
-              remainingSeconds <= 60
-                ? "text-red-600"
-                : "text-[#24123A]"
+            className={`flex shrink-0 items-center gap-3 rounded-2xl px-4 py-2.5 text-white ${
+              lowTime ? "bg-[var(--sp-pink-dark)]" : "bg-[var(--sp-purple)]"
             }`}
+            aria-live="polite"
           >
-            {String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:
-            {String(remainingSeconds % 60).padStart(2, "0")}
+            <span className="relative flex h-10 w-10 items-center justify-center">
+              <svg viewBox="0 0 40 40" className="absolute inset-0 -rotate-90">
+                <circle cx="20" cy="20" r="16" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="4" />
+                <circle
+                  cx="20"
+                  cy="20"
+                  r="16"
+                  fill="none"
+                  stroke="var(--sp-yellow)"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray={`${Math.max(0, Math.min(1, ratio)) * 100.5} 100.5`}
+                />
+              </svg>
+              <IconClock size={15} />
+            </span>
+            <span>
+              <span className="block text-[24px] font-extrabold leading-none tabular-nums">
+                {remainingSeconds !== null ? formatClock(remainingSeconds) : "∞"}
+              </span>
+              <span className="block text-[11px] text-white/75">
+                {timeLimit ? `còn lại / ${formatClock(timeLimit * 60)}` : "không giới hạn"}
+              </span>
+            </span>
           </div>
         </div>
-      )}
+      </header>
 
-      {submitting && (
-        <p className="mb-4 text-sm font-medium text-[#C42A63]">
-          Đang nộp bài kiểm tra...
-        </p>
-      )}
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+        {/* ---------- Câu hỏi ---------- */}
+        <section className="sp-card flex min-h-[540px] flex-col p-5 sm:p-8">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="mr-1 flex items-baseline gap-1 text-[var(--sp-pink)]">
+              <span className="text-[34px] font-black leading-none">Câu {currentIndex + 1}</span>
+              <span className="text-[18px] font-bold text-[var(--sp-muted)]">/ {total}</span>
+            </h2>
+            {tag?.weak && (
+              <span className="sp-chip flex items-center gap-1 bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
+                <IconTarget size={13} />
+                Phần yếu{tag.page ? ` · trang ${tag.page}` : ""}
+              </span>
+            )}
+            {!tag?.weak && tag?.page && (
+              <span className="sp-chip bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]">Trang {tag.page}</span>
+            )}
+            {difficulty && <span className="sp-chip bg-[var(--sp-surface-2)] text-[var(--sp-text-2)]">{difficulty}</span>}
+            <button
+              type="button"
+              aria-pressed={isFlagged}
+              onClick={() =>
+                setFlagged((current) => {
+                  const next = new Set(current);
+                  if (next.has(currentQuestion.id)) next.delete(currentQuestion.id);
+                  else next.add(currentQuestion.id);
+                  return next;
+                })
+              }
+              className={`sp-btn ml-auto px-3.5 py-2 text-[13px] ${
+                isFlagged
+                  ? "border-2 border-[var(--sp-yellow)] bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]"
+                  : "sp-btn-secondary"
+              }`}
+            >
+              <IconFlag size={15} />
+              {isFlagged ? "Đã đánh dấu" : "Đánh dấu xem lại"}
+            </button>
+          </div>
 
-      <div className="mb-6">
-        <div className="mb-2 flex justify-between text-xs text-[#716A82]">
-          <span>Tiến độ làm bài</span>
-
-          <span>
-            {Math.round((answeredCount / questions.length) * 100)}%
-          </span>
-        </div>
-
-        <div className="h-2 overflow-hidden rounded-full bg-[#EEF1FD]">
-          <div
-            className="h-full rounded-full bg-[#5B7FE3] transition-all"
-            style={{
-              width: `${(answeredCount / questions.length) * 100}%`,
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-[#ECE6EF] bg-white p-6 sm:p-8">
-        <div className="flex items-center justify-between">
-          <span className="rounded-lg bg-[#EEF1FD] px-3 py-1 text-sm font-semibold text-[#4566D1]">
-            Câu {currentIndex + 1}/{questions.length}
-          </span>
-
-          <span className="text-sm text-[#716A82]">
-            {currentQuestion.points} điểm
-          </span>
-        </div>
-
-        <h2 className="mt-6 text-lg font-bold leading-8 text-[#24123A]">
-          {currentQuestion.question_text}
-        </h2>
-
-        {/* Câu hỏi trắc nghiệm một hoặc nhiều đáp án */}
-        {(
-          currentQuestion.question_type === "single_choice" ||
-          currentQuestion.question_type === "multiple_choice"
-        ) ? (
-          <>
-            <p className="mt-2 text-xs text-[#716A82]">
-              {currentQuestion.question_type === "multiple_choice"
-                ? "Có thể chọn nhiều đáp án đúng."
-                : "Chọn một đáp án đúng nhất."}
+          {stem && (
+            <p className="mt-5 rounded-2xl border-l-4 border-[var(--sp-peri)] bg-[var(--sp-lav)] px-5 py-4 text-[15px] leading-7 text-[var(--sp-text-2)]">
+              {emphasizeNumbers(stem)}
             </p>
+          )}
 
-            <div className="mt-6 space-y-3">
-              {getOptionEntries(currentQuestion.options).map(
-                ([key, optionText]) => {
-                  const currentAnswer = answers[currentQuestion.id];
+          <p className="mt-5 text-[19px] font-bold leading-8 text-[var(--sp-ink)] sm:text-[21px]">{ask}</p>
 
-                  const isSelected = Array.isArray(currentAnswer)
-                    ? currentAnswer.includes(key)
-                    : currentAnswer === key;
-
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      disabled={saving || submitting}
-                      onClick={() => {
-                        if (
-                          currentQuestion.question_type === "multiple_choice"
-                        ) {
-                          const currentAnswers = Array.isArray(
-                            answers[currentQuestion.id]
-                          )
-                            ? (answers[currentQuestion.id] as string[])
-                            : [];
-
-                          const nextAnswers = currentAnswers.includes(key)
-                            ? currentAnswers.filter((item) => item !== key)
-                            : [...currentAnswers, key];
-
-                          void handleSelectAnswer(nextAnswers);
-                        } else {
-                          void handleSelectAnswer(key);
-                        }
-                      }}
-                      className={`flex w-full items-start gap-4 rounded-xl border p-4 text-left transition ${
-                        isSelected
-                          ? "border-[#5B7FE3] bg-[#EEF1FD]"
-                          : "border-[#ECE6EF] bg-white hover:border-[#D5DDF8] hover:bg-[#F7F5FA]"
-                      } ${saving ? "cursor-wait opacity-70" : ""}`}
-                    >
-                      <span
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                          isSelected
-                            ? "bg-[#5B7FE3] text-white"
-                            : "bg-[#EEF1FD] text-[#716A82]"
-                        }`}
-                      >
-                        {key}
-                      </span>
-
-                      <span className="pt-1 text-sm leading-6 text-[#4D4366]">
-                        {optionText}
-                      </span>
-                    </button>
-                  );
-                }
+          {currentQuestion.question_type === "fill_blank" ? (
+            <div className="mt-5">
+              <p className="text-[13px] text-[var(--sp-muted)]">Nhập câu trả lời rồi bấm Lưu (hoặc Enter).</p>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={
+                    draftAnswers[currentQuestion.id] ??
+                    (typeof answers[currentQuestion.id] === "string" ? (answers[currentQuestion.id] as string) : "")
+                  }
+                  onChange={(event) =>
+                    setDraftAnswers((current) => ({ ...current, [currentQuestion.id]: event.target.value }))
+                  }
+                  onKeyDown={(event) => {
+                    const value = (draftAnswers[currentQuestion.id] ?? "").trim();
+                    if (event.key === "Enter" && value) void handleSelectAnswer(value);
+                  }}
+                  disabled={submitting}
+                  placeholder="Câu trả lời của bạn..."
+                  className="min-w-0 flex-1 rounded-2xl border-2 border-[var(--sp-line)] bg-white px-4 py-3.5 text-[15px] text-[var(--sp-ink)] outline-none transition placeholder:text-[var(--sp-soft)] focus:border-[var(--sp-peri)]"
+                />
+                <button
+                  type="button"
+                  disabled={saving || submitting || !(draftAnswers[currentQuestion.id] ?? "").trim()}
+                  onClick={() => void handleSelectAnswer((draftAnswers[currentQuestion.id] ?? "").trim())}
+                  className="sp-btn sp-btn-primary justify-center px-5 py-3 text-sm disabled:opacity-50"
+                >
+                  <IconCheck size={15} />
+                  Lưu câu trả lời
+                </button>
+              </div>
+              {typeof answers[currentQuestion.id] === "string" && answers[currentQuestion.id] && (
+                <p className="mt-2 text-[13px] font-semibold text-emerald-700">
+                  Đã lưu: “{answers[currentQuestion.id] as string}”
+                </p>
               )}
             </div>
-          </>
-        ) : (
-          /* Câu hỏi điền khuyết */
-          <>
-            <p className="mt-2 text-xs text-[#716A82]">
-              Nhập câu trả lời của bạn vào ô bên dưới.
-            </p>
-
-            <textarea
-              value={
-                draftAnswers[currentQuestion.id] ??
-                (
-                  typeof answers[currentQuestion.id] === "string"
-                    ? (answers[currentQuestion.id] as string)
-                    : ""
-                )
-              }
-              onChange={(event) =>
-                setDraftAnswers((previous) => ({
-                  ...previous,
-                  [currentQuestion.id]: event.target.value,
-                }))
-              }
-              disabled={saving || submitting}
-              placeholder="Nhập câu trả lời..."
-              rows={3}
-              className="mt-6 w-full resize-y rounded-xl border border-[#ECE6EF] bg-white p-4 text-sm text-[#24123A] outline-none transition placeholder:text-[#A39DB3] focus:border-[#5B7FE3] focus:ring-2 focus:ring-[#ECE6EF] disabled:opacity-60"
-            />
-
-            <button
-              type="button"
-              disabled={
-                saving ||
-                submitting ||
-                !(draftAnswers[currentQuestion.id] ?? "").trim()
-              }
-              onClick={() =>
-                void handleSelectAnswer(
-                  (draftAnswers[currentQuestion.id] ?? "").trim()
-                )
-              }
-              className="mt-4 rounded-xl bg-[#5B7FE3] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4566D1] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Lưu câu trả lời
-            </button>
-          </>
-        )}
-
-        {saving && (
-          <p className="mt-4 text-sm text-[#716A82]">
-            Đang lưu câu trả lời...
-          </p>
-        )}
-
-        {error && (
-          <p className="mt-4 text-sm text-red-600">
-            {error}
-          </p>
-        )}
-
-        <div className="mt-8 flex items-center justify-between border-t border-[#ECE6EF] pt-6">
-          <button
-            type="button"
-            disabled={currentIndex === 0 || saving || submitting}
-            onClick={() => setCurrentIndex((index) => index - 1)}
-            className="rounded-xl border border-[#ECE6EF] px-5 py-3 text-sm font-semibold text-[#716A82] hover:bg-[#EEF1FD] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            ← Câu trước
-          </button>
-
-          {currentIndex < questions.length - 1 ? (
-            <button
-              type="button"
-              disabled={saving || submitting}
-              onClick={() => setCurrentIndex((index) => index + 1)}
-              className="rounded-xl bg-[#5B7FE3] px-5 py-3 text-sm font-semibold text-white hover:bg-[#4566D1] disabled:opacity-50"
-            >
-              Câu tiếp theo →
-            </button>
           ) : (
+            <div className="mt-5 space-y-3">
+              {currentQuestion.question_type === "multiple_choice" && (
+                <p className="text-[13px] text-[var(--sp-muted)]">Có thể chọn nhiều đáp án.</p>
+              )}
+              {getOptionEntries(currentQuestion.options).map(([key, optionText], index) => {
+                const currentAnswer = answers[currentQuestion.id];
+                const selected = Array.isArray(currentAnswer) ? currentAnswer.includes(key) : currentAnswer === key;
+                const letter = key || String.fromCharCode(65 + index);
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={submitting}
+                    aria-pressed={selected}
+                    onClick={() => {
+                      if (currentQuestion.question_type === "multiple_choice") {
+                        const list = Array.isArray(currentAnswer) ? currentAnswer : [];
+                        void handleSelectAnswer(list.includes(key) ? list.filter((item) => item !== key) : [...list, key]);
+                      } else {
+                        void handleSelectAnswer(key);
+                      }
+                    }}
+                    className={`flex w-full items-center gap-4 rounded-2xl border-2 px-4 py-3.5 text-left transition sm:px-5 ${
+                      selected
+                        ? "border-[var(--sp-purple)] bg-[var(--sp-lav)] shadow-[4px_4px_0_var(--sp-peri)]"
+                        : "border-[var(--sp-line)] bg-white hover:border-[var(--sp-lav-line)] hover:bg-[var(--sp-surface-2)]"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[15px] font-extrabold ${
+                        selected ? "bg-[var(--sp-peri)] text-white" : "bg-[var(--sp-surface-2)] text-[var(--sp-text-2)]"
+                      }`}
+                    >
+                      {letter}
+                    </span>
+                    <span className="flex-1 text-[16px] font-semibold leading-6 text-[var(--sp-ink)]">{optionText}</span>
+                    <span
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
+                        selected ? "border-[var(--sp-peri)]" : "border-[var(--sp-soft)]"
+                      }`}
+                    >
+                      {selected && <span className="h-3 w-3 rounded-full bg-[var(--sp-peri)]" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {error && <p className="mt-4 text-sm font-medium text-[var(--sp-pink-dark)]">{error}</p>}
+
+          <div aria-hidden="true" className="min-h-8 flex-1" />
+          <div className="flex flex-wrap items-center gap-3 border-t-2 border-dashed border-[var(--sp-line)] pt-5">
+            <button
+              type="button"
+              disabled={currentIndex === 0 || submitting}
+              onClick={() => setCurrentIndex((index) => index - 1)}
+              className="sp-btn sp-btn-secondary px-4 py-2.5 text-sm disabled:opacity-40"
+            >
+              <IconChevronLeft size={16} />
+              Câu trước
+            </button>
+            <p className="hidden flex-1 items-center gap-1.5 text-[13px] text-[var(--sp-muted)] sm:flex">
+              <IconInfo size={15} />
+              Đáp án và giải thích hiện sau khi nộp bài
+            </p>
+            {isLast ? (
+              <button
+                type="button"
+                disabled={saving || submitting}
+                onClick={() => void handleSubmit(false)}
+                className="sp-btn ml-auto bg-[var(--sp-purple)] px-5 py-2.5 text-sm text-white hover:bg-[var(--sp-purple-deep)] disabled:opacity-50"
+              >
+                <IconCheck size={16} />
+                {submitting ? "Đang nộp..." : "Nộp bài"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setCurrentIndex((index) => index + 1)}
+                className="sp-btn sp-btn-primary ml-auto px-5 py-2.5 text-sm"
+              >
+                Câu tiếp
+                <IconChevronRight size={16} />
+              </button>
+            )}
+          </div>
+        </section>
+
+        {/* ---------- Cột phải ---------- */}
+        <aside className="space-y-5 lg:sticky lg:top-6">
+          <section className="sp-card p-5">
+            <p className="sp-accent text-[16px] text-[var(--sp-pink)]">Bấm số để chuyển câu</p>
+            <h3 className="text-[19px] text-[var(--sp-ink)]">Danh sách câu hỏi</h3>
+            <div className="mt-4 grid grid-cols-5 gap-2 lg:grid-cols-4">
+              {questions.map((question, index) => {
+                const answer = answers[question.id];
+                const answered = Array.isArray(answer) ? answer.length > 0 : Boolean(answer);
+                const current = index === currentIndex;
+                return (
+                  <button
+                    key={question.id}
+                    type="button"
+                    onClick={() => setCurrentIndex(index)}
+                    aria-label={`Câu ${index + 1}${answered ? ", đã trả lời" : ", chưa trả lời"}${
+                      flagged.has(question.id) ? ", đã đánh dấu" : ""
+                    }${current ? ", đang làm" : ""}`}
+                    className={`relative flex h-12 items-center justify-center rounded-xl border-2 text-[17px] font-extrabold transition ${
+                      current
+                        ? "border-[var(--sp-purple-deep)] bg-[var(--sp-pink)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)]"
+                        : answered
+                          ? "border-[var(--sp-peri)] bg-[var(--sp-peri)] text-white hover:brightness-105"
+                          : "border-[var(--sp-line)] bg-white text-[var(--sp-muted)] hover:border-[var(--sp-lav-line)]"
+                    }`}
+                  >
+                    {index + 1}
+                    {flagged.has(question.id) && (
+                      <Sparkle size={14} className="absolute -right-1.5 -top-1.5 text-[var(--sp-yellow)]" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[13px] text-[var(--sp-text-2)]">
+              <span className="flex items-center gap-1.5">
+                <span className="h-3.5 w-3.5 rounded bg-[var(--sp-peri)]" />
+                Đã trả lời
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-3.5 w-3.5 rounded border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-pink)]" />
+                Đang làm
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-3.5 w-3.5 rounded border-2 border-[var(--sp-line)] bg-white" />
+                Chưa làm
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Sparkle size={13} className="text-[var(--sp-yellow)]" />
+                Đánh dấu
+              </span>
+            </div>
+          </section>
+
+          <section className="sp-card p-5">
+            <h3 className="text-[19px] text-[var(--sp-ink)]">Bài này gồm</h3>
+            <ul className="mt-3 space-y-3.5">
+              {groups.map((group) => (
+                <li key={group.title} className="flex gap-3">
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${group.tone}`}>
+                    {group.icon}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-[14px] font-bold text-[var(--sp-ink)]">{group.title}</span>
+                    <span className="block text-[13px] leading-5 text-[var(--sp-muted)]">{group.text}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
             <button
               type="button"
               disabled={saving || submitting}
               onClick={() => void handleSubmit(false)}
-              className="rounded-xl bg-[#E0457B] px-5 py-3 text-sm font-semibold text-white hover:bg-[#E0457B] disabled:opacity-50"
+              className="sp-btn mt-6 w-full justify-center bg-[var(--sp-purple)] py-3.5 text-[16px] text-white hover:bg-[var(--sp-purple-deep)] disabled:opacity-60"
             >
+              <IconCheck size={17} />
               {submitting ? "Đang nộp bài..." : "Nộp bài"}
             </button>
-          )}
-        </div>
-      </div>
-
-      {/* Điều hướng câu hỏi */}
-      <div className="mt-6 rounded-2xl border border-[#ECE6EF] bg-white p-5">
-        <p className="mb-4 text-sm font-semibold text-[#24123A]">
-          Điều hướng câu hỏi
-        </p>
-
-        <div className="flex flex-wrap gap-2">
-          {questions.map((question, index) => {
-            const answer = answers[question.id];
-
-            const isAnswered = Array.isArray(answer)
-              ? answer.length > 0
-              : Boolean(answer);
-
-            const isCurrent = currentIndex === index;
-
-            return (
-              <button
-                key={question.id}
-                type="button"
-                disabled={saving || submitting}
-                onClick={() => setCurrentIndex(index)}
-                aria-label={`Câu ${index + 1}${isAnswered ? ", đã trả lời" : ", chưa trả lời"}${isCurrent ? ", đang xem" : ""}`}
-                className={`relative flex h-10 w-10 items-center justify-center rounded-lg border-2 text-sm font-bold transition ${
-                  isCurrent
-                    ? "border-[var(--sp-purple)] bg-[var(--sp-peri)] text-white shadow-[2px_2px_0_var(--sp-purple-deep)]"
-                    : isAnswered
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:border-emerald-500"
-                      : "border-[var(--sp-line)] bg-white text-[var(--sp-muted)] hover:border-[var(--sp-lav-line)]"
-                }`}
-              >
-                {index + 1}
-                {isAnswered && (
-                  <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-white bg-emerald-500" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-[var(--sp-text-2)]">
-          <span className="flex items-center gap-2">
-            <span className="relative h-5 w-5 rounded-md border-2 border-emerald-300 bg-emerald-50">
-              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
-            </span>
-            Đã trả lời
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="h-5 w-5 rounded-md border-2 border-[var(--sp-line)] bg-white" />
-            Chưa trả lời
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="h-5 w-5 rounded-md border-2 border-[var(--sp-purple)] bg-[var(--sp-peri)]" />
-            Câu đang xem
-          </span>
-        </div>
+          </section>
+        </aside>
       </div>
     </div>
   );

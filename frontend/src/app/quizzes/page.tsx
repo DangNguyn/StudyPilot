@@ -1,20 +1,26 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import {
-  IconArrowLeft,
   IconArrowRight,
-  IconCalendar,
+  IconBolt,
+  IconBook,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
   IconClock,
+  IconFile,
+  IconInfo,
+  IconList,
   IconLock,
   IconPen,
+  IconPlay,
   IconRepeat,
+  IconTarget,
+  IconTrendUp,
   Sparkle,
 } from "@/components/icons";
 
@@ -44,6 +50,7 @@ interface Quiz {
   actual_study_seconds?: number;
   is_unlocked?: boolean;
   lock_reason?: string | null;
+  question_count?: number;
 }
 
 interface QuizAttempt {
@@ -79,11 +86,6 @@ const PALETTE = [
 ];
 
 /* ================= Tiện ích ================= */
-
-function formatDate(value?: string | null) {
-  if (!value) return "Chưa xác định";
-  return new Date(value).toLocaleDateString("vi-VN");
-}
 
 function formatDuration(seconds = 0, requiredSeconds = 300) {
   const remaining = Math.max(0, requiredSeconds - seconds);
@@ -255,8 +257,9 @@ function QuizzesContent() {
   if (planParam && subject) {
     return (
       <SubjectQuizzes
+        key={subject.planId}
         subject={subject}
-        colorIndex={subjects.indexOf(subject)}
+        subjects={subjects}
         historyError={historyError}
       />
     );
@@ -427,443 +430,617 @@ function MiniStat({
 
 /* ================= Màn hình 2: bài kiểm tra của một môn ================= */
 
+type QuizOverview = {
+  quiz_id: string;
+  is_retake: boolean;
+  question_count: number;
+  choice_count: number;
+  fill_count: number;
+  time_limit_minutes: number | null;
+  attempt_round: number;
+  previous: {
+    attempt_id: string;
+    score: number;
+    correct_count: number;
+    total_questions: number | null;
+    submitted_at: string | null;
+    is_original: boolean;
+  } | null;
+  segments: { kind: "weak" | "rest" | "page"; count: number; label: string; detail: string }[];
+  context: {
+    topic_name: string | null;
+    chapter: string | null;
+    scheduled_date: string | null;
+    day_number: number | null;
+    subject_id: string | null;
+    study_session_id: string | null;
+  };
+};
+
+type QuizState = "open" | "done" | "locked";
+
+const WEEKDAYS = ["Chủ nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy"];
+
+function vnDateKey(value?: string | null) {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date(value));
+}
+
+function shortDate(value?: string | null) {
+  const key = vnDateKey(value);
+  if (!key) return "";
+  const [, month, day] = key.split("-");
+  return `${day}/${month}`;
+}
+
+function weekdayDate(value?: string | null) {
+  const key = vnDateKey(value);
+  if (!key) return "";
+  const date = new Date(`${key}T00:00:00`);
+  return `${WEEKDAYS[date.getDay()]} ${shortDate(key)}`;
+}
+
+/** "Chương 2: Độ co giãn" → "Chương 2" ; mã ngắn "C2" */
+function chapterCode(chapter?: string | null) {
+  const match = (chapter || "").match(/^\s*(chương|chapter|unit|phần|part|bài)\s*([0-9]+|[IVXLC]+)/i);
+  if (!match) return null;
+  const word = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+  return { label: `${word} ${match[2]}`, code: `C${match[2]}` };
+}
+
+function quizState(quiz: Quiz, latest: QuizAttempt | undefined): QuizState {
+  if (!quiz.is_retake && latest) return "done";
+  if (quiz.is_retake && quiz.review_status === "completed") return "done";
+  return canStartQuiz(quiz) ? "open" : "locked";
+}
+
 function SubjectQuizzes({
   subject,
-  colorIndex,
+  subjects,
   historyError,
 }: {
   subject: SubjectGroup;
-  colorIndex: number;
+  subjects: SubjectGroup[];
   historyError: string;
 }) {
-  const [filter, setFilter] = useState<"all" | "open" | "done">("all");
-  /* Mặc định thu gọn tất cả tuần; bấm vào tuần để mở */
-  const [collapsedWeeks, setCollapsedWeeks] = useState<Record<string, boolean>>({});
-  /* Nhóm "Kiểm tra lại" trong mỗi tuần mặc định thu gọn */
-  const [openRetakes, setOpenRetakes] = useState<Record<string, boolean>>({});
+  const router = useRouter();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const today = vnDateKey(new Date().toISOString());
 
-  const latestByQuiz = new Map<string, QuizAttempt>();
-  for (const attempt of [...subject.attempts].sort(
-    (a, b) => new Date(a.submitted_at || 0).getTime() - new Date(b.submitted_at || 0).getTime()
-  )) {
-    latestByQuiz.set(attempt.quiz_id, attempt);
-  }
+  const latestByQuiz = useMemo(() => {
+    const map = new Map<string, QuizAttempt>();
+    for (const attempt of [...subject.attempts].sort(
+      (a, b) => new Date(a.submitted_at || 0).getTime() - new Date(b.submitted_at || 0).getTime()
+    )) {
+      map.set(attempt.quiz_id, attempt);
+    }
+    return map;
+  }, [subject.attempts]);
 
-  const visible = subject.quizzes.filter((quiz) => {
-    if (filter === "open") return subject.pending.includes(quiz);
-    if (filter === "done") return subject.doneQuizIds.has(quiz.id);
-    return true;
-  });
+  /* Thứ tự: bài đang mở → bài đã làm (mới nhất trước) → bài đang khóa (theo lịch) */
+  const ordered = useMemo(() => {
+    const time = (quiz: Quiz) => new Date(quiz.scheduled_start || quiz.created_at).getTime();
+    const items = subject.quizzes.map((quiz) => {
+      const latest = latestByQuiz.get(quiz.id);
+      return { quiz, latest, state: quizState(quiz, latest) };
+    });
+    const rank = { open: 0, done: 1, locked: 2 } as const;
+    return items.sort((a, b) => {
+      if (a.state !== b.state) return rank[a.state] - rank[b.state];
+      if (a.state === "done") {
+        return new Date(b.latest?.submitted_at || 0).getTime() - new Date(a.latest?.submitted_at || 0).getTime();
+      }
+      return time(a.quiz) - time(b.quiz);
+    });
+  }, [subject.quizzes, latestByQuiz]);
 
-  /* Gom theo tuần → ngày học */
-  const weeks = new Map<string, Map<string, Quiz[]>>();
-  for (const quiz of visible) {
-    const week = String(quiz.study_week ?? "unknown");
-    const day = String(quiz.study_day ?? quiz.study_day_in_week ?? "unknown");
-    const days = weeks.get(week) || new Map<string, Quiz[]>();
-    days.set(day, [...(days.get(day) || []), quiz]);
-    weeks.set(week, days);
-  }
-  const byNumber = ([a]: [string, unknown], [b]: [string, unknown]) => {
-    const numberA = Number(a);
-    const numberB = Number(b);
-    if (Number.isNaN(numberA)) return 1;
-    if (Number.isNaN(numberB)) return -1;
-    return numberA - numberB;
-  };
-  const sortedWeeks = Array.from(weeks.entries()).sort(byNumber);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = ordered.find((item) => item.quiz.id === selectedId) || ordered[0];
 
-  const quizById = new Map(subject.quizzes.map((quiz) => [quiz.id, quiz]));
-  const history = [...subject.attempts].sort(
-    (a, b) => new Date(b.submitted_at || 0).getTime() - new Date(a.submitted_at || 0).getTime()
+  const totals = subject.attempts.reduce(
+    (sum, attempt) => ({
+      questions: sum.questions + (attempt.total_questions || 0),
+      correct: sum.correct + (attempt.correct_count || 0),
+    }),
+    { questions: 0, correct: 0 }
   );
-  const filters = [
-    ["all", `Tất cả (${subject.quizzes.length})`],
-    ["open", `Đang chờ làm (${subject.pending.length})`],
-    ["done", `Đã làm (${subject.doneQuizIds.size})`],
-  ] as const;
+
+  function select(id: string) {
+    setSelectedId(id);
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      window.setTimeout(() => panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    }
+  }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-7">
-      <section>
-        <nav className="mb-3 flex items-center gap-1.5 text-sm font-medium text-[var(--sp-muted)]">
-          <Link href="/quizzes" className="hover:text-[var(--sp-peri-dark)]">
-            Kiểm tra kiến thức
-          </Link>
-          <IconChevronRight size={14} />
-          <span className="truncate text-[var(--sp-text-2)]">{subject.name}</span>
-        </nav>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex items-center gap-4">
-            <span
-              className={`hidden h-16 w-16 shrink-0 items-center justify-center rounded-[20px] text-xl font-extrabold sm:flex ${
-                PALETTE[colorIndex % PALETTE.length]
-              }`}
-            >
-              {initials(subject.name)}
+    <div className="mx-auto max-w-7xl space-y-6">
+      {/* Đầu trang */}
+      <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <nav className="flex items-center gap-1.5 text-sm font-medium text-[var(--sp-muted)]">
+            <Link href="/quizzes" className="hover:text-[var(--sp-peri-dark)]">
+              Kiểm tra kiến thức
+            </Link>
+            <IconChevronRight size={14} />
+            <span className="truncate text-[var(--sp-text-2)]">{subject.name}</span>
+          </nav>
+          <h1 className="mt-2 flex items-end gap-3 text-[40px] leading-tight sm:text-[52px]">
+            <span>
+              Kiểm tra <span className="sp-squiggle">kiến thức</span>
             </span>
-            <div className="min-w-0">
-              <h1 className="text-[40px] leading-tight sm:text-[48px]">{subject.name}</h1>
-              <p className="mt-1 text-[15px] text-[var(--sp-muted)]">{subject.planTitle}</p>
-            </div>
-          </div>
-          <Link href="/quizzes" className="sp-btn sp-btn-secondary w-fit px-4 py-2.5 text-sm">
-            <IconArrowLeft size={16} />
-            Đổi môn
-          </Link>
+            <Sparkle size={24} className="sp-twinkle mb-3 text-[var(--sp-yellow)]" />
+          </h1>
+          <p className="mt-1 text-[15px] text-[var(--sp-muted)]">
+            Chỉ hỏi những phần bạn đã học. Câu hỏi được tạo từ tài liệu bạn tải lên.
+          </p>
         </div>
-      </section>
 
-      {/* Tổng quan môn */}
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <OverviewStat label="Bài kiểm tra" value={subject.quizzes.length} />
-        <OverviewStat label="Đang chờ làm" value={subject.pending.length} accent="text-[var(--sp-pink-dark)]" />
-        <OverviewStat label="Đã làm" value={`${subject.doneQuizIds.size}/${subject.quizzes.length}`} />
-        <OverviewStat
-          label="Điểm trung bình"
-          value={subject.average === null ? "–" : `${subject.average}%`}
-          accent={subject.average === null ? undefined : scoreStyle(subject.average).text}
-        />
-      </section>
-
-      {/* Danh sách bài */}
-      <section className="sp-card p-5 sm:p-7">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Sắp xếp theo tuần và ngày học</p>
-            <h2 className="text-[22px] text-[var(--sp-ink)]">Bài kiểm tra của môn</h2>
-          </div>
-          <div className="flex flex-wrap rounded-xl bg-[var(--sp-surface-2)] p-1">
-            {filters.map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={filter === value}
-                onClick={() => setFilter(value)}
-                className={`rounded-lg px-3.5 py-1.5 text-sm font-bold transition ${
-                  filter === value
-                    ? "bg-white text-[var(--sp-peri-dark)] shadow-sm"
-                    : "text-[var(--sp-muted)] hover:text-[var(--sp-ink)]"
-                }`}
-              >
-                {label}
-              </button>
+        <label className="relative flex w-full items-center gap-2 rounded-2xl border-2 border-[var(--sp-line)] bg-white px-4 py-2.5 transition focus-within:border-[var(--sp-peri)] sm:w-auto sm:min-w-[240px]">
+          <IconBook size={18} className="shrink-0 text-[var(--sp-ink)]" />
+          <span className="sr-only">Chọn môn</span>
+          <select
+            value={subject.planId}
+            onChange={(event) => router.push(`/quizzes?plan=${encodeURIComponent(event.target.value)}`)}
+            className="w-full cursor-pointer appearance-none bg-transparent pr-6 text-[15px] font-bold text-[var(--sp-ink)] outline-none"
+          >
+            {subjects.map((item) => (
+              <option key={item.planId} value={item.planId}>
+                {item.name}
+              </option>
             ))}
-          </div>
-        </div>
-
-        {sortedWeeks.length === 0 ? (
-          <p className="rounded-2xl bg-[var(--sp-surface-2)] p-6 text-center text-sm text-[var(--sp-muted)]">
-            {filter === "open"
-              ? "Không có bài nào đang chờ. Học tiếp buổi sau để mở bài mới."
-              : "Chưa có bài nào trong mục này."}
-          </p>
-        ) : (
-          <div className="space-y-4">
-            {sortedWeeks.map(([week, days]) => {
-              const count = Array.from(days.values()).reduce((sum, list) => sum + list.length, 0);
-              const collapsed = collapsedWeeks[week] ?? true;
-              const weekQuizzes = Array.from(days.values()).flat();
-              const mainCount = weekQuizzes.filter((quiz) => !quiz.is_retake).length;
-              const retakeCount = weekQuizzes.length - mainCount;
-              return (
-                <div key={week} className="overflow-hidden rounded-2xl border border-[var(--sp-line)]">
-                  <button
-                    type="button"
-                    aria-expanded={!collapsed}
-                    onClick={() => setCollapsedWeeks((state) => ({ ...state, [week]: !collapsed }))}
-                    className="flex w-full items-center justify-between bg-[var(--sp-surface-2)] px-5 py-3.5 text-left"
-                  >
-                    <span className="font-bold text-[var(--sp-ink)]">
-                      {week === "unknown" ? "Chưa phân tuần" : `Tuần ${week}`}
-                    </span>
-                    <span className="flex items-center gap-2 text-sm text-[var(--sp-muted)]">
-                      <span className="hidden sm:inline">
-                        {mainCount} bài kiểm tra
-                        {retakeCount > 0 && (
-                          <span className="text-[var(--sp-pink-dark)]"> · {retakeCount} kiểm tra lại</span>
-                        )}
-                      </span>
-                      <span className="sm:hidden">{count} bài</span>
-                      <IconChevronDown size={16} className={`transition ${collapsed ? "-rotate-90" : ""}`} />
-                    </span>
-                  </button>
-
-                  {!collapsed && (() => {
-                    const ordered = Array.from(days.entries())
-                      .sort(byNumber)
-                      .flatMap(([day, dayQuizzes]) =>
-                        dayQuizzes.map((quiz) => ({
-                          quiz,
-                          dayLabel: day === "unknown" ? "" : `Ngày học ${day}`,
-                        }))
-                      );
-                    const groups = [
-                      {
-                        key: "main",
-                        title: "Kiểm tra kiến thức",
-                        hint: "Mỗi bài chỉ làm 1 lần",
-                        items: ordered.filter((item) => !item.quiz.is_retake),
-                      },
-                      {
-                        key: "retake",
-                        title: "Kiểm tra lại",
-                        hint: "Mở sau khi ôn và trả lời Tự kiểm tra nhanh",
-                        items: ordered.filter((item) => item.quiz.is_retake),
-                      },
-                    ].filter((group) => group.items.length > 0);
-
-                    return (
-                      <div className="divide-y-2 divide-[var(--sp-line)]">
-                        {groups.map((group) => {
-                          const isRetake = group.key === "retake";
-                          const groupOpen = !isRetake || (openRetakes[week] ?? false);
-                          return (
-                          <div key={group.key} className="p-4 sm:p-5">
-                            <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${groupOpen ? "mb-3" : ""}`}>
-                              <span
-                                className={`flex h-7 w-7 items-center justify-center rounded-lg ${
-                                  group.key === "retake"
-                                    ? "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
-                                    : "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
-                                }`}
-                              >
-                                {group.key === "retake" ? <IconRepeat size={15} /> : <IconPen size={15} />}
-                              </span>
-                              <h3 className="text-[16px] text-[var(--sp-ink)]">{group.title}</h3>
-                              <span className="text-xs text-[var(--sp-muted)]">
-                                {group.items.length} bài · {group.hint}
-                              </span>
-                              {isRetake && (
-                                <button
-                                  type="button"
-                                  aria-expanded={groupOpen}
-                                  onClick={() =>
-                                    setOpenRetakes((state) => ({ ...state, [week]: !groupOpen }))
-                                  }
-                                  className="ml-auto flex items-center gap-1 rounded-lg px-2.5 py-1 text-[13px] font-bold text-[var(--sp-pink-dark)] transition hover:bg-[var(--sp-pink-bg)]"
-                                >
-                                  {groupOpen ? "Thu gọn" : "Xem chi tiết"}
-                                  <IconChevronDown size={15} className={`transition ${groupOpen ? "rotate-180" : ""}`} />
-                                </button>
-                              )}
-                            </div>
-                            {groupOpen && (
-                            <div className="sp-task-expand grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                              {group.items.map(({ quiz, dayLabel }) => (
-                                <QuizCard
-                                  key={quiz.id}
-                                  quiz={quiz}
-                                  dayLabel={dayLabel}
-                                  latest={latestByQuiz.get(quiz.id)}
-                                />
-                              ))}
-                            </div>
-                            )}
-                          </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </div>
-              );
-            })}
-          </div>
-        )}
+          </select>
+          <IconChevronDown size={16} className="pointer-events-none absolute right-4 text-[var(--sp-ink)]" />
+        </label>
       </section>
 
-      {/* Lịch sử của môn */}
-      <section className="sp-card p-5 sm:p-7">
-        <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Kết quả được lưu sau mỗi lần làm</p>
-        <h2 className="text-[22px] text-[var(--sp-ink)]">Lịch sử làm bài</h2>
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+        {/* ---------- Danh sách bài ---------- */}
+        <section className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Theo lịch ôn của bạn</p>
+              <h2 className="text-[22px] text-[var(--sp-ink)]">Bài kiểm tra</h2>
+            </div>
+            <span className="sp-chip bg-[var(--sp-surface-2)] text-[var(--sp-text-2)]">
+              {subject.quizzes.length} bài
+            </span>
+          </div>
 
-        {historyError ? (
-          <p className="mt-4 text-sm text-[var(--sp-pink-dark)]">{historyError}</p>
-        ) : history.length === 0 ? (
-          <p className="mt-4 rounded-2xl bg-[var(--sp-surface-2)] p-6 text-center text-sm text-[var(--sp-muted)]">
-            Kết quả sẽ xuất hiện tại đây sau khi bạn làm bài kiểm tra đầu tiên của môn này.
-          </p>
-        ) : (
-          <ul className="mt-4 space-y-2.5">
-            {history.map((attempt) => {
-              const percent = getAttemptPercent(attempt);
-              const style = scoreStyle(percent);
-              return (
-                <li
-                  key={attempt.attempt_id}
-                  className="flex flex-col gap-3 rounded-2xl border-2 border-[var(--sp-line)] px-4 py-3.5 sm:flex-row sm:items-center"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-semibold text-[var(--sp-ink)]">
-                      {quizById.get(attempt.quiz_id)
-                        ? quizTitle(quizById.get(attempt.quiz_id)!)
-                        : getMainTopicTitle(attempt.quiz_title)}
-                    </p>
-                    <p className="text-xs text-[var(--sp-muted)]">
-                      {attempt.submitted_at
-                        ? new Date(attempt.submitted_at).toLocaleString("vi-VN")
-                        : "Chưa nộp"}{" "}
-                      · đúng {attempt.correct_count}/{attempt.total_questions} câu
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3 sm:w-[220px]">
-                    <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
-                      <div className={`h-full rounded-full ${style.bar}`} style={{ width: `${Math.max(3, percent)}%` }} />
-                    </div>
-                    <span className={`w-12 text-right text-lg font-extrabold ${style.text}`}>{percent}%</span>
-                  </div>
-                  <Link
-                    href={`/quiz-results/${attempt.attempt_id}`}
-                    className="sp-btn sp-btn-secondary shrink-0 px-4 py-2 text-sm"
-                  >
-                    Xem kết quả
-                    <IconArrowRight size={15} />
-                  </Link>
+          {ordered.length === 0 ? (
+            <p className="sp-card p-6 text-center text-sm text-[var(--sp-muted)]">
+              Chưa có bài kiểm tra nào. Học xong buổi đầu tiên để mở bài.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {ordered.map(({ quiz, latest, state }) => (
+                <li key={quiz.id}>
+                  <QuizListCard
+                    quiz={quiz}
+                    latest={latest}
+                    state={state}
+                    today={today}
+                    active={selected?.quiz.id === quiz.id}
+                    onSelect={() => select(quiz.id)}
+                  />
                 </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+              ))}
+            </ul>
+          )}
+
+          <p className="flex items-start gap-2.5 rounded-2xl bg-[var(--sp-lav)] px-4 py-3.5 text-sm text-[var(--sp-text-2)]">
+            <IconInfo size={17} className="mt-0.5 shrink-0" />
+            {historyError ? (
+              historyError
+            ) : subject.attempts.length === 0 ? (
+              "Bạn chưa làm bài nào của môn này."
+            ) : (
+              <span>
+                Đã làm <b className="text-[var(--sp-ink)]">{totals.questions} câu</b> qua{" "}
+                {subject.attempts.length} lượt, đúng{" "}
+                <b className="text-[var(--sp-ink)]">
+                  {totals.correct} câu ({totals.questions ? Math.round((totals.correct / totals.questions) * 100) : 0}%)
+                </b>
+                .
+              </span>
+            )}
+          </p>
+        </section>
+
+        {/* ---------- Tổng quan trước khi làm ---------- */}
+        <div ref={panelRef} className="scroll-mt-24 lg:sticky lg:top-6">
+          {selected ? (
+            <QuizOverviewPanel
+              key={selected.quiz.id}
+              quiz={selected.quiz}
+              latest={selected.latest}
+              state={selected.state}
+              today={today}
+            />
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
 
-function OverviewStat({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: React.ReactNode;
-  accent?: string;
-}) {
-  return (
-    <div className="sp-card p-4 sm:p-5">
-      <p className="text-sm font-semibold text-[var(--sp-text-2)]">{label}</p>
-      <p className={`mt-1 text-[28px] font-extrabold leading-tight ${accent || "text-[var(--sp-ink)]"}`}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function QuizCard({
+function QuizListCard({
   quiz,
-  dayLabel,
   latest,
+  state,
+  today,
+  active,
+  onSelect,
 }: {
   quiz: Quiz;
-  dayLabel: string;
   latest: QuizAttempt | undefined;
+  state: QuizState;
+  today: string;
+  active: boolean;
+  onSelect: () => void;
 }) {
-  const unlocked = canStartQuiz(quiz);
-  const finishedRetake = quiz.is_retake && quiz.review_status === "completed";
   const percent = latest ? getAttemptPercent(latest) : null;
+  const dateKey = vnDateKey(quiz.scheduled_start || quiz.created_at);
+  const isToday = dateKey === today;
 
-  const status = latest
-    ? { label: `Đã làm · ${percent}%`, style: `bg-[var(--sp-surface-2)] ${scoreStyle(percent!).text}` }
-    : unlocked
-      ? { label: "Đã mở", style: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]" }
-      : finishedRetake
-        ? { label: "Đã hoàn thành", style: "bg-[var(--sp-surface-2)] text-[var(--sp-muted)]" }
-        : { label: "Đang khóa", style: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]" };
+  const chip =
+    state === "done"
+      ? { text: `Đã làm · ${shortDate(latest?.submitted_at || dateKey)}`, style: "bg-emerald-50 text-emerald-700" }
+      : state === "open"
+        ? {
+            text: quiz.is_retake
+              ? `Kiểm tra lại${quiz.study_day ? ` · ngày học ${quiz.study_day}` : ""}`
+              : isToday
+                ? `Hôm nay${quiz.study_day ? ` · ngày học ${quiz.study_day}` : ""}`
+                : `Đang mở · ${shortDate(dateKey)}`,
+            style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]",
+          }
+        : { text: weekdayDate(dateKey) || "Đang khóa", style: "bg-[var(--sp-surface-2)] text-[var(--sp-text-2)]" };
+
+  const icon =
+    state === "done" ? (
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+        <IconCheck size={22} />
+      </span>
+    ) : state === "open" ? (
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-pink)] text-white">
+        {quiz.is_retake ? <IconRepeat size={21} /> : <IconBolt size={21} />}
+      </span>
+    ) : (
+      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--sp-surface-2)] text-[var(--sp-muted)]">
+        <IconLock size={20} />
+      </span>
+    );
+
+  const style = percent !== null ? scoreStyle(percent) : null;
 
   return (
     <div
-      className={`flex h-full flex-col rounded-2xl border-2 p-4 transition ${
-        unlocked && !latest
-          ? "border-[var(--sp-lav-line)] bg-white hover:border-[var(--sp-peri)]"
-          : "border-[var(--sp-line)] bg-white"
+      role="button"
+      tabIndex={0}
+      aria-pressed={active}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`group relative flex cursor-pointer gap-4 rounded-[22px] border-2 p-4 text-left transition sm:p-5 ${
+        active
+          ? "border-[var(--sp-purple)] bg-[#fff6fa] shadow-[5px_5px_0_var(--sp-pink)]"
+          : state === "locked"
+            ? "border-dashed border-[var(--sp-line)] bg-[var(--sp-surface-2)]/50 hover:border-[var(--sp-lav-line)]"
+            : "border-[var(--sp-line)] bg-white hover:border-[var(--sp-lav-line)]"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <span
-          className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-            quiz.is_retake
-              ? "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
-              : "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
-          }`}
-        >
-          {quiz.is_retake ? <IconRepeat size={18} /> : <IconPen size={18} />}
-        </span>
-        <span className={`sp-chip ${status.style}`}>{status.label}</span>
-      </div>
-
-      {dayLabel && (
-        <p className="mt-3 text-xs font-bold uppercase tracking-wide text-[var(--sp-purple)]">
-          {dayLabel}
+      {icon}
+      <div className="min-w-0 flex-1">
+        <span className={`sp-chip ${chip.style}`}>{chip.text}</span>
+        <h3 className={`mt-2 line-clamp-2 text-[17px] font-bold ${state === "locked" ? "text-[var(--sp-text-2)]" : "text-[var(--sp-ink)]"}`}>
+          {quizTitle(quiz)}
+        </h3>
+        <p className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-[var(--sp-muted)]">
+          {!!quiz.question_count && (
+            <span className="flex items-center gap-1.5">
+              <IconList size={14} />
+              {quiz.question_count} câu
+            </span>
+          )}
+          <span className="flex items-center gap-1.5">
+            <IconClock size={14} />
+            {quiz.time_limit_minutes ? `${quiz.time_limit_minutes} phút` : "Không giới hạn"}
+          </span>
+          {quiz.is_retake && state !== "locked" && (
+            <span className="flex items-center gap-1.5">
+              <IconTarget size={14} />
+              Ưu tiên phần yếu
+            </span>
+          )}
         </p>
-      )}
-      <h3 className={`${dayLabel ? "mt-0.5" : "mt-3"} line-clamp-2 font-bold text-[var(--sp-ink)]`}>
-        {quizTitle(quiz)}
-      </h3>
-      <p className="mt-0.5 text-[13px] text-[var(--sp-muted)]">
-        {quiz.is_retake
-          ? "30% trắc nghiệm · 70% điền vào chỗ trống · làm lại không giới hạn"
-          : "Kiểm tra kiến thức của bài học · chỉ làm 1 lần"}
-      </p>
 
-      <div className="mt-3 flex flex-wrap gap-3 text-xs text-[var(--sp-muted)]">
-        <span className="flex items-center gap-1">
-          <IconClock size={13} />
-          {quiz.time_limit_minutes ? `${quiz.time_limit_minutes} phút` : "Không giới hạn"}
-        </span>
-        <span className="flex items-center gap-1">
-          <IconCalendar size={13} />
-          {formatDate(quiz.scheduled_start || quiz.created_at)}
-        </span>
-      </div>
-
-      <div className="mt-auto pt-4">
-        {!quiz.is_retake && latest ? (
-          /* Bài kiểm tra kiến thức chính chỉ làm 1 lần: chỉ xem kết quả */
-          <Link
-            href={`/quiz-results/${latest.attempt_id}`}
-            className="sp-btn sp-btn-secondary w-full justify-center py-2.5 text-sm"
-          >
-            Xem kết quả
-            <IconArrowRight size={15} />
-          </Link>
-        ) : unlocked ? (
-          <div className="flex gap-2">
+        {state === "done" && latest && style && (
+          <div className="mt-3 flex items-center gap-3">
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
+              <div className={`h-full rounded-full ${style.bar}`} style={{ width: `${Math.max(3, percent!)}%` }} />
+            </div>
+            <span className="text-[15px] font-extrabold text-[var(--sp-ink)]">
+              {latest.correct_count}/{latest.total_questions}
+            </span>
             <Link
-              href={`/quizzes/${quiz.id}`}
-              className="sp-btn sp-btn-primary flex-1 justify-center py-2.5 text-sm"
+              href={`/quiz-results/${latest.attempt_id}`}
+              onClick={(event) => event.stopPropagation()}
+              className="sp-btn sp-btn-secondary shrink-0 px-3.5 py-1.5 text-[13px]"
             >
-              {latest || quiz.is_retake ? "Làm lại" : "Bắt đầu làm bài"}
-              <IconArrowRight size={15} />
+              Xem lại bài
             </Link>
-            {latest && (
-              <Link
-                href={`/quiz-results/${latest.attempt_id}`}
-                className="sp-btn sp-btn-secondary px-3 py-2.5 text-sm"
-                aria-label="Xem kết quả gần nhất"
-                title="Xem kết quả gần nhất"
-              >
-                <IconCheck size={15} />
-              </Link>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <p className="flex items-start gap-2 rounded-xl bg-[var(--sp-surface-2)] px-3 py-2.5 text-[13px] text-[var(--sp-muted)]">
-              <IconLock size={14} className="mt-0.5 shrink-0" />
-              {getLockMessage(quiz)}
-            </p>
-            {latest && (
-              <Link
-                href={`/quiz-results/${latest.attempt_id}`}
-                className="sp-btn sp-btn-secondary w-full justify-center py-2 text-sm"
-              >
-                Xem kết quả lần gần nhất
-                <IconArrowRight size={15} />
-              </Link>
-            )}
           </div>
         )}
+
+        {state === "locked" && (
+          <p className="mt-2 flex items-start gap-1.5 text-[13px] text-[var(--sp-muted)]">
+            <IconInfo size={14} className="mt-0.5 shrink-0" />
+            {getLockMessage(quiz)}
+          </p>
+        )}
       </div>
+      {active && <IconChevronRight size={18} className="absolute right-4 top-5 text-[var(--sp-ink)]" />}
+    </div>
+  );
+}
+
+function QuizOverviewPanel({
+  quiz,
+  latest,
+  state,
+  today,
+}: {
+  quiz: Quiz;
+  latest: QuizAttempt | undefined;
+  state: QuizState;
+  today: string;
+}) {
+  const [overview, setOverview] = useState<QuizOverview | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_URL}/api/quizzes/${quiz.id}/overview`)
+      .then(async (response) => {
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.detail || "Không tải được tổng quan bài kiểm tra.");
+        if (!cancelled) setOverview(result.data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Không tải được tổng quan bài kiểm tra.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [quiz.id]);
+
+  const context = overview?.context;
+  const dateKey = vnDateKey(quiz.scheduled_start || context?.scheduled_date || quiz.created_at);
+  const chapter = chapterCode(context?.chapter);
+  const questionCount = overview?.question_count ?? quiz.question_count ?? 0;
+  const previous = overview?.previous;
+  const summaryHref =
+    context?.subject_id && context?.study_session_id
+      ? `/study-materials?subject=${encodeURIComponent(context.subject_id)}&session=${encodeURIComponent(context.study_session_id)}`
+      : "/study-materials";
+
+  const eyebrow = `${quiz.is_retake ? "Kiểm tra lại" : "Kiểm tra kiến thức"} · ${
+    dateKey === today ? `hôm nay, ${weekdayDate(dateKey)}` : weekdayDate(dateKey)
+  }`;
+
+  const badge = quiz.is_retake
+    ? state === "done"
+      ? "Đã hoàn thành"
+      : `Lần làm thứ ${overview?.attempt_round ?? 1}`
+    : state === "done"
+      ? "Đã làm · chỉ 1 lần"
+      : "Chỉ làm 1 lần";
+
+  const typeLabel =
+    overview && overview.fill_count > 0
+      ? `${overview.choice_count} trắc nghiệm · ${overview.fill_count} điền khuyết`
+      : "Trắc nghiệm";
+
+  const segmentColors = ["bg-[var(--sp-peri)]", "bg-[var(--sp-purple)]", "bg-[#8aa3ee]", "bg-[var(--sp-pink)]"];
+  const segmentStyle = (kind: string, index: number) =>
+    kind === "weak" ? "bg-[var(--sp-pink)]" : kind === "rest" ? "bg-[var(--sp-peri)]" : segmentColors[index % segmentColors.length];
+  const segments = overview?.segments || [];
+  const segmentTotal = segments.reduce((sum, item) => sum + item.count, 0) || 1;
+
+  return (
+    <article className="relative rounded-[28px] border-2 border-[var(--sp-purple-deep)] bg-white px-5 pb-5 pt-9 shadow-[6px_6px_0_var(--sp-peri)] sm:px-8 sm:pb-7">
+      <span className="absolute -top-4 left-6 -rotate-2 rounded-xl border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] px-3.5 py-1.5 text-sm font-extrabold text-[var(--sp-purple-deep)] shadow-[3px_3px_0_var(--sp-pink)]">
+        Tổng quan trước khi làm
+      </span>
+
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="sp-accent text-[18px] text-[var(--sp-pink)]">{eyebrow}</p>
+          <h2 className="mt-0.5 text-[26px] leading-tight text-[var(--sp-ink)] sm:text-[30px]">{quizTitle(quiz)}</h2>
+        </div>
+        <span className="sp-chip flex items-center gap-1.5 bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
+          {quiz.is_retake ? <IconRepeat size={14} /> : <IconPen size={14} />}
+          {badge}
+        </span>
+      </div>
+
+      {/* 4 ô thông tin */}
+      <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <InfoTile
+          icon={<IconBook size={15} />}
+          label="Phạm vi"
+          value={chapter?.label || (context?.day_number ? `Ngày học ${context.day_number}` : "Bài học")}
+          sub={dateKey ? `Học ngày ${shortDate(context?.scheduled_date || dateKey)}` : "—"}
+          title={context?.chapter || undefined}
+        />
+        <InfoTile icon={<IconList size={15} />} label="Số câu" value={questionCount ? `${questionCount} câu` : "—"} sub={typeLabel} />
+        <InfoTile
+          icon={<IconClock size={15} />}
+          label="Thời gian"
+          value={quiz.time_limit_minutes ? `${quiz.time_limit_minutes} phút` : "Tự do"}
+          sub={quiz.time_limit_minutes ? "Tính từ lúc bắt đầu" : "Không giới hạn"}
+        />
+        <InfoTile
+          icon={<IconTrendUp size={15} />}
+          label="Lần trước"
+          highlight
+          value={
+            previous
+              ? `${previous.total_questions ? `${previous.correct_count}/${previous.total_questions} · ` : ""}${previous.score}%`
+              : latest
+                ? `${getAttemptPercent(latest)}%`
+                : "Chưa làm"
+          }
+          sub={
+            previous
+              ? `${previous.is_original && quiz.is_retake ? "Bài gốc" : "Ngày"} ${shortDate(previous.submitted_at)}`
+              : "Đây là lần đầu"
+          }
+        />
+      </div>
+
+      {/* Câu hỏi được chọn thế nào */}
+      <h3 className="mt-7 text-[16px] font-bold text-[var(--sp-ink)]">Câu hỏi được chọn thế nào?</h3>
+      {error ? (
+        <p className="mt-2 text-sm text-[var(--sp-pink-dark)]">{error}</p>
+      ) : !overview ? (
+        <div className="mt-3 h-11 animate-pulse rounded-xl bg-[var(--sp-surface-2)]" />
+      ) : segments.length === 0 ? (
+        <p className="mt-2 text-sm text-[var(--sp-muted)]">Câu hỏi lấy từ nội dung của buổi học này.</p>
+      ) : (
+        <>
+          <div className="mt-3 flex min-h-11 overflow-hidden rounded-xl border-2 border-[var(--sp-purple-deep)]">
+            {segments.map((segment, index) => (
+              <div
+                key={`${segment.label}-${index}`}
+                className={`flex min-w-0 items-center gap-1.5 px-3 py-2 text-[13px] font-bold text-white ${segmentStyle(segment.kind, index)} ${
+                  index > 0 ? "border-l-2 border-white/60" : ""
+                }`}
+                style={{ flexGrow: segment.count, flexBasis: 0 }}
+                title={`${segment.count} câu · ${segment.label}`}
+              >
+                {segment.kind === "weak" && <IconTarget size={15} className="shrink-0" />}
+                <span className="truncate">
+                  {segment.count} câu · {segment.label}
+                </span>
+              </div>
+            ))}
+          </div>
+          <ul className="mt-2.5 flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-[var(--sp-text-2)]">
+            {segments.map((segment, index) => (
+              <li key={`${segment.label}-legend-${index}`} className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${segmentStyle(segment.kind, index)}`} />
+                {segment.kind === "page"
+                  ? `${segment.detail}: ${Math.round((segment.count / segmentTotal) * 100)}% số câu`
+                  : segment.detail}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {/* Sau khi nộp bài */}
+      <h3 className="mt-7 text-[16px] font-bold text-[var(--sp-ink)]">Sau khi nộp bài</h3>
+      <ol className="mt-3 grid gap-3 sm:grid-cols-3">
+        {[
+          <>Xem <b className="text-[var(--sp-ink)]">điểm từng câu</b> và danh sách câu sai.</>,
+          <>Mỗi câu sai có <b className="text-[var(--sp-ink)]">giải thích</b> và <b className="text-[var(--sp-ink)]">nguồn</b> trong tài liệu gốc.</>,
+          quiz.is_retake ? (
+            <>Đạt từ 80% là <b className="text-[var(--sp-ink)]">hoàn thành</b>; chưa đạt thì ôn và làm lại.</>
+          ) : (
+            <>Kết quả cập nhật vào <b className="text-[var(--sp-ink)]">Đánh giá năng lực</b>; dưới 80% có bài kiểm tra lại.</>
+          ),
+        ].map((text, index) => (
+          <li key={index} className="flex gap-3 rounded-2xl bg-[var(--sp-lav)]/70 px-4 py-3.5 text-[13.5px] leading-5 text-[var(--sp-text-2)]">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[var(--sp-purple-deep)] bg-white text-sm font-extrabold text-[var(--sp-purple-deep)]">
+              {index + 1}
+            </span>
+            <span>{text}</span>
+          </li>
+        ))}
+      </ol>
+
+      {/* Hành động */}
+      <div className="mt-7 flex flex-col gap-3 border-t-2 border-dashed border-[var(--sp-line)] pt-5 sm:flex-row sm:flex-wrap sm:items-center">
+        {state === "open" ? (
+          <Link href={`/quizzes/${quiz.id}`} className="sp-btn sp-btn-primary justify-center whitespace-nowrap px-6 py-3 text-[16px]">
+            <IconPlay size={17} />
+            {quiz.is_retake ? "Làm lại" : "Bắt đầu làm bài"}
+          </Link>
+        ) : state === "done" && latest ? (
+          <Link href={`/quiz-results/${latest.attempt_id}`} className="sp-btn sp-btn-primary justify-center whitespace-nowrap px-6 py-3 text-[16px]">
+            <IconCheck size={17} />
+            Xem kết quả
+          </Link>
+        ) : (
+          <span className="sp-btn cursor-not-allowed justify-center bg-[var(--sp-surface-2)] px-6 py-3 text-[15px] text-[var(--sp-muted)]">
+            <IconLock size={16} />
+            Chưa mở khóa
+          </span>
+        )}
+        <Link href={summaryHref} className="sp-btn sp-btn-secondary justify-center whitespace-nowrap px-5 py-3 text-[15px]">
+          <IconFile size={16} />
+          {state === "locked" ? "Đến bài học để mở khóa" : `Xem lại bài học${chapter ? ` ${chapter.code}` : ""}`}
+        </Link>
+        <p className="text-[13px] text-[var(--sp-muted)] sm:min-w-[180px] sm:flex-1 sm:text-right">
+          {state === "open"
+            ? "Chưa sẵn sàng? Bài vẫn giữ trong lịch, bạn làm lúc khác cũng được."
+            : state === "locked"
+              ? getLockMessage(quiz)
+              : quiz.is_retake
+                ? "Bạn đã đạt bài kiểm tra lại."
+                : "Bài kiểm tra kiến thức chỉ làm 1 lần."}
+        </p>
+      </div>
+    </article>
+  );
+}
+
+function InfoTile({
+  icon,
+  label,
+  value,
+  sub,
+  highlight,
+  title,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub: string;
+  highlight?: boolean;
+  title?: string;
+}) {
+  return (
+    <div
+      title={title}
+      className={`min-w-0 rounded-2xl border-2 px-3 py-3 ${
+        highlight ? "border-[#f3dca0] bg-[var(--sp-amber-bg)]" : "border-[var(--sp-line)] bg-white"
+      }`}
+    >
+      <p
+        className={`flex items-center gap-1 whitespace-nowrap text-[11px] font-bold uppercase tracking-wide ${
+          highlight ? "text-[var(--sp-amber-dark)]" : "text-[var(--sp-muted)]"
+        }`}
+      >
+        {icon}
+        {label}
+      </p>
+      <p
+        className={`mt-1.5 truncate text-[19px] font-extrabold leading-tight ${
+          highlight ? "text-[#c98a00]" : "text-[var(--sp-ink)]"
+        }`}
+      >
+        {value}
+      </p>
+      <p className={`mt-0.5 truncate text-[12px] ${highlight ? "text-[var(--sp-amber-dark)]" : "text-[var(--sp-muted)]"}`}>
+        {sub}
+      </p>
     </div>
   );
 }

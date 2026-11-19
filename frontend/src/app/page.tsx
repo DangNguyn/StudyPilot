@@ -1,723 +1,738 @@
-
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type SVGProps } from "react";
 import Link from "next/link";
 import { getMainTopicTitle } from "@/lib/content-titles";
+import { CURRENT_USER } from "@/lib/current-user";
+import {
+  IconAlert,
+  IconArrowRight,
+  IconBook,
+  IconCalendar,
+  IconChart,
+  IconCheck,
+  IconFile,
+  IconPen,
+  IconPlay,
+  IconPlus,
+  IconRepeat,
+  Sparkle,
+} from "@/components/icons";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-interface ApiResponse {
-  message: string;
-  source?: string;
-  status?: string;
-}
+/* ================= Kiểu dữ liệu ================= */
 
-interface ApiListResponse<T> {
-  message?: string;
-  data?: T[];
+type Subject = { id: string; name?: string };
+
+type ExamPlan = {
+  id: string;
+  title?: string;
+  subject_id?: string;
+  exam_date?: string;
   total_sessions?: number;
   completed_sessions?: number;
-  remaining_sessions?: number;
-  progress_percent?: number;
-  total_attempts?: number;
-  total_plans?: number;
-}
+};
 
-interface Subject {
-  id: string;
-  name?: string;
-  title?: string;
-}
+type Topic = { id: string; name?: string; hierarchy?: string | null; exam_plan_id?: string };
 
-interface ExamPlan {
-  id: string;
-  title?: string;
-  total_sessions?: number;
-  completed_sessions?: number;
-  remaining_sessions?: number;
-  session_progress_percent?: number;
-}
-
-interface StudyMaterial {
-  id: string;
-  status?: string;
-}
-
-interface QuizAttempt {
-  id: string;
-  status?: string;
-  submitted_at?: string;
-}
-
-interface Topic {
-  id: string;
-  name?: string;
-  title?: string;
-  exam_plan_id?: string;
-}
-
-interface StudySession {
+type StudySession = {
   id: string;
   topic_id?: string;
   scheduled_start?: string;
   status?: string;
-  is_unlocked?: boolean;
-  lock_reason?: string | null;
-  actual_study_seconds?: number;
-  session_number?: number;
-  day_number?: number;
-  title?: string;
-  name?: string;
-}
-
-interface DashboardData {
-  subjectCount: number;
-  completedSessions: number;
-  totalSessions: number;
-  materialCount: number;
-  quizAttemptCount: number;
-  progressPercent: number;
-  planCount: number;
-  todaySessions: StudySession[];
-  topics: Topic[];
-  plans: ExamPlan[];
-}
-
-const quickActions = [
-  {
-    title: "Lập kế hoạch ôn thi",
-    description: "Tạo kế hoạch học tập cùng AI",
-    icon: "📅",
-    href: "/study-plans",
-  },
-  {
-    title: "Tải tài liệu",
-    description: "Quản lý tài liệu học tập",
-    icon: "📚",
-    href: "/materials",
-  },
-  {
-    title: "Ôn tập Flashcards",
-    description: "Ghi nhớ kiến thức hiệu quả",
-    icon: "🗂️",
-    href: "/flashcards",
-  },
-  {
-    title: "Kiểm tra kiến thức",
-    description: "Đánh giá mức độ hiểu bài",
-    icon: "✍️",
-    href: "/quizzes",
-  },
-];
-
-const EMPTY_DASHBOARD: DashboardData = {
-  subjectCount: 0,
-  completedSessions: 0,
-  totalSessions: 0,
-  materialCount: 0,
-  quizAttemptCount: 0,
-  progressPercent: 0,
-  planCount: 0,
-  todaySessions: [],
-  topics: [],
-  plans: [],
+  duration_minutes?: number;
 };
 
-async function fetchApi<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    cache: "no-store",
-  });
+type Quiz = {
+  id: string;
+  exam_plan_id?: string | null;
+  study_session_id?: string | null;
+  topic_name?: string | null;
+  is_retake?: boolean;
+  review_status?: string | null;
+  is_unlocked?: boolean;
+  time_limit_minutes?: number | null;
+};
 
-  if (!response.ok) {
-    throw new Error(`API ${path} trả về lỗi ${response.status}`);
-  }
+type QuizAttempt = {
+  quiz_id: string;
+  score: number;
+  correct_count: number;
+  total_questions: number;
+  submitted_at?: string;
+};
 
-  return response.json() as Promise<T>;
+type Dashboard = {
+  subjects: Subject[];
+  plans: ExamPlan[];
+  topics: Topic[];
+  sessions: StudySession[];
+  quizzes: Quiz[];
+  attempts: QuizAttempt[];
+};
+
+const EMPTY: Dashboard = { subjects: [], plans: [], topics: [], sessions: [], quizzes: [], attempts: [] };
+
+/* ================= Tiện ích ================= */
+
+const vnDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
+const toKey = (value: string | Date) => vnDate.format(new Date(value));
+
+function addDays(key: string, days: number) {
+  const date = new Date(`${key}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
-function getLocalDateKey(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+function daysBetween(fromKey: string, toKeyValue: string) {
+  return Math.round((Date.parse(`${toKeyValue}T00:00:00Z`) - Date.parse(`${fromKey}T00:00:00Z`)) / 86_400_000);
 }
 
-function getSessionDateKey(value?: string): string | null {
-  if (!value) return null;
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return null;
-
-  return getLocalDateKey(date);
+function formatDay(key: string) {
+  const [year, month, day] = key.split("-");
+  return `${day}/${month}/${year}`;
 }
+
+function chapterCode(hierarchy?: string | null) {
+  const match = String(hierarchy || "").match(/^\s*(?:chương|chapter|unit|phần|part)\s*([0-9]+|[ivxlc]+)/i);
+  return match ? `C${match[1].toUpperCase()}` : "";
+}
+
+async function fetchList<T>(path: string): Promise<T[]> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`API ${path} trả về lỗi ${response.status}`);
+  const result = await response.json();
+  return Array.isArray(result?.data) ? result.data : [];
+}
+
+async function loadDashboard(): Promise<{ data: Dashboard; error: string }> {
+  const results = await Promise.allSettled([
+    fetchList<Subject>("/api/subjects"),
+    fetchList<ExamPlan>("/api/exam-plans"),
+    fetchList<Topic>("/api/topics"),
+    fetchList<StudySession>("/api/study-sessions"),
+    fetchList<Quiz>("/api/quizzes"),
+    fetchList<QuizAttempt>("/api/quiz-attempts"),
+  ]);
+  const pick = <T,>(index: number) =>
+    results[index].status === "fulfilled" ? (results[index] as PromiseFulfilledResult<T[]>).value : [];
+  const failed = results.filter((result) => result.status === "rejected").length;
+  return {
+    error:
+      failed === results.length
+        ? "Không kết nối được backend. Hãy kiểm tra backend có đang chạy không."
+        : failed > 0
+          ? "Một vài dữ liệu chưa tải được, số liệu có thể chưa đầy đủ."
+          : "",
+    data: {
+      subjects: pick<Subject>(0),
+      plans: pick<ExamPlan>(1),
+      topics: pick<Topic>(2),
+      sessions: pick<StudySession>(3),
+      quizzes: pick<Quiz>(4),
+      attempts: pick<QuizAttempt>(5),
+    },
+  };
+}
+
+const QUICK_LINKS: {
+  title: string;
+  text: string;
+  href: string;
+  icon: ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
+  tone: string;
+}[] = [
+  { title: "Lập kế hoạch ôn thi", text: "Đặt ngày thi, AI chia lịch ôn", href: "/study-plans", icon: IconCalendar, tone: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]" },
+  { title: "Tóm tắt nội dung", text: "Ý chính từng bài học", href: "/study-materials", icon: IconFile, tone: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]" },
+  { title: "Kiểm tra kiến thức", text: "Có giải thích câu sai", href: "/quizzes", icon: IconPen, tone: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]" },
+  { title: "Đánh giá năng lực", text: "Tiến độ và điểm yếu", href: "/weak-areas", icon: IconChart, tone: "bg-[#f1e6f7] text-[var(--sp-purple)]" },
+];
+
+/* ================= Trang ================= */
 
 export default function Home() {
-  const [dashboard, setDashboard] =
-    useState<DashboardData>(EMPTY_DASHBOARD);
-
-  const [backendData, setBackendData] =
-    useState<ApiResponse | null>(null);
-
+  const [data, setData] = useState<Dashboard>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [dataWarning, setDataWarning] = useState("");
-  const [today, setToday] = useState("");
 
-  const refreshDashboard = useCallback(async () => {
-    setLoading(true);
-    setError("");
-
-    try {
-      const results = await Promise.allSettled([
-        fetchApi<ApiResponse>("/api/message"),
-        fetchApi<ApiListResponse<Subject>>("/api/subjects"),
-        fetchApi<ApiListResponse<ExamPlan>>("/api/exam-plans"),
-        fetchApi<ApiListResponse<StudyMaterial>>("/api/study-materials"),
-        fetchApi<ApiListResponse<QuizAttempt>>("/api/quiz-attempts"),
-        fetchApi<ApiListResponse<StudySession>>("/api/study-sessions"),
-        fetchApi<ApiListResponse<Topic>>("/api/topics"),
-      ]);
-
-      const [
-        backendResult,
-        subjectsResult,
-        plansResult,
-        materialsResult,
-        attemptsResult,
-        sessionsResult,
-        topicsResult,
-      ] = results;
-
-      if (backendResult.status === "fulfilled") {
-        setBackendData(backendResult.value);
-      } else {
-        setBackendData(null);
-        setError("Không thể kết nối Backend");
-      }
-
-      const subjects =
-        subjectsResult.status === "fulfilled"
-          ? subjectsResult.value.data || []
-          : [];
-
-      const plans =
-        plansResult.status === "fulfilled"
-          ? plansResult.value.data || []
-          : [];
-
-      const materials =
-        materialsResult.status === "fulfilled"
-          ? materialsResult.value.data || []
-          : [];
-
-      const attempts =
-        attemptsResult.status === "fulfilled"
-          ? attemptsResult.value.data || []
-          : [];
-
-      const sessions =
-        sessionsResult.status === "fulfilled"
-          ? sessionsResult.value.data || []
-          : [];
-
-      const topics =
-        topicsResult.status === "fulfilled"
-          ? topicsResult.value.data || []
-          : [];
-
-      const failedRequests = [
-        subjectsResult,
-        plansResult,
-        materialsResult,
-        attemptsResult,
-        sessionsResult,
-        topicsResult,
-      ].filter((result) => result.status === "rejected").length;
-
-      setDataWarning(
-        failedRequests > 0
-          ? `${failedRequests} nguồn dữ liệu chưa tải được. Một số thống kê có thể chưa đầy đủ.`
-          : ""
-      );
-
-      // Tổng hợp tiến độ từ các kế hoạch ôn thi
-      const totalSessions = plans.reduce(
-        (total, plan) => total + Number(plan.total_sessions || 0),
-        0
-      );
-
-      const completedSessions = plans.reduce(
-        (total, plan) =>
-          total + Number(plan.completed_sessions || 0),
-        0
-      );
-
-      const progressPercent =
-        totalSessions > 0
-          ? Math.round((completedSessions / totalSessions) * 100)
-          : 0;
-
-      // Lọc các buổi học được lên lịch trong ngày hiện tại
-      const todayKey = getLocalDateKey(new Date());
-
-      const todaySessions = sessions
-        .filter(
-          (session) =>
-            getSessionDateKey(session.scheduled_start) === todayKey
-        )
-        .sort((a, b) => {
-          const timeA = new Date(
-            a.scheduled_start || ""
-          ).getTime();
-
-          const timeB = new Date(
-            b.scheduled_start || ""
-          ).getTime();
-
-          return timeA - timeB;
-        });
-
-      setDashboard({
-        subjectCount: subjects.length,
-        completedSessions,
-        totalSessions,
-        materialCount: materials.length,
-        quizAttemptCount:
-          attemptsResult.status === "fulfilled"
-            ? Number(
-                attemptsResult.value.total_attempts ??
-                  attempts.length
-              )
-            : 0,
-        progressPercent,
-        planCount:
-          plansResult.status === "fulfilled"
-            ? Number(
-                plansResult.value.total_plans ?? plans.length
-              )
-            : 0,
-        todaySessions,
-        topics,
-        plans,
-      });
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Không thể tải dữ liệu Dashboard."
-      );
-    } finally {
-      setLoading(false);
-    }
+  const apply = useCallback((result: { data: Dashboard; error: string }) => {
+    setData(result.data);
+    setError(result.error);
+    setLoading(false);
   }, []);
 
+  const refreshDashboard = useCallback(() => loadDashboard().then(apply), [apply]);
+
   useEffect(() => {
-    setToday(
-      new Date().toLocaleDateString("vi-VN", {
-        weekday: "long",
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      })
-    );
-
-    refreshDashboard();
-
-    // Tự tải lại khi người dùng quay lại Dashboard
-    const handleFocus = () => {
-      refreshDashboard();
+    let active = true;
+    const load = () =>
+      loadDashboard().then((result) => {
+        if (active) apply(result);
+      });
+    void load();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load();
     };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        refreshDashboard();
-      }
-    };
-
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibilityChange
-    );
-
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener(
-        "visibilitychange",
-        handleVisibilityChange
-      );
+      active = false;
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [refreshDashboard]);
+  }, [apply]);
 
-  const statistics = [
-    {
-      title: "Môn học",
-      value: dashboard.subjectCount,
-      icon: "📚",
-      note: "Môn học đã đăng ký",
-    },
-    {
-      title: "Buổi học hoàn thành",
-      value: dashboard.completedSessions,
-      icon: "✓",
-      note: `Trên tổng ${dashboard.totalSessions} buổi học`,
-    },
-    {
-      title: "Tài liệu",
-      value: dashboard.materialCount,
-      icon: "📄",
-      note: "Tài liệu đã tải lên",
-    },
-    {
-      title: "Quiz đã làm",
-      value: dashboard.quizAttemptCount,
-      icon: "✎",
-      note: "Bài kiểm tra đã nộp",
-    },
-  ];
+  const todayKey = toKey(new Date());
+  const view = useMemo(() => buildView(data, todayKey), [data, todayKey]);
+  const todayLabel = (() => {
+    const label = new Date(`${todayKey}T00:00:00`).toLocaleDateString("vi-VN", {
+      weekday: "long",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  })();
 
-  const getTopicName = (session: StudySession) => {
-    const topic = dashboard.topics.find(
-      (item) => item.id === session.topic_id
-    );
-
-    return (
-      getMainTopicTitle(topic?.name) ||
-      topic?.title ||
-      session.title ||
-      session.name ||
-      "Buổi học"
-    );
-  };
-
-  const getPlanName = (session: StudySession) => {
-    const topic = dashboard.topics.find(
-      (item) => item.id === session.topic_id
-    );
-
-    const plan = dashboard.plans.find(
-      (item) => item.id === topic?.exam_plan_id
-    );
-
-    return plan?.title || "Kế hoạch ôn thi";
-  };
-
-  const getSessionStatus = (status?: string) => {
-    switch (status) {
-      case "completed":
-        return {
-          label: "Đã hoàn thành",
-          className: "bg-[#EEF1FD] text-[#4566D1]",
-        };
-
-      case "in_progress":
-        return {
-          label: "Đang học",
-          className: "bg-[#FFF5D6] text-[#9A6400]",
-        };
-
-      default:
-        return {
-          label: "Chưa bắt đầu",
-          className: "bg-[#EEF1FD] text-[#4D4366]",
-        };
-    }
-  };
+  const todayMinutes = view.today.reduce((sum, item) => sum + (item.minutes || 0), 0);
+  const hoursText =
+    todayMinutes >= 60
+      ? `${Math.round((todayMinutes / 60) * 10) / 10} giờ`.replace(".", ",")
+      : `${todayMinutes} phút`;
+  const lessonCount = view.today.filter((item) => item.kind === "lesson").length;
 
   return (
-    <div className="space-y-8">
-      {/* Welcome */}
-      <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <p className="text-sm font-medium capitalize text-[#716A82]">
-            {today}
-          </p>
-
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#24123A]">
-            Chào mừng trở lại! 👋
+    <div className="mx-auto max-w-7xl space-y-6">
+      {/* Lời chào */}
+      <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <p className="sp-accent text-[18px] text-[var(--sp-pink)]">{todayLabel}</p>
+          <h1 className="mt-1 text-[40px] leading-tight sm:text-[52px]">
+            Chào mừng trở lại,{" "}
+            <span className="whitespace-nowrap">
+              <span className="sp-squiggle">{CURRENT_USER.name}</span>
+              <Sparkle size={24} className="sp-twinkle ml-2 inline-block align-top text-[var(--sp-yellow)]" />
+            </span>
           </h1>
-
-          <p className="mt-2 text-sm text-[#716A82]">
-            Sẵn sàng cho một ngày học tập hiệu quả cùng StudyPilot?
+          <p className="mt-2 text-[15px] text-[var(--sp-muted)]">
+            {loading
+              ? "Đang tải lịch học của bạn..."
+              : lessonCount > 0
+                ? `Hôm nay bạn có ${lessonCount} buổi học, tổng ${hoursText}.`
+                : view.plan
+                  ? "Hôm nay không có buổi học mới. Tranh thủ ôn lại phần còn yếu nhé."
+                  : "Tạo kế hoạch ôn thi đầu tiên để AI xếp lịch học cho bạn."}
           </p>
         </div>
-
-        <Link
-          href="/study-plans"
-          className="inline-flex w-fit items-center gap-2 rounded-xl bg-[#5B7FE3] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#4566D1]"
-        >
-          + Tạo kế hoạch mới
+        <Link href="/study-plans#create-plan" className="sp-btn sp-btn-primary w-fit shrink-0 whitespace-nowrap px-5 py-3 text-[15px]">
+          <IconPlus size={17} />
+          Tạo kế hoạch mới
         </Link>
       </section>
 
-      {/* Statistics */}
-      <section>
-        <div className="mb-4">
-          <h2 className="text-lg font-bold text-[#24123A]">
-            Tổng quan học tập
-          </h2>
+      {error && (
+        <p role="alert" className="rounded-2xl border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-4 py-3 text-sm font-medium text-[var(--sp-pink-dark)]">
+          {error}{" "}
+          <button type="button" onClick={() => void refreshDashboard()} className="font-bold underline underline-offset-2">
+            Thử lại
+          </button>
+        </p>
+      )}
 
-          <p className="mt-1 text-sm text-[#716A82]">
-            Theo dõi tình hình học tập của bạn.
-          </p>
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
+        {/* ---------- Cột trái ---------- */}
+        <div className="min-w-0 space-y-6">
+          <PlanHero view={view} todayKey={todayKey} loading={loading} />
+          <TodayCard view={view} todayKey={todayKey} hoursText={hoursText} loading={loading} />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {statistics.map((item) => (
-            <div
-              key={item.title}
-              className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-5 shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-[#716A82]">
-                  {item.title}
-                </p>
+        {/* ---------- Cột phải ---------- */}
+        <div className="min-w-0 space-y-6">
+          <WeakCard view={view} loading={loading} />
 
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#EEF1FD] text-lg">
-                  {item.icon}
-                </span>
-              </div>
-
-              <p className="mt-4 text-3xl font-bold text-[#24123A]">
-                {loading ? "..." : item.value.toLocaleString("vi-VN")}
-              </p>
-
-              <p className="mt-1 text-xs text-[#716A82]">
-                {item.note}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Main content */}
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        {/* Today's plan */}
-        <div className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-6 xl:col-span-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-[#24123A]">
-                Kế hoạch hôm nay
-              </h2>
-
-              <p className="mt-1 text-sm text-[#716A82]">
-                Những nội dung bạn cần hoàn thành.
-              </p>
-            </div>
-
-            <Link
-              href="/study-plans"
-              className="text-sm font-semibold text-[#4566D1] hover:underline"
-            >
-              Xem kế hoạch →
-            </Link>
-          </div>
-
-          {loading ? (
-            <div className="mt-6 rounded-xl border border-dashed border-[#ECE6EF] bg-[#F7F5FA] px-5 py-10 text-center text-sm text-[#716A82]">
-              Đang tải kế hoạch học tập...
-            </div>
-          ) : dashboard.todaySessions.length === 0 ? (
-            <div className="mt-6 flex flex-col items-center justify-center rounded-xl border border-dashed border-[#ECE6EF] bg-[#F7F5FA] px-5 py-10 text-center">
-              <span className="text-4xl">📖</span>
-
-              <h3 className="mt-4 font-semibold text-[#4D4366]">
-                {dashboard.planCount === 0
-                  ? "Bạn chưa có kế hoạch ôn thi"
-                  : "Hôm nay chưa có buổi học nào"}
-              </h3>
-
-              <p className="mt-2 max-w-sm text-sm leading-6 text-[#716A82]">
-                {dashboard.planCount === 0
-                  ? "Hãy tạo kế hoạch ôn thi để StudyPilot giúp bạn sắp xếp lịch học phù hợp."
-                  : "Bạn có thể xem các buổi học trong kế hoạch hoặc tiếp tục những bài học đã được mở khóa."}
-              </p>
-
-              <Link
-                href="/study-plans"
-                className="mt-5 rounded-xl bg-[#EEF1FD] px-5 py-2.5 text-sm font-semibold text-[#24123A] transition hover:bg-[#EEF1FD]"
-              >
-                Xem kế hoạch học tập
-              </Link>
-            </div>
-          ) : (
-            <div className="mt-6 space-y-3">
-              {dashboard.todaySessions.map((session) => {
-                const unlocked =
-                  session.is_unlocked === true ||
-                  session.status === "completed" ||
-                  session.status === "in_progress";
-
-                const status = getSessionStatus(session.status);
-
+          <section>
+            <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Đi nhanh tới</p>
+            <h2 className="text-[22px] text-[var(--sp-ink)]">Truy cập nhanh</h2>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              {QUICK_LINKS.map((item) => {
+                const Icon = item.icon;
                 return (
-                  <div
-                    key={session.id}
-                    className="rounded-xl border border-[#ECE6EF] bg-white p-4"
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="group flex flex-col rounded-[22px] border-2 border-[var(--sp-line)] bg-white p-4 transition hover:-translate-y-0.5 hover:border-[var(--sp-purple)] hover:shadow-[4px_4px_0_var(--sp-lav-line)]"
                   >
-                    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                      <div className="min-w-0">
-                        <h3 className="font-semibold text-[#24123A]">
-                          {getTopicName(session)}
-                        </h3>
-
-                        <p className="mt-1 text-xs text-[#716A82]">
-                          {getPlanName(session)}
-                        </p>
-
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-medium ${status.className}`}
-                          >
-                            {status.label}
-                          </span>
-
-                          {!unlocked && (
-                            <span className="rounded-full bg-[#FDEDF3] px-3 py-1 text-xs font-medium text-[#C42A63]">
-                              🔒 Chưa mở khóa
-                            </span>
-                          )}
-                        </div>
-
-                        {!unlocked && session.lock_reason && (
-                          <p className="mt-2 text-xs leading-5 text-[#C42A63]">
-                            {session.lock_reason}
-                          </p>
-                        )}
-                      </div>
-
-                      {unlocked ? (
-                        <Link
-                          href={`/study-sessions/${session.id}`}
-                          className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[#5B7FE3] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#4566D1]"
-                        >
-                          {session.status === "completed"
-                            ? "Xem lại"
-                            : session.status === "in_progress"
-                              ? "Tiếp tục học"
-                              : "Bắt đầu học"}
-                        </Link>
-                      ) : (
-                        <span className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[#EEF1FD] px-4 py-2.5 text-sm font-semibold text-[#716A82]">
-                          Đang khóa
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                    <span className={`flex h-11 w-11 items-center justify-center rounded-xl border-2 border-[var(--sp-purple-deep)] ${item.tone}`}>
+                      <Icon size={20} />
+                    </span>
+                    <span className="mt-3 text-[15px] font-bold leading-snug text-[var(--sp-ink)]">{item.title}</span>
+                    <span className="mt-1 text-[13px] leading-5 text-[var(--sp-muted)]">{item.text}</span>
+                    <span className="mt-3 flex items-center gap-1 text-[13px] font-bold text-[var(--sp-peri-dark)]">
+                      Mở
+                      <IconArrowRight size={14} className="transition group-hover:translate-x-1" />
+                    </span>
+                  </Link>
                 );
               })}
             </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================= Gom dữ liệu ================= */
+
+type TodayItem = {
+  key: string;
+  kind: "lesson" | "retake";
+  title: string;
+  minutes: number;
+  done: boolean;
+  href: string;
+  chip: string;
+};
+
+type WeakItem = {
+  sessionId: string;
+  percent: number;
+  title: string;
+  code: string;
+  note: string;
+  href: string;
+  linkLabel: string;
+};
+
+type WeekDay = { key: string; label: string; total: number; done: number };
+
+function buildView(data: Dashboard, todayKey: string) {
+  const topicById = new Map(data.topics.map((topic) => [topic.id, topic]));
+  const subjectName = (plan?: ExamPlan) =>
+    data.subjects.find((subject) => subject.id === plan?.subject_id)?.name || plan?.title || "Kế hoạch ôn thi";
+
+  // Kế hoạch đang chạy: ngày thi gần nhất chưa qua
+  const upcoming = data.plans
+    .filter((plan) => !plan.exam_date || plan.exam_date.slice(0, 10) >= todayKey)
+    .sort((a, b) => String(a.exam_date || "9999").localeCompare(String(b.exam_date || "9999")));
+  const plan = upcoming[0] || data.plans[0];
+  const planTopics = plan ? data.topics.filter((topic) => topic.exam_plan_id === plan.id) : [];
+  const planTopicIds = new Set(planTopics.map((topic) => topic.id));
+  const planSessions = data.sessions.filter((session) => planTopicIds.has(String(session.topic_id)));
+  const completedSessions = planSessions.filter((session) => session.status === "completed").length;
+  const learnedTopics = planTopics.filter((topic) => {
+    const list = planSessions.filter((session) => session.topic_id === topic.id);
+    return list.length > 0 && list.every((session) => session.status === "completed");
+  }).length;
+  const materialsHref = (sessionId?: string | null) =>
+    plan?.subject_id
+      ? `/study-materials?subject=${encodeURIComponent(plan.subject_id)}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ""}`
+      : "/study-materials";
+
+  // Điểm mới nhất của từng buổi học (bài gốc hoặc kiểm tra lại)
+  const quizById = new Map(data.quizzes.map((quiz) => [quiz.id, quiz]));
+  const latestBySession = new Map<string, { percent: number; at: string }>();
+  for (const attempt of data.attempts) {
+    const quiz = quizById.get(attempt.quiz_id);
+    const sessionId = quiz?.study_session_id;
+    if (!sessionId) continue;
+    const percent = attempt.total_questions
+      ? Math.round((attempt.correct_count / attempt.total_questions) * 100)
+      : Math.round(Number(attempt.score || 0));
+    const at = attempt.submitted_at || "";
+    const current = latestBySession.get(sessionId);
+    if (!current || at > current.at) latestBySession.set(sessionId, { percent, at });
+  }
+
+  const sessionById = new Map(data.sessions.map((session) => [session.id, session]));
+  const weak: WeakItem[] = [];
+  for (const [sessionId, latest] of latestBySession) {
+    if (latest.percent >= 80) continue;
+    const session = sessionById.get(sessionId);
+    const topic = topicById.get(String(session?.topic_id));
+    if (plan && topic?.exam_plan_id && topic.exam_plan_id !== plan.id) continue;
+    const retake = data.quizzes.find(
+      (quiz) => quiz.is_retake && quiz.study_session_id === sessionId && quiz.review_status !== "completed"
+    );
+    const open = Boolean(retake?.is_unlocked);
+    weak.push({
+      sessionId,
+      percent: latest.percent,
+      title: getMainTopicTitle(topic?.name || retake?.topic_name || "Bài học"),
+      code: chapterCode(topic?.hierarchy),
+      note: open ? "Bài kiểm tra lại đã mở" : "Ôn lại để mở bài kiểm tra lại",
+      href: open && retake ? `/quizzes/${retake.id}` : materialsHref(sessionId),
+      linkLabel: open ? "Làm lại" : "Ôn ngay",
+    });
+  }
+  weak.sort((a, b) => a.percent - b.percent);
+
+  // Hôm nay
+  const today: TodayItem[] = [];
+  for (const item of weak) {
+    const retake = data.quizzes.find(
+      (quiz) => quiz.is_retake && quiz.study_session_id === item.sessionId && quiz.is_unlocked && quiz.review_status !== "completed"
+    );
+    if (retake) {
+      today.push({
+        key: `retake-${retake.id}`,
+        kind: "retake",
+        title: `${item.code ? `${item.code} · ` : ""}${item.title}`,
+        minutes: Number(retake.time_limit_minutes || 15),
+        done: false,
+        href: `/quizzes/${retake.id}`,
+        chip: "Kiểm tra lại",
+      });
+    }
+  }
+  for (const session of planSessions) {
+    if (!session.scheduled_start || toKey(session.scheduled_start) !== todayKey) continue;
+    const topic = topicById.get(String(session.topic_id));
+    const code = chapterCode(topic?.hierarchy);
+    today.push({
+      key: session.id,
+      kind: "lesson",
+      title: `${code ? `${code} · ` : ""}${getMainTopicTitle(topic?.name || "Buổi học")}`,
+      minutes: Number(session.duration_minutes || 0),
+      done: session.status === "completed",
+      href: materialsHref(session.id),
+      chip: session.status === "completed" ? "Đã học" : "Học mới",
+    });
+  }
+
+  // Tuần này (Thứ 2 → Chủ nhật)
+  const weekday = new Date(`${todayKey}T00:00:00Z`).getUTCDay();
+  const monday = addDays(todayKey, -((weekday + 6) % 7));
+  const week: WeekDay[] = Array.from({ length: 7 }, (_, index) => {
+    const key = addDays(monday, index);
+    const list = planSessions.filter((session) => session.scheduled_start && toKey(session.scheduled_start) === key);
+    return {
+      key,
+      label: index === 6 ? "CN" : `T${index + 2}`,
+      total: list.length,
+      done: list.filter((session) => session.status === "completed").length,
+    };
+  });
+
+  return {
+    plan,
+    planName: subjectName(plan),
+    otherPlans: Math.max(0, upcoming.length - 1),
+    totalSessions: planSessions.length || Number(plan?.total_sessions || 0),
+    completedSessions,
+    learnedTopics,
+    topicCount: planTopics.length,
+    weak: weak.slice(0, 3),
+    today,
+    week,
+    materialsHref: materialsHref(),
+  };
+}
+
+type View = ReturnType<typeof buildView>;
+
+/* ================= Thẻ kế hoạch đang chạy ================= */
+
+function PlanHero({ view, todayKey, loading }: { view: View; todayKey: string; loading: boolean }) {
+  const { plan } = view;
+  const percent = view.totalSessions ? Math.round((view.completedSessions / view.totalSessions) * 100) : 0;
+  const examKey = plan?.exam_date?.slice(0, 10);
+  const daysLeft = examKey ? Math.max(0, daysBetween(todayKey, examKey)) : null;
+
+  return (
+    <section className="relative overflow-hidden rounded-[28px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-purple)] p-6 text-white shadow-[6px_6px_0_var(--sp-pink)] sm:p-8">
+      <Sparkle size={30} className="sp-twinkle absolute right-8 top-6 text-[var(--sp-pink)]" />
+      <Sparkle size={16} className="sp-twinkle absolute right-20 top-16 text-[var(--sp-yellow)]" />
+
+      {!plan ? (
+        <div className="relative max-w-lg">
+          <p className="sp-accent text-[18px] text-[#ffd3e2]">Bắt đầu thôi</p>
+          <h2 className="mt-1 text-[28px] font-extrabold leading-tight text-white">
+            {loading ? "Đang tải kế hoạch..." : "Bạn chưa có kế hoạch ôn thi"}
+          </h2>
+          {!loading && (
+            <>
+              <p className="mt-2 text-[15px] leading-6 text-white/80">
+                Tải tài liệu lên, chọn ngày thi. AI sẽ chia bài và xếp lịch học từng ngày cho bạn.
+              </p>
+              <Link
+                href="/study-plans#create-plan"
+                className="sp-btn mt-5 border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] px-5 py-3 text-[15px] text-[var(--sp-purple-deep)] shadow-[3px_3px_0_var(--sp-pink)]"
+              >
+                Tạo kế hoạch đầu tiên
+                <IconArrowRight size={16} />
+              </Link>
+            </>
           )}
         </div>
+      ) : (
+        <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
+          {/* Vòng tiến độ */}
+          <div className="relative h-[150px] w-[150px] shrink-0 self-center">
+            <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90" aria-hidden="true">
+              <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="11" />
+              <circle
+                cx="60"
+                cy="60"
+                r="50"
+                fill="none"
+                stroke="var(--sp-yellow)"
+                strokeWidth="11"
+                strokeLinecap="round"
+                strokeDasharray={`${(percent / 100) * 314.2} 314.2`}
+                className="transition-[stroke-dasharray] duration-700"
+              />
+            </svg>
+            <span className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-[34px] font-black leading-none">{percent}%</span>
+              <span className="mt-1 text-[13px] text-white/75">
+                {view.completedSessions}/{view.totalSessions} buổi
+              </span>
+            </span>
+          </div>
 
-        {/* Progress */}
-        <div className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-6">
-          <h2 className="text-lg font-bold text-[#24123A]">
-            Tiến độ ôn thi
-          </h2>
+          <div className="min-w-0">
+            <p className="sp-accent text-[18px] text-[#ffd3e2]">
+              Kế hoạch đang chạy
+              {view.otherPlans > 0 && <span className="ml-2 text-[14px] text-white/60">· +{view.otherPlans} kế hoạch khác</span>}
+            </p>
+            <h2 className="truncate text-[30px] font-extrabold leading-tight text-white">{view.planName}</h2>
 
-          <p className="mt-1 text-sm text-[#716A82]">
-            Theo dõi mục tiêu học tập.
-          </p>
-
-          <div className="mt-8 flex flex-col items-center justify-center py-5 text-center">
-            <div
-              className="flex h-32 w-32 items-center justify-center rounded-full p-[10px]"
-              style={{
-                background: `conic-gradient(#5B7FE3 ${dashboard.progressPercent}%, #ECE6EF ${dashboard.progressPercent}% 100%)`,
-              }}
-            >
-              <div className="flex h-full w-full items-center justify-center rounded-full bg-[#FFFFFF]">
-                <span className="text-3xl font-bold text-[#4566D1]">
-                  {loading ? "..." : `${dashboard.progressPercent}%`}
-                </span>
+            <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-3">
+              <div>
+                <dt className="text-[13px] text-white/70">Ngày thi</dt>
+                <dd className="text-[20px] font-extrabold">{examKey ? formatDay(examKey) : "—"}</dd>
               </div>
-            </div>
-
-            <p className="mt-5 font-semibold text-[#4D4366]">
-              {dashboard.totalSessions === 0
-                ? "Chưa có dữ liệu tiến độ"
-                : dashboard.progressPercent === 100
-                  ? "Đã hoàn thành tất cả buổi học"
-                  : "Tiếp tục duy trì tiến độ"}
-            </p>
-
-            <p className="mt-2 text-xs leading-5 text-[#716A82]">
-              {dashboard.totalSessions > 0
-                ? `${dashboard.completedSessions}/${dashboard.totalSessions} buổi học đã hoàn thành`
-                : "Tiến độ sẽ được cập nhật khi bạn bắt đầu thực hiện kế hoạch."}
-            </p>
+              <div>
+                <dt className="text-[13px] text-white/70">Còn lại</dt>
+                <dd className="text-[20px] font-extrabold">{daysLeft === null ? "—" : `${daysLeft} ngày`}</dd>
+              </div>
+              <div>
+                <dt className="text-[13px] text-white/70">Chủ đề</dt>
+                <dd className="text-[20px] font-extrabold">
+                  {view.learnedTopics}/{view.topicCount} đã học
+                </dd>
+              </div>
+            </dl>
 
             <Link
-              href="/study-plans"
-              className="mt-5 text-sm font-semibold text-[#4566D1] hover:underline"
+              href={`/study-plans/${plan.id}`}
+              className="sp-btn mt-5 border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] px-5 py-2.5 text-[15px] text-[var(--sp-purple-deep)] shadow-[3px_3px_0_var(--sp-pink)] hover:brightness-105"
             >
-              Xem chi tiết kế hoạch →
+              Xem kế hoạch chi tiết
+              <IconArrowRight size={16} />
             </Link>
           </div>
         </div>
-      </section>
+      )}
+    </section>
+  );
+}
 
-      {/* Quick actions */}
-      <section>
-        <div className="mb-4">
-          <h2 className="text-lg font-bold text-[#24123A]">
-            Truy cập nhanh
-          </h2>
+/* ================= Hôm nay học gì ================= */
 
-          <p className="mt-1 text-sm text-[#716A82]">
-            Tiếp tục hành trình học tập của bạn.
+function TodayCard({
+  view,
+  todayKey,
+  hoursText,
+  loading,
+}: {
+  view: View;
+  todayKey: string;
+  hoursText: string;
+  loading: boolean;
+}) {
+  const firstOpen = view.today.findIndex((item) => !item.done);
+  const weekDone = view.week.reduce((sum, day) => sum + day.done, 0);
+  const weekTotal = view.week.reduce((sum, day) => sum + day.total, 0);
+
+  return (
+    <section className="sp-card p-5 sm:p-7">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <p className="sp-accent text-[17px] text-[var(--sp-pink)]">
+            {view.today.length > 0 ? `${view.today.length} việc · tổng ${hoursText}` : "Lịch hôm nay"}
           </p>
+          <h2 className="text-[22px] text-[var(--sp-ink)]">Hôm nay học gì?</h2>
         </div>
+        {view.plan && (
+          <Link href={`/study-plans/${view.plan.id}`} className="flex items-center gap-1 text-sm font-bold text-[var(--sp-peri-dark)] hover:underline">
+            Cả lịch
+            <IconArrowRight size={15} />
+          </Link>
+        )}
+      </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {quickActions.map((action) => (
-            <Link
-              key={action.title}
-              href={action.href}
-              className="group rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-5 transition hover:-translate-y-1 hover:border-[#ECE6EF] hover:shadow-md"
-            >
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#EEF1FD] text-2xl">
-                {action.icon}
-              </span>
-
-              <h3 className="mt-4 font-bold text-[#24123A]">
-                {action.title}
-              </h3>
-
-              <p className="mt-2 text-sm text-[#716A82]">
-                {action.description}
-              </p>
-
-              <p className="mt-4 text-sm font-semibold text-[#4566D1] group-hover:underline">
-                Truy cập →
-              </p>
-            </Link>
+      {loading ? (
+        <div className="mt-5 space-y-3">
+          {[0, 1].map((index) => (
+            <div key={index} className="h-[78px] animate-pulse rounded-2xl bg-[var(--sp-surface-2)]" />
           ))}
         </div>
-      </section>
-
-      {/* Chỉ báo khi không tải được dữ liệu (không hiện thông tin kỹ thuật cho người dùng) */}
-      {!loading && (error || dataWarning) && (
-        <section className="flex flex-col gap-3 rounded-2xl border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm font-medium text-[var(--sp-pink-dark)]">
-            {error
-              ? "Chưa tải được dữ liệu học tập. Vui lòng thử lại sau ít phút."
-              : "Một phần dữ liệu chưa tải được, số liệu có thể chưa đầy đủ."}
-          </p>
-          <button
-            type="button"
-            onClick={refreshDashboard}
-            className="sp-btn sp-btn-secondary w-fit px-4 py-2 text-sm"
-          >
-            ↻ Thử lại
-          </button>
-        </section>
+      ) : view.today.length === 0 ? (
+        <div className="mt-5 flex flex-col items-center rounded-2xl border-2 border-dashed border-[var(--sp-line)] px-5 py-8 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]">
+            <IconCheck size={22} />
+          </span>
+          <p className="mt-3 font-bold text-[var(--sp-ink)]">Hôm nay là ngày nghỉ</p>
+          <p className="mt-1 text-sm text-[var(--sp-muted)]">Bạn có thể ôn lại bài cũ hoặc lật vài flashcard.</p>
+          <Link href={view.materialsHref} className="sp-btn sp-btn-secondary mt-4 px-4 py-2 text-sm">
+            <IconBook size={15} />
+            Mở tài liệu học tập
+          </Link>
+        </div>
+      ) : (
+        <ul className="mt-5 space-y-3">
+          {view.today.map((item, index) => {
+            const highlight = index === firstOpen;
+            return (
+              <li
+                key={item.key}
+                className={`flex items-center gap-4 rounded-2xl border-2 px-4 py-3.5 transition sm:px-5 ${
+                  highlight
+                    ? "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)]"
+                    : "border-[var(--sp-line)] bg-white"
+                }`}
+              >
+                <div className="w-12 shrink-0 border-r-2 border-dashed border-[var(--sp-line)] pr-3 text-center">
+                  <p className="text-[24px] font-black leading-none text-[var(--sp-purple)]">{item.minutes || "–"}</p>
+                  <p className="mt-0.5 text-[12px] text-[var(--sp-muted)]">phút</p>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span
+                    className={`sp-chip flex w-fit items-center gap-1 ${
+                      item.kind === "retake"
+                        ? "bg-white text-[var(--sp-pink-dark)]"
+                        : item.done
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
+                    }`}
+                  >
+                    {item.kind === "retake" ? <IconRepeat size={13} /> : item.done ? <IconCheck size={13} /> : <IconBook size={13} />}
+                    {item.chip}
+                  </span>
+                  <p className="mt-1 line-clamp-2 text-[15px] font-bold leading-snug text-[var(--sp-ink)] sm:text-[16px]">{item.title}</p>
+                </div>
+                <Link
+                  href={item.href}
+                  className={`sp-btn shrink-0 px-3 py-2 text-sm sm:px-4 ${highlight ? "sp-btn-primary" : "sp-btn-secondary"}`}
+                >
+                  {item.done ? (
+                    "Xem lại"
+                  ) : (
+                    <>
+                      {highlight && <IconPlay size={14} className="hidden sm:block" />}
+                      {item.kind === "retake" ? "Làm bài" : "Bắt đầu"}
+                    </>
+                  )}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       )}
-    </div>
+
+      {/* Tuần này */}
+      {view.plan && (
+        <div className="mt-6 border-t-2 border-dashed border-[var(--sp-line)] pt-5">
+          <div className="flex items-center justify-between">
+            <p className="font-bold text-[var(--sp-ink)]">Tuần này</p>
+            <p className="text-[13px] text-[var(--sp-muted)]">
+              {weekDone}/{weekTotal} buổi xong
+            </p>
+          </div>
+          <div className="mt-3 grid grid-cols-7 gap-1.5 sm:gap-2">
+            {view.week.map((day) => {
+              const isToday = day.key === todayKey;
+              const isPast = day.key < todayKey;
+              const allDone = day.total > 0 && day.done === day.total;
+              return (
+                <div key={day.key} className="text-center">
+                  <p className={`text-[13px] font-semibold ${isToday ? "text-[var(--sp-purple)]" : "text-[var(--sp-muted)]"}`}>{day.label}</p>
+                  <div
+                    className={`mt-1.5 flex h-11 items-center justify-center rounded-xl text-[13px] font-bold ${
+                      day.total === 0
+                        ? "bg-[repeating-linear-gradient(135deg,var(--sp-surface-2)_0_6px,#f1edf4_6px_12px)] text-[var(--sp-soft)]"
+                        : allDone
+                          ? "bg-[var(--sp-peri)] text-white"
+                          : isToday
+                            ? "border-2 border-[var(--sp-purple)] bg-white text-[var(--sp-purple)] shadow-[2px_2px_0_var(--sp-purple-deep)]"
+                            : isPast
+                              ? "border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
+                              : "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
+                    }`}
+                    title={day.total ? `${day.done}/${day.total} buổi xong` : "Không có buổi học"}
+                  >
+                    {day.total === 0 ? "Nghỉ" : allDone ? <IconCheck size={17} /> : isToday || isPast ? `${day.done}/${day.total}` : (
+                          <span>
+                            {day.total}
+                            <span className="hidden sm:inline"> buổi</span>
+                          </span>
+                        )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ================= Lưu ý điểm yếu ================= */
+
+function WeakCard({ view, loading }: { view: View; loading: boolean }) {
+  return (
+    <section className="rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-white p-5 shadow-[5px_5px_0_var(--sp-pink)] sm:p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Lưu ý điểm yếu</p>
+          <h2 className="text-[22px] text-[var(--sp-ink)]">Cần ôn lại thêm</h2>
+        </div>
+        <IconAlert size={20} className="mt-1 text-[var(--sp-ink)]" />
+      </div>
+
+      {loading ? (
+        <div className="mt-4 h-[84px] animate-pulse rounded-2xl bg-[var(--sp-surface-2)]" />
+      ) : view.weak.length === 0 ? (
+        <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-4 text-sm font-semibold text-emerald-800">
+          Chưa có phần nào dưới 80%. Giữ phong độ nhé!
+        </p>
+      ) : (
+        <ul className="mt-4 space-y-3">
+          {view.weak.map((item, index) => (
+            <li key={item.sessionId}>
+              <Link
+                href={item.href}
+                className={`group flex items-center gap-4 rounded-2xl border-2 px-4 py-3.5 transition ${
+                  index === 0
+                    ? "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] hover:border-[var(--sp-pink)]"
+                    : "border-[var(--sp-line)] bg-white hover:border-[var(--sp-lav-line)]"
+                }`}
+              >
+                <span
+                  className={`w-[52px] shrink-0 text-[22px] font-black ${
+                    item.percent < 50 ? "text-[var(--sp-pink-dark)]" : "text-[#c98a00]"
+                  }`}
+                >
+                  {item.percent}%
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="line-clamp-2 block text-[15px] font-bold leading-snug text-[var(--sp-ink)]">
+                    {item.code ? `${item.code} · ` : ""}
+                    {item.title}
+                  </span>
+                  <span className="mt-0.5 line-clamp-2 block text-[12px] leading-4 text-[var(--sp-muted)]">{item.note}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1 text-[13px] font-bold text-[var(--sp-peri-dark)]">
+                  {item.linkLabel}
+                  <IconArrowRight size={14} className="transition group-hover:translate-x-0.5" />
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

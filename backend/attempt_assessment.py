@@ -44,8 +44,19 @@ ASSESSMENT_SCHEMA = {
             "required": ["minutes_per_day", "days", "advice"],
         },
         "recommendations": {"type": "array", "items": {"type": "string"}},
+        "mistakes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "question_number": {"type": "integer"},
+                    "text": {"type": "string"},
+                },
+                "required": ["question_number", "text"],
+            },
+        },
     },
-    "required": ["verdict", "summary", "strengths", "weak_areas", "study_plan", "recommendations"],
+    "required": ["verdict", "summary", "strengths", "weak_areas", "study_plan", "recommendations", "mistakes"],
 }
 
 ASSESSMENT_SYSTEM = """Bạn là giảng viên nhận xét bài kiểm tra cho sinh viên, giọng thân thiện,
@@ -71,6 +82,9 @@ YÊU CẦU:
 - study_plan: minutes_per_day và days theo đúng khung của mức điểm; advice 1-2 câu
   về cách sắp xếp thời gian học.
 - recommendations: 2-4 lời khuyên ngắn, hành động được ngay.
+- mistakes: với MỖI câu SAI (ở mọi mức điểm), 1-2 câu ngắn giải thích "bạn nhầm ở đâu":
+  vì sao đáp án bạn chọn chưa đúng / bạn đang hiểu nhầm điều gì. Không lặp lại lời giải
+  của đáp án đúng. Câu bỏ trống thì nhắc ý chính cần nhớ.
 - Không bịa số trang, chương hay tên tài liệu; ứng dụng tự gắn vị trí từ dữ liệu."""
 
 
@@ -147,7 +161,7 @@ def build_attempt_assessment(result: dict) -> dict:
         system=ASSESSMENT_SYSTEM,
         prompt=prompt,
         input_schema=ASSESSMENT_SCHEMA,
-        max_tokens=3000,
+        max_tokens=4500,
     )
 
     # Gắn vị trí thật (trang, chương, tài liệu) cho từng nhóm điểm yếu
@@ -188,6 +202,25 @@ def build_attempt_assessment(result: dict) -> dict:
         "advice": str(plan.get("advice") or "").strip()[:400],
     }
 
+    mistakes = []
+    seen_numbers = set()
+    for item in data.get("mistakes") or []:
+        number = item.get("question_number")
+        text = str(item.get("text") or "").strip()
+        if (
+            isinstance(number, int)
+            and 1 <= number <= len(questions)
+            and not questions[number - 1].get("is_correct")
+            and text
+            and number not in seen_numbers
+        ):
+            seen_numbers.add(number)
+            mistakes.append({
+                "question_number": number,
+                "question_id": str(questions[number - 1].get("question_id") or ""),
+                "text": text[:400],
+            })
+
     return {
         "mastery_level": "mastered" if tier == "none" else "needs_review" if tier == "relaxed" else "not_mastered",
         "summary": f"{str(data.get('verdict') or '').strip()} {str(data.get('summary') or '').strip()}".strip(),
@@ -196,6 +229,6 @@ def build_attempt_assessment(result: dict) -> dict:
         "weak_areas": weak_areas,
         "recommendations": [
             str(item).strip() for item in data.get("recommendations") or [] if str(item).strip()
-        ][:4] + [study_plan],
+        ][:4] + [study_plan] + ([{"kind": "mistakes", "items": mistakes}] if mistakes else []),
         "ai_model": ASSESSMENT_MODEL_TAG,
     }

@@ -535,7 +535,96 @@ def _split_oversized(topic, chunk_by_index):
     return parts
 
 
+_OUTLINE_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".outline_cache")
+
+
+def _outline_cache_key(chunks) -> str:
+    import hashlib
+    digest = hashlib.sha256()
+    for chunk in chunks:
+        digest.update(str(chunk.get("chunk_index")).encode())
+        digest.update(b"\x00")
+        digest.update(str(chunk.get("content") or "").encode("utf-8"))
+        digest.update(b"\x01")
+    return digest.hexdigest()
+
+
 def build_outline(chunks):
+    """
+    Dựng mục lục. Kết quả được lưu theo nội dung tài liệu, nên bước "AI nhận diện
+    chương" lúc chọn file và bước phân tích khi tạo kế hoạch chỉ tốn một lần.
+    """
+    import json as _json
+
+    cache_path = os.path.join(_OUTLINE_CACHE_DIR, _outline_cache_key(chunks) + ".json")
+    try:
+        with open(cache_path, encoding="utf-8") as cache_file:
+            return _json.load(cache_file)
+    except (OSError, ValueError):
+        pass
+
+    outline = _build_outline_uncached(chunks)
+
+    try:
+        os.makedirs(_OUTLINE_CACHE_DIR, exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as cache_file:
+            _json.dump(outline, cache_file, ensure_ascii=False)
+    except OSError as error:
+        print("Không lưu được mục lục tạm:", str(error))
+
+    return outline
+
+
+def summarize_outline_chapters(outline):
+    """Gom mục lục thành danh sách chương (kèm dải chunk) để hiển thị và chọn trọng tâm."""
+    chapters = []
+    for item in outline:
+        if item.get("kind") == "non_learning":
+            continue
+        indices = [int(index) for index in item.get("source_chunk_indices") or []]
+        if not indices:
+            continue
+        chapter = (
+            _clean_text(item.get("chapter"), 150).replace("\n", " ")
+            or _clean_text(item.get("section"), 150).replace("\n", " ")
+            or _clean_text(item.get("name"), 150).replace("\n", " ")
+            or "Nội dung khác"
+        )
+        if not chapters or chapters[-1]["name"] != chapter:
+            chapters.append({
+                "name": chapter,
+                "lesson_count": 0,
+                "chunk_count": 0,
+                "difficulty_sum": 0,
+                "start_chunk": min(indices),
+                "end_chunk": max(indices),
+            })
+        current = chapters[-1]
+        current["lesson_count"] += 1
+        current["chunk_count"] += len(indices)
+        current["difficulty_sum"] += max(1, min(5, _to_int(item.get("difficulty_level"), 3)))
+        current["start_chunk"] = min(current["start_chunk"], min(indices))
+        current["end_chunk"] = max(current["end_chunk"], max(indices))
+
+    for chapter in chapters:
+        chapter["difficulty"] = round(chapter.pop("difficulty_sum") / max(1, chapter["lesson_count"]), 1)
+
+    # Gợi ý trọng tâm: chương khó và nhiều nội dung nhất (khoảng 1/3 số chương, tối đa 3)
+    if len(chapters) >= 3:
+        ranked = sorted(
+            range(len(chapters)),
+            key=lambda i: chapters[i]["difficulty"] * chapters[i]["chunk_count"],
+            reverse=True,
+        )
+        focus_count = max(1, min(3, round(len(chapters) / 3)))
+        for index in ranked[:focus_count]:
+            chapters[index]["suggested_focus"] = True
+    for chapter in chapters:
+        chapter.setdefault("suggested_focus", False)
+    return chapters
+
+
+def _build_outline_uncached(chunks):
     windows = _build_windows(chunks)
     outline = []
     previous_context = None

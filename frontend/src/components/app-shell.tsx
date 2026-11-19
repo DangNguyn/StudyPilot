@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { CURRENT_USER, userInitials } from "@/lib/current-user";
 import { usePathname } from "next/navigation";
+import NotificationBell from "@/components/notification-settings";
 import type { ComponentType, SVGProps } from "react";
 import {
-  IconBell,
   IconCalendar,
   IconChart,
   IconFile,
   IconHome,
-  IconInfo,
   IconLayers,
   IconPen,
   Sparkle,
@@ -167,33 +167,19 @@ export default function AppShell({
           </div>
 
           <div className="flex items-center gap-2.5 sm:gap-3">
-            <span
-              className="sp-chip hidden border border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)] md:inline-flex"
-              title="Ứng dụng đang chạy với tài khoản demo"
-            >
-              <IconInfo size={15} />
-              Dữ liệu demo
-            </span>
-
-            <button
-              type="button"
-              aria-label="Thông báo"
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--sp-line)] bg-white text-[var(--sp-text-2)] transition hover:text-[var(--sp-peri-dark)]"
-            >
-              <IconBell size={18} />
-            </button>
+            <NotificationBell />
 
             <div className="hidden text-right sm:block">
               <p className="text-xs font-medium text-[var(--sp-soft)]">
                 Xin chào
               </p>
               <p className="text-sm font-bold text-[var(--sp-ink)]">
-                Sinh viên
+                {CURRENT_USER.name}
               </p>
             </div>
 
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--sp-pink-bg)] text-sm font-bold text-[var(--sp-pink-dark)]">
-              S
+              {userInitials(CURRENT_USER.name)}
             </div>
           </div>
         </header>

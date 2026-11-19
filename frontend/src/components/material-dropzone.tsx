@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type DragEvent } from "react";
+import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { IconBulb, IconCheck, IconFile, IconRepeat, IconX, Sparkle } from "@/components/icons";
 
 /* Màu cho từng định dạng tài liệu */
@@ -28,7 +28,11 @@ export default function MaterialDropzone({
   validate,
   onChange,
   onError,
+  status,
+  showTips = true,
 }: {
+  status?: ReactNode;
+  showTips?: boolean;
   file: File | null;
   inputKey: number;
   validate: (file: File) => string | null;
@@ -113,10 +117,12 @@ export default function MaterialDropzone({
               </p>
               <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[var(--sp-muted)]">
                 <span>{formatSize(file.size)}</span>
-                <span className="flex items-center gap-1 font-semibold text-emerald-700">
-                  <IconCheck size={15} />
-                  Sẵn sàng để AI phân tích
-                </span>
+                {status ?? (
+                  <span className="flex items-center gap-1 font-semibold text-emerald-700">
+                    <IconCheck size={15} />
+                    Sẵn sàng để AI phân tích
+                  </span>
+                )}
               </p>
               <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
                 <div className="sp-fill-bar h-full rounded-full bg-[var(--sp-peri)]" />
@@ -213,6 +219,7 @@ export default function MaterialDropzone({
       )}
 
       {/* Mẹo */}
+      {showTips && (
       <div className="mt-3 flex gap-3 rounded-2xl border border-[var(--sp-line)] bg-white px-4 py-3">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]">
           <IconBulb size={17} />
@@ -239,6 +246,7 @@ export default function MaterialDropzone({
           </ul>
         </div>
       </div>
+      )}
     </div>
   );
 }

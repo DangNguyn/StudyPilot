@@ -3,6 +3,8 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -11,6 +13,17 @@ import { getMainTopicTitle } from "@/lib/content-titles";
 import StudyDayPicker from "@/components/study-day-picker";
 import PlanOverviewCards from "@/components/plan-overview-cards";
 import MaterialDropzone from "@/components/material-dropzone";
+import PlanHeroBanner from "@/components/plan-hero-banner";
+import {
+  CreateStepper,
+  FocusChapterChips,
+  PlanModeCards,
+  PlanPreviewCard,
+  type OutlineChapter,
+  type OutlineState,
+  type PlanMode,
+} from "@/components/plan-create-panels";
+import { IconCheck, Sparkle } from "@/components/icons";
 
 type ExamPlan = {
   id: string;
@@ -206,6 +219,12 @@ export default function StudyPlansPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
 
+  // Cách chia kế hoạch + AI nhận diện chương ngay khi chọn tài liệu
+  const [planMode, setPlanMode] = useState<PlanMode>("chapter");
+  const [outline, setOutline] = useState<OutlineState>({ status: "idle" });
+  const [focusChapters, setFocusChapters] = useState<Set<number>>(new Set());
+  const outlineRequestRef = useRef(0);
+
   const [message, setMessage] = useState("");
   const [feedbackType, setFeedbackType] =
     useState<FeedbackType>("info");
@@ -374,6 +393,61 @@ export default function StudyPlansPage() {
   };
 
   // Kiểm tra tài liệu trước khi tải lên.
+  const loadOutline = useCallback(async (file: File | null) => {
+    const requestId = ++outlineRequestRef.current;
+
+    if (!file) {
+      setOutline({ status: "idle" });
+      setFocusChapters(new Set());
+      return;
+    }
+
+    setOutline({ status: "loading" });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch(`${API_URL}/api/study-materials/preview-outline`, {
+        method: "POST",
+        body: formData,
+      });
+      const result = await readApiResponse<OutlineChapter>(
+        response,
+        "Chưa nhận diện được chương của tài liệu."
+      );
+      if (requestId !== outlineRequestRef.current) return;
+
+      const chapters = getDataList(result);
+      setOutline({ status: "done", chapters });
+      setFocusChapters(
+        new Set(
+          chapters
+            .map((chapter, index) => (chapter.suggested_focus ? index : -1))
+            .filter((index) => index >= 0)
+        )
+      );
+    } catch (error) {
+      if (requestId !== outlineRequestRef.current) return;
+      setOutline({
+        status: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Chưa nhận diện được chương của tài liệu.",
+      });
+      setFocusChapters(new Set());
+    }
+  }, []);
+
+  function toggleFocusChapter(index: number) {
+    setFocusChapters((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }
+
   function validateFile(file: File): string | null {
     const extension = file.name
       .toLowerCase()
@@ -627,6 +701,38 @@ export default function StudyPlansPage() {
       return;
     }
 
+    const outlineChapters =
+      outline.status === "done" ? outline.chapters : [];
+    const useFocusMode =
+      planMode === "focus"
+      && focusChapters.size > 0
+      && focusChapters.size < outlineChapters.length;
+
+    if (planMode === "focus") {
+      if (outline.status === "loading") {
+        setFeedback("AI đang nhận diện chương, vui lòng chờ vài giây rồi bấm lại.", "info");
+        return;
+      }
+
+      if (outline.status !== "done") {
+        setFeedback(
+          "Chưa nhận diện được chương nên chưa chia theo trọng tâm được. "
+            + "Hãy bấm \"Thử lại\" hoặc chọn \"Theo chương\".",
+          "error"
+        );
+        return;
+      }
+
+      if (focusChapters.size === 0) {
+        setFeedback("Hãy chọn ít nhất 1 chương trọng tâm.", "error");
+        return;
+      }
+    }
+
+    const focusSelection = useFocusMode
+      ? outlineChapters.filter((_, index) => focusChapters.has(index))
+      : [];
+
     setIsSubmitting(true);
     setFeedback("");
     setSubmissionStep("Đang tạo môn học và kế hoạch...");
@@ -797,6 +903,12 @@ export default function StudyPlansPage() {
           },
           body: JSON.stringify({
             selected_study_dates: selectedStudyDates,
+            plan_mode: useFocusMode ? "focus" : "chapter",
+            focus_ranges: focusSelection.map((chapter) => [
+              chapter.start_chunk,
+              chapter.end_chunk,
+            ]),
+            focus_chapters: focusSelection.map((chapter) => chapter.name),
           }),
         }
       );
@@ -926,6 +1038,11 @@ export default function StudyPlansPage() {
       setIsScheduleDialogOpen(false);
       setSelectedFile(null);
       setFileInputKey((current) => current + 1);
+      setPlanMode("chapter");
+      void loadOutline(null);
+
+      // Chuyển tới trang kế hoạch chi tiết với lịch từng ngày
+      router.push(`/study-plans/${planId}`);
     } catch (error) {
       const errorMessage =
         error instanceof Error
@@ -1054,6 +1171,44 @@ export default function StudyPlansPage() {
     (a, b) => a.weekNumber - b.weekNumber
   );
 
+  // Số liệu cho thẻ "Kế hoạch dự kiến"
+  const daysToExam = useMemo(() => {
+    if (!today || !examDate || examDate <= today) return null;
+    const diff = Date.parse(`${examDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`);
+    return Math.round(diff / 86_400_000);
+  }, [today, examDate]);
+
+  const estimatedStudyDays = useMemo(() => {
+    if (selectedStudyDates.length > 0) return selectedStudyDates.length;
+    if (!daysToExam) return 0;
+    const perWeek = Number(studyDays) || 0;
+    const fullWeeks = Math.floor(daysToExam / 7);
+    return fullWeeks * perWeek + Math.min(perWeek, daysToExam % 7);
+  }, [selectedStudyDates, daysToExam, studyDays]);
+
+  // Chế độ trọng tâm giữ ~4% số ngày cuối để ôn tổng hợp (khớp với backend)
+  const reviewDayCount =
+    planMode === "focus" && estimatedStudyDays >= 5
+      ? Math.max(1, Math.round(estimatedStudyDays * 0.04))
+      : 0;
+
+  const outlineStatus =
+    outline.status === "done" ? (
+      <span className="flex items-center gap-1 font-semibold text-emerald-700">
+        <IconCheck size={15} />
+        AI nhận diện {outline.chapters.length} chương
+      </span>
+    ) : outline.status === "loading" ? (
+      <span className="flex items-center gap-1.5 font-semibold text-[var(--sp-peri-dark)]">
+        <Sparkle size={13} className="sp-twinkle text-[var(--sp-pink)]" />
+        AI đang nhận diện chương…
+      </span>
+    ) : outline.status === "error" ? (
+      <span className="font-semibold text-[var(--sp-amber-dark)]">
+        Chưa nhận diện trước được chương — AI sẽ chia khi tạo kế hoạch
+      </span>
+    ) : undefined;
+
   const workflowSteps = [
     {
       number: "01",
@@ -1101,157 +1256,142 @@ export default function StudyPlansPage() {
         </p>
       </section>
 
-      {/* Intro banner */}
-      <section className="flex flex-col justify-between gap-5 rounded-2xl bg-[#EEF1FD] p-6 sm:flex-row sm:items-center sm:p-8">
-        <div className="max-w-xl">
-          <span className="text-3xl">🌱</span>
+      {/* Banner */}
+      <PlanHeroBanner steps={workflowSteps} showSteps={false} />
 
-          <h2 className="mt-3 text-xl font-bold text-[#24123A]">
-            Chuẩn bị cho kỳ thi tiếp theo của bạn
-          </h2>
-
-          <p className="mt-2 text-sm leading-6 text-[#716A82]">
-            Cho StudyPilot biết mục tiêu, thời gian và nội dung
-            cần ôn tập. AI sẽ giúp bạn xây dựng kế hoạch học
-            phù hợp với quỹ thời gian.
-          </p>
-        </div>
-
-        <div className="hidden h-28 w-28 shrink-0 items-center justify-center rounded-full bg-[#EEF1FD] text-5xl sm:flex">
-          📚
-        </div>
-      </section>
-
-      <section
-        aria-label="Các bước tạo kế hoạch"
-        className="grid gap-2 rounded-2xl border border-[#ECE6EF] bg-white p-3 shadow-sm sm:grid-cols-4"
-      >
-        {workflowSteps.map((step, index) => (
-          <div
-            key={step.number}
-            className={`relative rounded-xl px-3 py-3 ${
-              step.complete
-                ? "bg-[#F7F5FA]"
-                : "bg-[#FFFFFF]"
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              <span
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                  step.complete
-                    ? "bg-[#5B7FE3] text-white"
-                    : "bg-[#EEF1FD] text-[#4566D1]"
-                }`}
-              >
-                {step.complete ? "✓" : step.number}
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-[#24123A]">
-                  {step.title}
-                </p>
-                <p className="mt-1 truncate text-xs text-[#716A82]">
-                  {step.detail}
-                </p>
-              </div>
-            </div>
-            {index < workflowSteps.length - 1 && (
-              <span
-                aria-hidden="true"
-                className="absolute -right-2 top-7 z-10 hidden text-[#A39DB3] sm:block"
-              >
-                →
-              </span>
-            )}
-          </div>
-        ))}
-      </section>
-
-      {/* Create plan form */}
-      <section className="rounded-2xl border border-[#ECE6EF] bg-[#FFFFFF] p-6 shadow-sm sm:p-8">
-        <div className="mb-7">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#EEF1FD] text-xl">
-              ✨
-            </span>
-
-            <div>
-              <h2 className="text-lg font-bold text-[#24123A]">
-                Tạo kế hoạch mới
-              </h2>
-
-              <p className="mt-1 text-sm text-[#716A82]">
-                Cung cấp thông tin để bắt đầu lập kế hoạch.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Subject */}
+      {/* ===== Tạo kế hoạch ôn thi ===== */}
+      <section id="create-plan" className="space-y-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <label className="mb-2 block text-sm font-semibold text-[#4D4366]">
-              Tên môn học <span className="text-red-500">*</span>
-            </label>
-
-            <input
-              type="text"
-              required
-              value={subjectName}
-              onChange={(e) => setSubjectName(e.target.value)}
-              placeholder="Ví dụ: Cấu trúc dữ liệu và giải thuật"
-              className="w-full rounded-xl border border-[#ECE6EF] bg-white px-4 py-3 text-sm text-[#24123A] outline-none transition placeholder:text-[#A39DB3] focus:border-[#5B7FE3] focus:ring-2 focus:ring-[#ECE6EF]"
-            />
+            <p className="text-sm font-semibold text-[var(--sp-muted)]">
+              Kế hoạch ôn thi <span className="mx-1 text-[var(--sp-soft)]">›</span>{" "}
+              <span className="text-[var(--sp-ink)]">Tạo mới</span>
+            </p>
+            <h2 className="mt-1.5 flex items-center gap-2 text-[28px] font-black text-[var(--sp-ink)]">
+              Tạo kế hoạch <span className="sp-squiggle">ôn thi</span>
+              <Sparkle size={20} className="sp-twinkle text-[var(--sp-yellow)]" />
+            </h2>
+            <p className="mt-1 text-sm text-[var(--sp-muted)]">
+              Cho AI biết mục tiêu và tài liệu, bạn sẽ có lộ trình từng ngày đến hôm thi.
+            </p>
           </div>
+          <CreateStepper
+            steps={workflowSteps.map((step) => ({
+              title: step.title,
+              complete: step.complete,
+            }))}
+          />
+        </div>
 
-          {/* Exam date and daily hours */}
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <form
+          onSubmit={handleSubmit}
+          className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_380px]"
+        >
+          {/* --- Cột trái: biểu mẫu --- */}
+          <div className="sp-card space-y-6 p-5 sm:p-7">
+            {/* Tên môn */}
             <div>
-              <label className="mb-2 block text-sm font-semibold text-[#4D4366]">
-                Ngày thi <span className="text-red-500">*</span>
+              <label htmlFor="subject-name" className="mb-2 block text-sm font-bold text-[var(--sp-ink)]">
+                Tên môn học <span className="text-[var(--sp-pink)]">*</span>
               </label>
-
               <input
-                type="date"
+                id="subject-name"
+                type="text"
                 required
-                min={today || undefined}
-                value={examDate}
-                onChange={(e) => setExamDate(e.target.value)}
-                className="w-full rounded-xl border border-[#ECE6EF] bg-white px-4 py-3 text-sm text-[#4D4366] outline-none focus:border-[#5B7FE3] focus:ring-2 focus:ring-[#ECE6EF]"
+                value={subjectName}
+                onChange={(e) => setSubjectName(e.target.value)}
+                placeholder="Ví dụ: Kinh tế vi mô"
+                className="w-full rounded-xl border-2 border-[var(--sp-line)] bg-white px-4 py-3 text-sm text-[var(--sp-ink)] outline-none transition placeholder:text-[var(--sp-soft)] focus:border-[var(--sp-peri)]"
               />
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-[#4D4366]">
-                Thời gian học mỗi ngày
-              </label>
+            {/* Ngày thi + giờ học */}
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <div>
+                <label htmlFor="exam-date" className="mb-2 flex items-center justify-between gap-2 text-sm font-bold text-[var(--sp-ink)]">
+                  <span>
+                    Ngày thi <span className="text-[var(--sp-pink)]">*</span>
+                  </span>
+                  {daysToExam !== null && (
+                    <span className="rounded-full bg-[var(--sp-pink-bg)] px-2.5 py-0.5 text-xs font-bold text-[var(--sp-pink-dark)]">
+                      còn {daysToExam} ngày
+                    </span>
+                  )}
+                </label>
+                <input
+                  id="exam-date"
+                  type="date"
+                  required
+                  min={today || undefined}
+                  value={examDate}
+                  onChange={(e) => setExamDate(e.target.value)}
+                  className="w-full rounded-xl border-2 border-[var(--sp-line)] bg-white px-4 py-3 text-sm text-[var(--sp-ink)] outline-none focus:border-[var(--sp-peri)]"
+                />
+              </div>
 
-              <select
-                value={dailyHours}
-                onChange={(e) => setDailyHours(e.target.value)}
-                className="w-full rounded-xl border border-[#ECE6EF] bg-white px-4 py-3 text-sm text-[#4D4366] outline-none focus:border-[#5B7FE3]"
-              >
-                <option value="1">1 giờ / ngày</option>
-                <option value="2">2 giờ / ngày</option>
-                <option value="3">3 giờ / ngày</option>
-                <option value="4">4 giờ / ngày</option>
-                <option value="5">5 giờ / ngày</option>
-                <option value="6">6 giờ / ngày</option>
-              </select>
+              <div>
+                <label htmlFor="daily-hours" className="mb-2 block text-sm font-bold text-[var(--sp-ink)]">
+                  Thời gian học mỗi ngày
+                </label>
+                <select
+                  id="daily-hours"
+                  value={dailyHours}
+                  onChange={(e) => setDailyHours(e.target.value)}
+                  className="w-full rounded-xl border-2 border-[var(--sp-line)] bg-white px-4 py-3 text-sm text-[var(--sp-ink)] outline-none focus:border-[var(--sp-peri)]"
+                >
+                  {["1", "2", "3", "4", "5", "6"].map((hours) => (
+                    <option key={hours} value={hours}>
+                      {hours} giờ / ngày
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
 
-          {/* Study days */}
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-[#4D4366]">
-              Số ngày có thể học mỗi tuần
-            </label>
+            {/* Tài liệu */}
+            <div>
+              <label htmlFor="study-material" className="mb-2 block text-sm font-bold text-[var(--sp-ink)]">
+                Tài liệu ôn tập <span className="text-[var(--sp-pink)]">*</span>
+              </label>
+              <MaterialDropzone
+                file={selectedFile}
+                inputKey={fileInputKey}
+                validate={validateFile}
+                status={outlineStatus}
+                showTips={!selectedFile}
+                onChange={(file) => {
+                  setSelectedFile(file);
+                  if (!file) setFileInputKey((current) => current + 1);
+                  void loadOutline(file);
+                }}
+                // Lỗi file đã hiện ngay dưới khu tải lên, chỉ xóa thông báo cũ ở cuối form
+                onError={() => setFeedback("")}
+              />
+            </div>
 
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-7">
-              {["1", "2", "3", "4", "5", "6", "7"].map(
-                (day) => (
+            {/* Số ngày học mỗi tuần */}
+            <div>
+              <p className="mb-2 flex items-center justify-between gap-2 text-sm font-bold text-[var(--sp-ink)]">
+                Số ngày học mỗi tuần
+                {isScheduleConfirmed && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsScheduleDialogOpen(true);
+                      setIsScheduleTableExpanded(true);
+                    }}
+                    className="text-xs font-bold text-[var(--sp-peri-dark)] underline underline-offset-2"
+                  >
+                    {selectedStudyDates.length} ngày đã chọn · Sửa
+                  </button>
+                )}
+              </p>
+              <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                {["1", "2", "3", "4", "5", "6", "7"].map((day) => (
                   <button
                     key={day}
                     type="button"
+                    aria-pressed={studyDays === day}
                     onClick={() => {
                       setStudyDays(day);
                       setSelectedStudyDates([]);
@@ -1260,119 +1400,123 @@ export default function StudyPlansPage() {
                       setFeedback("");
                       setIsScheduleDialogOpen(true);
                     }}
-                    className={`rounded-xl border py-3 text-sm font-semibold transition ${
+                    className={`rounded-xl border-2 py-2.5 text-sm font-bold transition ${
                       studyDays === day
-                        ? "border-[#5B7FE3] bg-[#EEF1FD] text-[#24123A]"
-                        : "border-[#ECE6EF] bg-white text-[#716A82] hover:border-[#D5DDF8]"
+                        ? "border-[var(--sp-purple)] bg-[var(--sp-purple)] text-white shadow-[2px_2px_0_var(--sp-pink)]"
+                        : "border-[var(--sp-line)] bg-white text-[var(--sp-muted)] hover:border-[var(--sp-lav-line)]"
                     }`}
                   >
                     {day} ngày
                   </button>
-                )
+                ))}
+              </div>
+
+              {isScheduleDialogOpen && (
+                <div className="mt-3">
+                  <StudyDayPicker
+                    weeks={getStudyWeeks()}
+                    selectedDates={selectedStudyDates}
+                    studyDaysPerWeek={Number(studyDays)}
+                    today={today}
+                    examDate={examDate}
+                    confirmed={isScheduleConfirmed}
+                    expanded={isScheduleTableExpanded}
+                    onToggleDate={updateStudyDate}
+                    onToggleWeekday={toggleWeekdayForAllWeeks}
+                    onClear={() => {
+                      setSelectedStudyDates([]);
+                      setIsScheduleConfirmed(false);
+                      setIsScheduleTableExpanded(true);
+                      setFeedback("");
+                    }}
+                    onConfirm={() => {
+                      const error = validateSelectedStudyDates();
+                      setFeedback(
+                        error || "Đã lưu lựa chọn ngày học.",
+                        error ? "error" : "success"
+                      );
+                      if (!error) {
+                        setIsScheduleConfirmed(true);
+                        setIsScheduleTableExpanded(false);
+                      }
+                    }}
+                    onHeaderAction={() => {
+                      if (isScheduleConfirmed) {
+                        setIsScheduleTableExpanded((current) => !current);
+                      } else {
+                        setIsScheduleDialogOpen(false);
+                      }
+                    }}
+                  />
+                </div>
               )}
             </div>
 
+            {/* Cách chia kế hoạch */}
+            <div>
+              <p className="mb-2 text-sm font-bold text-[var(--sp-ink)]">Cách chia kế hoạch</p>
+              <PlanModeCards mode={planMode} onChange={setPlanMode} />
+              {planMode === "focus" && (
+                <div className="mt-3">
+                  <FocusChapterChips
+                    outline={outline}
+                    focus={focusChapters}
+                    onToggle={toggleFocusChapter}
+                    onRetry={() => void loadOutline(selectedFile)}
+                    hasFile={Boolean(selectedFile)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Gửi */}
+            <div className="border-t border-[var(--sp-line)] pt-5">
+              {message && (
+                <p
+                  role={feedbackType === "error" ? "alert" : "status"}
+                  className={`mb-4 rounded-xl border p-4 text-sm leading-6 ${
+                    feedbackType === "error"
+                      ? "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
+                      : feedbackType === "success"
+                        ? "border-[var(--sp-lav-line)] bg-[var(--sp-lav)] text-[var(--sp-ink)]"
+                        : "border-[var(--sp-line)] bg-[var(--sp-surface-2)] text-[var(--sp-text-2)]"
+                  }`}
+                >
+                  {message}
+                </p>
+              )}
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="sp-btn sp-btn-primary justify-center px-6 py-3.5 text-[15px] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Sparkle size={16} className={isSubmitting ? "sp-twinkle" : ""} />
+                  {isSubmitting
+                    ? submissionStep || "Đang tạo kế hoạch..."
+                    : "Tạo kế hoạch với AI"}
+                </button>
+                <p className="text-xs text-[var(--sp-muted)]">
+                  {isSubmitting
+                    ? "Bạn có thể chờ ở màn hình này; không cần bấm lại."
+                    : "Bạn có thể chỉnh lại kế hoạch bất cứ lúc nào."}
+                </p>
+              </div>
+            </div>
           </div>
 
-          {isScheduleDialogOpen && (
-            <StudyDayPicker
-              weeks={getStudyWeeks()}
-              selectedDates={selectedStudyDates}
-              studyDaysPerWeek={Number(studyDays)}
-              today={today}
-              examDate={examDate}
-              confirmed={isScheduleConfirmed}
-              expanded={isScheduleTableExpanded}
-              onToggleDate={updateStudyDate}
-              onToggleWeekday={toggleWeekdayForAllWeeks}
-              onClear={() => {
-                setSelectedStudyDates([]);
-                setIsScheduleConfirmed(false);
-                setIsScheduleTableExpanded(true);
-                setFeedback("");
-              }}
-              onConfirm={() => {
-                const error = validateSelectedStudyDates();
-                setFeedback(
-                  error || "Đã lưu lựa chọn ngày học.",
-                  error ? "error" : "success"
-                );
-                if (!error) {
-                  setIsScheduleConfirmed(true);
-                  setIsScheduleTableExpanded(false);
-                }
-              }}
-              onHeaderAction={() => {
-                if (isScheduleConfirmed) {
-                  setIsScheduleTableExpanded((current) => !current);
-                } else {
-                  setIsScheduleDialogOpen(false);
-                }
-              }}
-            />
-          )}
-
-          {/* Study materials */}
-          <div>
-            <label
-              htmlFor="study-material"
-              className="mb-1 block text-sm font-semibold text-[#4D4366]"
-            >
-              Tài liệu ôn tập{" "}
-              <span className="text-red-500">*</span>
-            </label>
-
-            <p className="mb-3 text-sm leading-6 text-[#716A82]">
-              Claude sẽ đọc tài liệu, chia thành từng bài theo chương và
-              xếp vào các ngày học bạn đã chọn.
-            </p>
-
-            <MaterialDropzone
-              file={selectedFile}
-              inputKey={fileInputKey}
-              validate={validateFile}
-              onChange={(file) => {
-                setSelectedFile(file);
-                if (!file) setFileInputKey((current) => current + 1);
-              }}
-              // Lỗi file đã hiện ngay dưới khu tải lên, chỉ xóa thông báo cũ ở cuối form
-              onError={() => setFeedback("")}
-            />
-          </div>
-
-          {/* Submit */}
-          <div className="border-t border-[#ECE6EF] pt-6">
-            {message && (
-              <p
-                role={feedbackType === "error" ? "alert" : "status"}
-                className={`mb-4 rounded-xl border p-4 text-sm leading-6 ${
-                  feedbackType === "error"
-                    ? "border-red-200 bg-red-50 text-red-700"
-                    : feedbackType === "success"
-                      ? "border-[#ECE6EF] bg-[#EEF1FD] text-[#24123A]"
-                      : "border-[#ECE6EF] bg-[#F7F5FA] text-[#4D4366]"
-                }`}
-              >
-                {message}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#5B7FE3] px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-[#4566D1] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
-            >
-              {isSubmitting
-                ? submissionStep || "Đang tạo kế hoạch..."
-                : "✨ Tạo kế hoạch với AI"}
-            </button>
-
-            <p className="mt-3 text-xs text-[#716A82]">
-              {isSubmitting
-                ? "Bạn có thể chờ ở màn hình này; không cần bấm lại."
-                : "Thông tin được lưu vào hệ thống trong quá trình tạo kế hoạch."}
-            </p>
-          </div>
+          {/* --- Cột phải: xem trước --- */}
+          <PlanPreviewCard
+            mode={planMode}
+            onModeChange={setPlanMode}
+            daysToExam={daysToExam}
+            studyDayCount={estimatedStudyDays}
+            reviewDayCount={reviewDayCount}
+            dailyHours={Number(dailyHours)}
+            outline={outline}
+            focus={focusChapters}
+          />
         </form>
       </section>
 

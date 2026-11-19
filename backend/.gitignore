@@ -1,5 +1,8 @@
 .env
-__pycache__/
-*.pyc
+notification_settings.json
+.outline_cache/
+account_settings.json
+.mindmap_cache/
+
 .venv/
-venv/
+__pycache__/

@@ -26,6 +26,7 @@ import PracticeQuizPanel, {
   type UnlockState,
 } from "@/components/practice-quiz-panel";
 import StudyTimer from "@/components/study-timer";
+import ChapterMindmap from "@/components/chapter-mindmap";
 
 /* Bộ sinh số ngẫu nhiên có hạt giống: cùng hạt giống → cùng bộ câu hỏi trong một lần mở trang */
 function seededRandom(seed: number) {
@@ -793,6 +794,28 @@ function MaterialReader({
     );
   }, [mode, day, chunksByMaterial]);
 
+  /* Chương kết thúc ở ngày đang xem → hiện mindmap tổng hợp chương ở cuối ngày */
+  const chapterLastSession = useMemo(() => {
+    const last = new Map<string, string>();
+    for (const item of days) {
+      for (const part of item.parts) {
+        const chapter = getChapterRoot(part.topic);
+        if (chapter) last.set(chapter, part.session.id);
+      }
+    }
+    return last;
+  }, [days]);
+  const endingChapters = day
+    ? Array.from(chapterLastSession.entries())
+        .filter(([, sessionId]) => day.parts.some((part) => part.session.id === sessionId))
+        .map(([chapter]) => chapter)
+    : [];
+
+  const openTopicDay = (topicId: string) => {
+    const index = days.findIndex((item) => item.parts.some((part) => part.topic?.id === topicId));
+    if (index >= 0) selectDay(index);
+  };
+
   const selectDay = (index: number) => {
     const next = days[index];
     if (!next) return;
@@ -1255,6 +1278,26 @@ function MaterialReader({
                     )}
                   </div>
                 ))}
+
+                {plan &&
+                  endingChapters.map((chapter) => (
+                    <button
+                      key={`jump-${chapter}`}
+                      type="button"
+                      onClick={() =>
+                        document
+                          .getElementById(`mindmap-${plan.id}-${encodeURIComponent(chapter)}`)
+                          ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                      }
+                      className="mt-8 flex w-full items-center gap-3 rounded-2xl border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-lav)] px-4 py-3 text-left transition hover:border-[var(--sp-peri)]"
+                    >
+                      <Sparkle size={16} className="shrink-0 text-[var(--sp-pink)]" />
+                      <span className="min-w-0 flex-1 text-[14px] text-[var(--sp-text-2)]">
+                        Bạn đã học hết <b className="text-[var(--sp-purple)]">{chapter}</b>. Xem mindmap tổng hợp chương ở bên dưới.
+                      </span>
+                      <IconArrowRight size={16} className="shrink-0 rotate-90 text-[var(--sp-peri-dark)]" />
+                    </button>
+                  ))}
               </div>
             ) : (
               <SourceView day={day} chunksByMaterial={chunksByMaterial} />
@@ -1316,6 +1359,18 @@ function MaterialReader({
           />
         </aside>
       </section>
+
+      {/* Mindmap tổng hợp của chương kết thúc trong ngày này (gói Pro) */}
+      {plan &&
+        mode === "summary" &&
+        endingChapters.map((chapter) => (
+          <ChapterMindmap
+            key={`${plan.id}-${chapter}`}
+            planId={plan.id}
+            chapter={chapter}
+            onOpenTopic={openTopicDay}
+          />
+        ))}
     </div>
   );
 }

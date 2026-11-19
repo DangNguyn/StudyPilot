@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { getMainTopicTitle, stripOutlineNumbers } from "@/lib/content-titles";
+import WrongAnswerReview, { type Mistake } from "@/components/wrong-answer-review";
 import {
   IconAlert,
   IconArrowLeft,
@@ -113,6 +114,8 @@ interface QuizResult {
   attempt_id: string;
   quiz_id: string;
   title: string;
+  started_at?: string | null;
+  submitted_at?: string | null;
   score: number;
   correct_count: number;
   total_questions: number;
@@ -135,45 +138,9 @@ function weekdayLong(dateKey: string) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-/* Giải thích ngắn: tối đa 2 câu, bỏ phần trích dẫn dài */
-function shortExplanation(text?: string | null) {
-  const clean = String(text || "")
-    .replace(/["“][^"”]{60,}["”]/g, "")
-    .replace(/\(?(?:trích|nguồn|theo tài liệu)[^)]*\)?:?/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!clean) return "";
-  const sentences = clean.split(/(?<=[.!?])\s+/).filter(Boolean);
-  const short = sentences.slice(0, 2).join(" ");
-  return short.length > 280 ? `${short.slice(0, 277).trimEnd()}…` : short;
-}
-
 /* "Kiểm tra lại ngày 2: ..." → "Kiểm tra lại ngày học 2: ..." */
 function retakeLabel(title?: string | null) {
   return String(title || "").replace(/^Kiểm tra lại ngày (\d+)/i, "Kiểm tra lại ngày học $1");
-}
-
-function answerKeys(value: string | string[] | null | undefined) {
-  if (value === null || value === undefined || value === "") return [];
-  return Array.isArray(value) ? value.map(String) : [String(value)];
-}
-
-/* "B" → "B. Nội dung đáp án"; câu điền khuyết giữ nguyên chữ */
-function describeAnswer(value: string | string[] | null | undefined, options: Option[] = []) {
-  const keys = answerKeys(value);
-  if (keys.length === 0) return ["Chưa trả lời"];
-  return keys.map((key) => {
-    const option = options.find((item) => item.key.toUpperCase() === key.trim().toUpperCase());
-    return option ? `${option.key}. ${option.text}` : key;
-  });
-}
-
-function citation(question: QuestionResult, context?: ReviewContext | null) {
-  const parts: string[] = [];
-  if (context?.chapter) parts.push(context.chapter);
-  if (question.source_location?.page_number) parts.push(`trang ${question.source_location.page_number}`);
-  if (question.source_location?.file_name) parts.push(`tài liệu ${question.source_location.file_name}`);
-  return parts.length ? `Trích từ ${parts.join(", ")}` : "";
 }
 
 const LEVELS = {
@@ -212,7 +179,6 @@ export default function QuizResultPage() {
   const [result, setResult] = useState<QuizResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<"all" | "wrong">("all");
   const [showWeak, setShowWeak] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [reviewDate, setReviewDate] = useState<string | null>(null);
@@ -346,7 +312,6 @@ export default function QuizResultPage() {
   const levelKey = percent >= 80 ? "none" : percent >= 50 ? "relaxed" : "intensive";
   const level = LEVELS[levelKey];
   const wrong = result.results.filter((item) => !item.is_correct);
-  const shown = filter === "wrong" ? wrong : result.results;
   const assessment = aiAssessment || result.ai_assessment;
   const studyPlan = (assessment?.recommendations || []).find(
     (item): item is StudyPlan => typeof item === "object" && item?.kind === "study_plan"
@@ -365,198 +330,107 @@ export default function QuizResultPage() {
     ? `/study-materials?subject=${encodeURIComponent(context.subject_id)}&session=${encodeURIComponent(context.study_session_id)}`
     : "/study-materials";
   const dayLabel = context?.day_number ? `ngày ${context.day_number}` : "bài học";
+  const mistakes: Mistake[] =
+    (assessment?.recommendations || [])
+      .map((item) => item as unknown as { kind?: string; items?: Mistake[] })
+      .find((item) => typeof item === "object" && item?.kind === "mistakes")?.items || [];
+  const weakNumbers = new Set<number>(weakAreas.flatMap((item) => item.question_numbers || []));
+  const minutesSpent =
+    result.started_at && result.submitted_at
+      ? Math.max(1, Math.round((new Date(result.submitted_at).getTime() - new Date(result.started_at).getTime()) / 60000))
+      : null;
+  const doneDate = result.submitted_at
+    ? new Date(result.submitted_at).toLocaleDateString("vi-VN", {
+        weekday: "long",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        timeZone: "Asia/Ho_Chi_Minh",
+      })
+    : null;
+  const subtitle = [
+    context?.is_retake ? retakeLabel(result.title) : getMainTopicTitle(context?.topic_name || result.title),
+    doneDate ? `làm ${doneDate}` : null,
+    `${result.total_questions} câu${minutesSpent ? ` trong ${minutesSpent} phút` : ""}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <div className="mx-auto max-w-[1100px] space-y-6">
+    <div className="mx-auto max-w-7xl space-y-6">
       {/* Đầu trang */}
-      <section>
-        <nav className="mb-3 flex items-center gap-1.5 text-sm font-medium text-[var(--sp-muted)]">
-          <Link href="/quizzes" className="hover:text-[var(--sp-peri-dark)]">
-            Kiểm tra kiến thức
-          </Link>
-          <IconChevronRight size={14} />
-          <span className="truncate text-[var(--sp-text-2)]">Kết quả</span>
-        </nav>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            {context?.is_retake && (
-              <span className="sp-chip mb-2 bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
-                <IconRepeat size={13} />
-                Bài kiểm tra lại
-              </span>
-            )}
-            <h1 className="text-[34px] leading-tight sm:text-[42px]">
-              {context?.is_retake ? retakeLabel(result.title) : getMainTopicTitle(result.title)}
-            </h1>
-            {context?.scheduled_date && (
-              <p className="mt-1 text-[15px] text-[var(--sp-muted)]">
-                Bài học {dayLabel} · {weekdayLong(context.scheduled_date)}, {dayMonth(context.scheduled_date)}
-              </p>
-            )}
-          </div>
-          <Link href="/quizzes" className="sp-btn sp-btn-secondary w-fit px-4 py-2.5 text-sm">
-            <IconArrowLeft size={16} />
-            Danh sách bài kiểm tra
-          </Link>
-        </div>
-      </section>
-
-      {/* Điểm + đánh giá chung */}
-      <section className={`flex flex-col gap-5 rounded-[24px] border-2 p-5 sm:flex-row sm:items-center sm:p-7 ${level.ring}`}>
-        <div className="flex items-center gap-5">
-          <div className="relative h-28 w-28 shrink-0">
-            <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
-              <circle cx="60" cy="60" r="52" fill="none" stroke="white" strokeWidth="12" />
-              <circle
-                cx="60"
-                cy="60"
-                r="52"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="12"
-                strokeLinecap="round"
-                strokeDasharray={`${(percent / 100) * 326.7} 326.7`}
-                className={level.score}
-              />
-            </svg>
-            <span className={`absolute inset-0 flex items-center justify-center text-[28px] font-extrabold ${level.score}`}>
-              {percent}%
+      <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <nav className="flex items-center gap-1.5 text-sm font-medium text-[var(--sp-muted)]">
+            <Link href="/quizzes" className="hover:text-[var(--sp-peri-dark)]">
+              Kiểm tra kiến thức
+            </Link>
+            <IconChevronRight size={14} />
+            <span className="text-[var(--sp-text-2)]">Kết quả</span>
+          </nav>
+          <h1 className="mt-2 flex items-end gap-3 text-[40px] leading-tight sm:text-[50px]">
+            <span>
+              {wrong.length > 0 ? (
+                <>
+                  Xem lại <span className="sp-squiggle">câu sai</span>
+                </>
+              ) : (
+                <>
+                  Kết quả <span className="sp-squiggle">bài làm</span>
+                </>
+              )}
             </span>
-          </div>
-          <div className="sm:hidden">
-            <span className={`sp-chip ${level.chip}`}>{level.label}</span>
-            <p className="mt-2 text-sm font-semibold text-[var(--sp-text-2)]">
-              Đúng {result.correct_count}/{result.total_questions} câu
-            </p>
-          </div>
+            <Sparkle size={24} className="sp-twinkle mb-3 text-[var(--sp-yellow)]" />
+          </h1>
+          <p className="mt-1 text-[15px] text-[var(--sp-muted)]">{subtitle}</p>
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="hidden items-center gap-2.5 sm:flex">
-            <span className={`sp-chip ${level.chip}`}>{level.label}</span>
-            <span className="text-sm font-semibold text-[var(--sp-text-2)]">
-              Đúng {result.correct_count}/{result.total_questions} câu
-            </span>
-          </div>
-          <h2 className="mt-2 text-[22px] text-[var(--sp-ink)]">{level.title}</h2>
-          <p className="mt-1 text-[15px] leading-6 text-[var(--sp-text-2)]">{level.text}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            setShowWeak(true);
-            window.setTimeout(
-              () => document.getElementById("weak-areas")?.scrollIntoView({ behavior: "smooth", block: "start" }),
-              60
-            );
-          }}
-          className="sp-btn sp-btn-primary shrink-0 px-5 py-2.5 text-sm"
-        >
-          <IconTarget size={16} />
-          Xem đánh giá điểm yếu
-        </button>
-      </section>
-
-      {/* Xem lại từng câu */}
-      <section className="sp-card p-5 sm:p-7">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="sp-accent text-[16px] text-[var(--sp-pink)]">Đáp án và giải thích</p>
-            <h2 className="text-[22px] text-[var(--sp-ink)]">Xem lại từng câu</h2>
-          </div>
-          <div className="flex rounded-xl bg-[var(--sp-surface-2)] p-1">
-            {(
-              [
-                ["all", `Tất cả (${result.results.length})`],
-                ["wrong", `Câu sai (${wrong.length})`],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={filter === value}
-                onClick={() => setFilter(value)}
-                className={`rounded-lg px-3.5 py-1.5 text-sm font-bold transition ${
-                  filter === value
-                    ? "bg-white text-[var(--sp-peri-dark)] shadow-sm"
-                    : "text-[var(--sp-muted)] hover:text-[var(--sp-ink)]"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {shown.length === 0 ? (
-          <p className="rounded-2xl bg-emerald-50 p-5 text-center text-sm font-semibold text-emerald-800">
-            Không có câu sai nào. Tuyệt vời!
-          </p>
-        ) : (
-          <ol className="space-y-3">
-            {shown.map((item) => {
-              const number = result.results.indexOf(item) + 1;
-              const yours = describeAnswer(item.selected_answer, item.options);
-              const correct = describeAnswer(item.correct_answer, item.options);
-              const explanation = shortExplanation(item.explanation);
-              const cite = citation(item, context);
-              return (
-                <li
-                  key={item.question_id}
-                  className={`rounded-2xl border-2 p-4 sm:p-5 ${
-                    item.is_correct ? "border-[var(--sp-line)] bg-white" : "border-[var(--sp-pink-line)] bg-white"
-                  }`}
-                >
-                  <div className="flex gap-3">
-                    <span
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-extrabold text-white ${
-                        item.is_correct ? "bg-emerald-500" : "bg-[var(--sp-pink)]"
-                      }`}
-                    >
-                      {item.is_correct ? <IconCheck size={16} /> : <IconX size={16} />}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold uppercase tracking-wide text-[var(--sp-muted)]">Câu {number}</p>
-                      <p className="mt-0.5 font-semibold leading-6 text-[var(--sp-ink)]">{item.question_text}</p>
-
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        <div
-                          className={`rounded-xl px-3 py-2 text-sm ${
-                            item.is_correct
-                              ? "bg-emerald-50 text-emerald-900"
-                              : "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
-                          }`}
-                        >
-                          <p className="text-[11px] font-bold uppercase tracking-wide opacity-75">Bạn chọn</p>
-                          {yours.map((line) => (
-                            <p key={line} className="font-semibold">{line}</p>
-                          ))}
-                        </div>
-                        <div className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-                          <p className="text-[11px] font-bold uppercase tracking-wide opacity-75">Đáp án đúng</p>
-                          {correct.map((line) => (
-                            <p key={line} className="font-semibold">{line}</p>
-                          ))}
-                        </div>
-                      </div>
-
-                      {(explanation || cite) && (
-                        <p className="mt-2.5 text-[14px] leading-6 text-[var(--sp-text-2)]">
-                          {explanation}
-                          {cite && (
-                            <span className="ml-1 inline-flex items-center gap-1 text-[13px] italic text-[var(--sp-peri-dark)]">
-                              <IconFile size={12} className="not-italic" />({cite})
-                            </span>
-                          )}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </li>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setShowWeak(true);
+              window.setTimeout(
+                () => document.getElementById("weak-areas")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                60
               );
-            })}
-          </ol>
-        )}
+            }}
+            className="sp-btn sp-btn-secondary px-4 py-2.5 text-sm"
+          >
+            <IconTarget size={16} />
+            Xem đánh giá điểm yếu
+          </button>
+          {retake && retake.status === "in_progress" ? (
+            <Link href={`/quizzes/${retake.quiz_id}`} className="sp-btn sp-btn-primary px-4 py-2.5 text-sm">
+              <IconRepeat size={16} />
+              Làm lại câu sai
+            </Link>
+          ) : retake && retake.status !== "completed" ? (
+            <Link href={materialsHref} className="sp-btn sp-btn-primary px-4 py-2.5 text-sm" title="Trả lời Tự kiểm tra nhanh để mở bài kiểm tra lại">
+              <IconRepeat size={16} />
+              Ôn để làm lại câu sai
+            </Link>
+          ) : (
+            <Link href="/quizzes" className="sp-btn sp-btn-primary px-4 py-2.5 text-sm">
+              <IconArrowLeft size={16} />
+              Danh sách bài kiểm tra
+            </Link>
+          )}
+        </div>
       </section>
+
+      <WrongAnswerReview
+        results={result.results}
+        correct={result.correct_count}
+        total={result.total_questions}
+        percent={percent}
+        levelLabel={level.label}
+        levelChip={level.chip}
+        chapter={context?.chapter}
+        weakNumbers={weakNumbers}
+        mistakes={mistakes}
+        weakHints={weakAreas}
+        materialsHref={materialsHref}
+      />
 
       {/* Đánh giá điểm yếu */}
       <section id="weak-areas" className="sp-card scroll-mt-6 p-5 sm:p-7">
@@ -823,7 +697,11 @@ function RoadmapSection({
     },
     {
       title: retakeLabel(retake?.title) || retakeLabel(`Kiểm tra lại ${dayLabel}`),
-      text: "Cần đạt từ 80%. Làm lại bao nhiêu lần cũng được, mỗi lần cần ôn và tự kiểm tra trước.",
+      text: `${
+        intensive
+          ? "Kết hợp 30% trắc nghiệm và 70% điền vào chỗ trống."
+          : "Toàn bộ câu hỏi trắc nghiệm."
+      } Cần đạt từ 80%, làm lại bao nhiêu lần cũng được, mỗi lần cần ôn và tự kiểm tra trước.`,
     },
   ];
 

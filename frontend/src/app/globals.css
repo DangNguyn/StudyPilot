@@ -217,7 +217,10 @@ h3 {
     background-repeat: repeat-x;
     background-position: 0 100%;
     background-size: 24px 8px;
-    padding-bottom: 10px;
+    /* inline-block để phần gạch xoăn chiếm chỗ thật, không đè lên dòng bên dưới */
+    display: inline-block;
+    line-height: 1.05;
+    padding-bottom: 12px;
   }
 
   @keyframes sp-twinkle {

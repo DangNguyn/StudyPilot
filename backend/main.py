@@ -15,7 +15,11 @@ from typing import Literal
 from document_processor import extract_text, split_into_chunks
 from groq_client import generate_text
 from claude_client import is_claude_configured
-from document_analyzer import analyze_document_with_claude
+from document_analyzer import (
+    analyze_document_with_claude,
+    build_outline,
+    summarize_outline_chapters,
+)
 from attempt_assessment import (
     ASSESSMENT_MODEL_TAG,
     build_attempt_assessment,
@@ -25,6 +29,8 @@ from practice_questions import (
     ensure_practice_questions,
 )
 from supabase_client import supabase
+from email_notifications import router as notifications_router, start_scheduler
+from mindmaps import router as mindmaps_router
 
 # Đọc biến môi trường
 load_dotenv()
@@ -573,6 +579,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Thông báo học tập qua Gmail (xem email_notifications.py)
+app.include_router(notifications_router)
+app.include_router(mindmaps_router)
+
+
+@app.on_event("startup")
+def start_email_notifications():
+    start_scheduler()
+
 
 
 
@@ -1116,6 +1131,15 @@ class ExamPlanCreate(BaseModel):
 
 class ScheduleCreateRequest(BaseModel):
     selected_study_dates: list[date] = Field(default_factory=list)
+    # "chapter": chia đều theo chương; "focus": dồn thời gian cho chương trọng tâm
+    plan_mode: Literal["chapter", "focus"] = "chapter"
+    # Dải chunk [đầu, cuối] của các chương trọng tâm (lấy từ bước nhận diện chương)
+    focus_ranges: list[list[int]] = Field(default_factory=list)
+    focus_chapters: list[str] = Field(default_factory=list)
+
+
+FOCUS_SHARE = 0.75
+SKIM_SHARE = 0.21
 
 class TopicCreate(BaseModel):
     exam_plan_id: UUID
@@ -1165,6 +1189,20 @@ class RetakeQuizGenerateRequest(BaseModel):
         default=15,
         gt=0
     )
+    # "mixed": 30% trắc nghiệm + 70% điền khuyết (bài gốc dưới 50%)
+    # "choice": 100% trắc nghiệm (bài gốc từ 50% đến 79%)
+    question_mode: Literal["mixed", "choice"] = "mixed"
+
+
+def retake_mode_for_score(score) -> str:
+    """Dưới 50% → kết hợp điền khuyết; 50-79% → chỉ trắc nghiệm."""
+    return "mixed" if float(score or 0) < 50 else "choice"
+
+
+RETAKE_MODE_LABELS = {
+    "mixed": "30% trắc nghiệm · 70% điền vào chỗ trống",
+    "choice": "100% trắc nghiệm",
+}
 class QuizAnswerCreate(BaseModel):
     question_id: UUID
     selected_answer: str | list[str]
@@ -2219,7 +2257,11 @@ def ensure_retake_for_attempt(attempt_id: UUID):
                 )
             retake_quiz = generate_retake_quiz(
                 UUID(str(plan["id"])),
-                RetakeQuizGenerateRequest(number_of_questions=10, time_limit_minutes=15)
+                RetakeQuizGenerateRequest(
+                    number_of_questions=10,
+                    time_limit_minutes=15,
+                    question_mode=retake_mode_for_score(score),
+                )
             )
             retake_quiz_id = retake_quiz.get("quiz_id")
 
@@ -2488,6 +2530,20 @@ def generate_exam_schedule(
                 detail="Không tìm được ngày học phù hợp."
             )
 
+        # Chế độ "Theo trọng tâm": giữ lại ~4% số ngày cuối (ít nhất 1 ngày khi có
+        # từ 5 ngày học) để ôn tổng hợp, không xếp bài mới vào những ngày đó.
+        focus_mode = bool(
+            schedule_request
+            and schedule_request.plan_mode == "focus"
+            and (schedule_request.focus_ranges or schedule_request.focus_chapters)
+        )
+        review_dates = []
+
+        if focus_mode and len(study_dates) >= 5:
+            review_count = max(1, round(len(study_dates) * 0.04))
+            review_dates = study_dates[-review_count:]
+            study_dates = study_dates[:-review_count]
+
         # 4. Lấy các chủ đề AI đang hoạt động
         topics_response = (
             supabase.table("topics")
@@ -2641,6 +2697,53 @@ def generate_exam_schedule(
             key=lambda item: item["chunk_index"]
         )
 
+        # Chế độ trọng tâm: chương trọng tâm học trước, nhiều thời gian hơn;
+        # chương còn lại học sau, đọc lướt. Phân ngày theo trọng số
+        # (~75% ngày cho trọng tâm, ~21% cho phần còn lại).
+        assignment_weights = [1.0 for _ in ordered_assignments]
+
+        if focus_mode:
+            focus_ranges = [
+                (min(pair), max(pair))
+                for pair in schedule_request.focus_ranges
+                if isinstance(pair, list) and len(pair) == 2
+            ]
+            focus_names = {
+                re.sub(r"\s+", " ", name).strip().casefold()
+                for name in schedule_request.focus_chapters
+                if name
+            }
+
+            for assignment in ordered_assignments:
+                index = assignment["chunk_index"]
+                assignment["is_focus"] = any(
+                    start <= index <= end for start, end in focus_ranges
+                ) or (
+                    re.sub(r"\s+", " ", assignment["chapter_key"]).strip().casefold()
+                    in focus_names
+                )
+                factor = 1.25 if assignment["is_focus"] else 0.6
+                assignment["minutes"] = max(
+                    1,
+                    min(daily_minutes, round(assignment["minutes"] * factor))
+                )
+
+            focus_total = sum(1 for item in ordered_assignments if item["is_focus"])
+            skim_total = len(ordered_assignments) - focus_total
+
+            if focus_total and skim_total:
+                ordered_assignments.sort(
+                    key=lambda item: (not item["is_focus"], item["chunk_index"])
+                )
+                assignment_weights = [
+                    FOCUS_SHARE / focus_total if item["is_focus"] else SKIM_SHARE / skim_total
+                    for item in ordered_assignments
+                ]
+            else:
+                focus_mode = focus_total > 0 and skim_total > 0
+
+        day_weights = [0.0 for _ in study_dates]
+
         session_lookup = {}
         day_loads = [0 for _ in study_dates]
         day_assignment_counts = [0 for _ in study_dates]
@@ -2676,20 +2779,34 @@ def generate_exam_schedule(
                 len(ordered_assignments) - assignment_index
             )
             remaining_days = len(study_dates) - current_day_index
-            target_assignments = max(
-                1,
-                (
-                    remaining_assignments + remaining_days - 1
-                ) // remaining_days
-            )
 
-            if (
-                day_assignment_counts[current_day_index] > 0
-                and day_assignment_counts[current_day_index]
-                >= target_assignments
-                and current_day_index + 1 < len(study_dates)
-            ):
-                current_day_index += 1
+            if focus_mode:
+                # Theo trọng số: chương trọng tâm chiếm nhiều ngày hơn
+                remaining_weight = sum(assignment_weights[assignment_index:]) + day_weights[current_day_index]
+                target_weight = remaining_weight / remaining_days
+
+                if (
+                    day_assignment_counts[current_day_index] > 0
+                    and day_weights[current_day_index]
+                    + assignment_weights[assignment_index] / 2 > target_weight
+                    and current_day_index + 1 < len(study_dates)
+                ):
+                    current_day_index += 1
+            else:
+                target_assignments = max(
+                    1,
+                    (
+                        remaining_assignments + remaining_days - 1
+                    ) // remaining_days
+                )
+
+                if (
+                    day_assignment_counts[current_day_index] > 0
+                    and day_assignment_counts[current_day_index]
+                    >= target_assignments
+                    and current_day_index + 1 < len(study_dates)
+                ):
+                    current_day_index += 1
 
             # Chuyển ngày khi ngày hiện tại không còn đủ thời lượng.
             while (
@@ -2745,6 +2862,7 @@ def generate_exam_schedule(
             session_record["duration_minutes"] += chunk_minutes
             day_loads[current_day_index] += chunk_minutes
             day_assignment_counts[current_day_index] += 1
+            day_weights[current_day_index] += assignment_weights[assignment_index]
             assigned_chunk_ids.add(chunk_id)
             last_chapter_key = chapter_key
 
@@ -2799,6 +2917,8 @@ def generate_exam_schedule(
         return {
             "message": "Tạo lịch học AI thành công!",
             "exam_plan_id": str(exam_plan_id),
+            "plan_mode": "focus" if focus_mode else "chapter",
+            "review_dates": [item.isoformat() for item in review_dates],
             "total_available_study_days": len(study_dates),
             "total_study_days": len({
                 item["scheduled_start"][:10]
@@ -4048,6 +4168,87 @@ def update_study_session(
             status_code=500,
             detail=f"Không thể cập nhật buổi học: {str(error)}"
         )
+
+
+@app.post("/api/study-materials/preview-outline")
+def preview_material_outline(file: UploadFile = File(...)):
+    """
+    AI nhận diện chương ngay khi người dùng chọn tài liệu (trước khi tạo kế hoạch).
+    Mục lục được lưu tạm theo nội dung tài liệu, nên lúc tạo kế hoạch bước phân tích
+    dùng lại kết quả này, không đọc lại từ đầu.
+    """
+    original_name = file.filename or "tai-lieu"
+    extension = os.path.splitext(original_name)[1].lower()
+
+    if extension not in [".pdf", ".doc", ".docx", ".ppt", ".pptx"]:
+        raise HTTPException(status_code=400, detail="Chỉ hỗ trợ PDF, DOC, DOCX, PPT và PPTX.")
+
+    if not is_claude_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Chưa cấu hình ANTHROPIC_API_KEY nên chưa nhận diện chương trước được."
+        )
+
+    content = file.file.read()
+
+    if not content:
+        raise HTTPException(status_code=400, detail="Tài liệu rỗng.")
+
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Tài liệu vượt quá 50 MB.")
+
+    temp_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=extension, delete=False) as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
+
+        # Chia chunk y hệt bước xử lý tài liệu để dùng lại được mục lục
+        pages = extract_text(temp_path)
+        chunks = []
+
+        for page in pages or []:
+            for chunk in split_into_chunks(page["content"]):
+                chunks.append({
+                    "chunk_index": len(chunks),
+                    "content": chunk,
+                    "page_number": page["page_number"],
+                })
+
+        if not chunks:
+            raise HTTPException(
+                status_code=400,
+                detail="Không đọc được nội dung chữ trong tài liệu (có thể là bản scan)."
+            )
+
+        outline = build_outline(chunks)
+        chapters = summarize_outline_chapters(outline)
+        page_by_chunk = {chunk["chunk_index"]: chunk["page_number"] for chunk in chunks}
+
+        for chapter in chapters:
+            chapter["start_page"] = page_by_chunk.get(chapter["start_chunk"])
+            chapter["end_page"] = page_by_chunk.get(chapter["end_chunk"])
+
+        return {
+            "message": f"AI nhận diện được {len(chapters)} chương.",
+            "file_name": original_name,
+            "total_chunks": len(chunks),
+            "data": chapters
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Không nhận diện được chương của tài liệu: {str(error)}"
+        )
+
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 @app.post("/api/study-materials/upload")
@@ -6497,6 +6698,271 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
         )
 
 
+def _latest_submitted_attempt(quiz_id):
+    rows = (
+        supabase.table("quiz_attempts")
+        .select("*")
+        .eq("user_id", DEMO_USER_ID)
+        .eq("quiz_id", str(quiz_id))
+        .eq("status", "submitted")
+        .order("submitted_at", desc=True)
+        .execute()
+    ).data or []
+    return rows
+
+
+def _attempt_answer_stats(attempt_id):
+    answers = (
+        supabase.table("quiz_answers")
+        .select("question_id, is_correct")
+        .eq("attempt_id", str(attempt_id))
+        .eq("user_id", DEMO_USER_ID)
+        .execute()
+    ).data or []
+    wrong_ids = {str(item["question_id"]) for item in answers if not item.get("is_correct")}
+    correct = sum(1 for item in answers if item.get("is_correct"))
+    return correct, wrong_ids
+
+
+@app.get("/api/quizzes/{quiz_id}/overview")
+def get_quiz_overview(quiz_id: UUID):
+    """
+    Tổng quan trước khi làm bài: phạm vi, số câu, thời gian, kết quả lần trước
+    và cách câu hỏi được chọn (phần làm sai / phần còn lại, hoặc theo trang tài liệu).
+    """
+    try:
+        quiz_rows = (
+            supabase.table("quizzes")
+            .select("id, title, description, time_limit_minutes, study_session_id, exam_plan_id")
+            .eq("id", str(quiz_id))
+            .eq("user_id", DEMO_USER_ID)
+            .limit(1)
+            .execute()
+        ).data or []
+
+        if not quiz_rows:
+            raise HTTPException(status_code=404, detail="Không tìm thấy bài kiểm tra.")
+
+        quiz = quiz_rows[0]
+
+        questions = (
+            supabase.table("quiz_questions")
+            .select("id, question_type, source_chunk_id")
+            .eq("quiz_id", str(quiz_id))
+            .eq("user_id", DEMO_USER_ID)
+            .eq("status", "ready")
+            .execute()
+        ).data or []
+
+        fill_count = sum(1 for item in questions if item.get("question_type") == "fill_blank")
+        choice_count = len(questions) - fill_count
+
+        original_quiz_id, retake_plan = _resolve_original_quiz(quiz_id)
+        is_retake = retake_plan is not None
+
+        session_id = quiz.get("study_session_id")
+        if not session_id and original_quiz_id != str(quiz_id):
+            original_rows = (
+                supabase.table("quizzes")
+                .select("study_session_id")
+                .eq("id", original_quiz_id)
+                .limit(1)
+                .execute()
+            ).data or []
+            session_id = original_rows[0].get("study_session_id") if original_rows else None
+
+        context = _session_day_context(session_id) if session_id else None
+
+        # Lần làm trước: lượt gần nhất của chính bài này, nếu chưa có thì của bài gốc
+        own_attempts = _latest_submitted_attempt(quiz_id)
+        original_attempts = (
+            _latest_submitted_attempt(original_quiz_id)
+            if is_retake
+            else []
+        )
+        previous_attempt = (own_attempts or original_attempts or [None])[0]
+        previous = None
+
+        if previous_attempt:
+            correct, _ = _attempt_answer_stats(previous_attempt["id"])
+            total = int(previous_attempt.get("total_questions") or 0) or None
+            previous = {
+                "attempt_id": str(previous_attempt["id"]),
+                "score": round(float(previous_attempt.get("score") or 0)),
+                "correct_count": int(previous_attempt.get("correct_count") or correct),
+                "total_questions": total,
+                "submitted_at": previous_attempt.get("submitted_at"),
+                "is_original": not own_attempts,
+            }
+
+        subject_name = None
+        if context and context.get("subject_id"):
+            try:
+                subject_rows = (
+                    supabase.table("subjects")
+                    .select("name")
+                    .eq("id", str(context["subject_id"]))
+                    .limit(1)
+                    .execute()
+                ).data or []
+                subject_name = subject_rows[0].get("name") if subject_rows else None
+            except Exception as error:
+                print("Không đọc được tên môn:", str(error))
+
+        # Trang tài liệu của từng câu
+        question_chunk_ids = list({
+            str(item["source_chunk_id"])
+            for item in questions
+            if item.get("source_chunk_id")
+        })
+        page_by_chunk = {}
+
+        if question_chunk_ids:
+            chunk_rows = (
+                supabase.table("material_chunks")
+                .select("id, page_number")
+                .in_("id", question_chunk_ids)
+                .execute()
+            ).data or []
+            page_by_chunk = {
+                str(item["id"]): item.get("page_number")
+                for item in chunk_rows
+            }
+
+        weak_chunk_ids = set()
+
+        # Cách câu hỏi được chọn
+        segments = []
+
+        if is_retake and original_attempts:
+            _, wrong_question_ids = _attempt_answer_stats(original_attempts[0]["id"])
+
+            if wrong_question_ids:
+                wrong_rows = (
+                    supabase.table("quiz_questions")
+                    .select("id, source_chunk_id")
+                    .in_("id", list(wrong_question_ids))
+                    .execute()
+                ).data or []
+                weak_chunk_ids = {
+                    str(item["source_chunk_id"])
+                    for item in wrong_rows
+                    if item.get("source_chunk_id")
+                }
+
+            weak_names = []
+            try:
+                assessment_rows = (
+                    supabase.table("quiz_assessments")
+                    .select("weak_areas")
+                    .eq("quiz_id", original_quiz_id)
+                    .order("created_at", desc=True)
+                    .limit(1)
+                    .execute()
+                ).data or []
+                for area in (assessment_rows[0].get("weak_areas") if assessment_rows else None) or []:
+                    if isinstance(area, dict) and area.get("topic_name"):
+                        weak_names.append(str(area["topic_name"]))
+            except Exception as error:
+                print("Không đọc được điểm yếu:", str(error))
+
+            weak_count = sum(
+                1 for item in questions
+                if str(item.get("source_chunk_id") or "") in weak_chunk_ids
+            )
+            rest_count = len(questions) - weak_count
+
+            if weak_count:
+                segments.append({
+                    "kind": "weak",
+                    "count": weak_count,
+                    "label": "phần bạn làm sai lần trước",
+                    "detail": ", ".join(weak_names[:2]) or "Các đoạn kiến thức bạn trả lời sai",
+                })
+            if rest_count:
+                segments.append({
+                    "kind": "rest",
+                    "count": rest_count,
+                    "label": "phần còn lại của bài",
+                    "detail": "Củng cố phần kiến thức liên quan trong cùng bài học",
+                })
+        else:
+            page_counts = {}
+            for item in questions:
+                page = page_by_chunk.get(str(item.get("source_chunk_id") or ""))
+                page_counts[page] = page_counts.get(page, 0) + 1
+
+            pages = sorted(page for page in page_counts if page is not None)
+
+            # Gom thành tối đa 3 nhóm trang liên tiếp
+            if pages:
+                group_size = max(1, -(-len(pages) // 3))
+                for start in range(0, len(pages), group_size):
+                    group = pages[start:start + group_size]
+                    count = sum(page_counts[page] for page in group)
+                    label = (
+                        f"trang {group[0]}"
+                        if group[0] == group[-1]
+                        else f"trang {group[0]}–{group[-1]}"
+                    )
+                    segments.append({
+                        "kind": "page",
+                        "count": count,
+                        "label": label,
+                        "detail": label.capitalize(),
+                    })
+
+            unknown = page_counts.get(None, 0)
+            if unknown:
+                segments.append({
+                    "kind": "page",
+                    "count": unknown,
+                    "label": "nội dung bài học",
+                    "detail": "Nội dung của buổi học",
+                })
+
+        return {
+            "data": {
+                "quiz_id": str(quiz_id),
+                "is_retake": is_retake,
+                "question_count": len(questions),
+                "choice_count": choice_count,
+                "fill_count": fill_count,
+                "time_limit_minutes": quiz.get("time_limit_minutes"),
+                "attempt_round": len(own_attempts) + 1,
+                "previous": previous,
+                "segments": segments,
+                "question_tags": [
+                    {
+                        "question_id": str(item["id"]),
+                        "weak": str(item.get("source_chunk_id") or "") in weak_chunk_ids,
+                        "page": page_by_chunk.get(str(item.get("source_chunk_id") or "")),
+                    }
+                    for item in questions
+                ],
+                "context": {
+                    **{
+                        key: (context or {}).get(key)
+                        for key in [
+                            "topic_name", "chapter", "scheduled_date",
+                            "day_number", "subject_id", "study_session_id",
+                        ]
+                    },
+                    "subject_name": subject_name,
+                },
+            }
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Không thể tải tổng quan bài kiểm tra: {str(error)}"
+        )
+
+
 @app.get("/api/quizzes")
 
 def get_quizzes(exam_plan_id: UUID | None = None):
@@ -7000,6 +7466,26 @@ def get_quizzes(exam_plan_id: UUID | None = None):
             quiz["is_unlocked"] = is_unlocked
             quiz["lock_reason"] = lock_reason
 
+        # Số câu của từng bài (hiển thị trên thẻ bài kiểm tra)
+        try:
+            count_map = {}
+            for start in range(0, len(quiz_ids), 100):
+                rows = (
+                    supabase.table("quiz_questions")
+                    .select("quiz_id")
+                    .eq("user_id", DEMO_USER_ID)
+                    .eq("status", "ready")
+                    .in_("quiz_id", quiz_ids[start:start + 100])
+                    .execute()
+                ).data or []
+                for row in rows:
+                    key = str(row["quiz_id"])
+                    count_map[key] = count_map.get(key, 0) + 1
+            for quiz in quizzes:
+                quiz["question_count"] = count_map.get(str(quiz["id"]), 0)
+        except Exception as error:
+            print("Không đếm được số câu hỏi:", str(error))
+
         return {
             "message": "Lấy danh sách Quiz thành công!",
             "total_quizzes": len(quizzes),
@@ -7283,7 +7769,10 @@ def generate_retake_quiz(
                 )
             )
 
-        mcq_count = total_questions * 30 // 100
+        if request.question_mode == "choice":
+            mcq_count = total_questions
+        else:
+            mcq_count = total_questions * 30 // 100
         fill_blank_count = total_questions - mcq_count
 
         # 3. Lấy kết quả đánh giá
@@ -7447,7 +7936,7 @@ NỘI DUNG TÀI LIỆU GỐC:
 YÊU CẦU:
 - Tổng cộng chính xác {total_questions} câu hỏi.
 - Có chính xác {mcq_count} câu trắc nghiệm một đáp án.
-- Có chính xác {fill_blank_count} câu điền vào chỗ trống.
+- Có chính xác {fill_blank_count} câu điền vào chỗ trống{" (KHÔNG tạo câu điền vào chỗ trống nào)" if fill_blank_count == 0 else ""}.
 - Câu hỏi tập trung vào các chủ đề còn yếu.
 - Chỉ sử dụng kiến thức trong tài liệu được cung cấp.
 - Mỗi câu hỏi phải có source_chunk_id thuộc danh sách Chunk ID.
@@ -7612,7 +8101,10 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
         ):
             raise HTTPException(
                 status_code=502,
-                detail="AI không tạo đúng tỷ lệ câu hỏi 30/70."
+                detail=(
+                    "AI không tạo đúng tỷ lệ câu hỏi "
+                    f"({RETAKE_MODE_LABELS[request.question_mode]})."
+                )
             )
 
         # 11. Tạo Quiz ôn tập
@@ -7623,7 +8115,8 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
                 "exam_plan_id": original_quiz["exam_plan_id"],
                 "study_session_id": None,
                 "title": f"Ôn tập lại - {original_quiz['title']}",
-                "description": review_plan.get("overall_goal"),
+                # Lưu dạng câu hỏi để giao diện hiển thị (100% trắc nghiệm / 30-70)
+                "description": RETAKE_MODE_LABELS[request.question_mode],
                 "source_mode": "textbook",
                 "time_limit_minutes": request.time_limit_minutes,
                 "status": "active"
@@ -7812,14 +8305,9 @@ def submit_quiz_attempt(attempt_id: UUID):
                     else [correct_answer]
                 )
 
-                normalized_selected = normalize_answer(
-                    selected_answer
-                )
-
-                is_correct = any(
-                    normalized_selected == normalize_answer(expected)
-                    for expected in expected_answers
-                    if expected is not None
+                is_correct = is_fill_blank_correct(
+                    selected_answer,
+                    expected_answers
                 )
 
             # 4.2. Chấm câu hỏi trắc nghiệm
@@ -7831,7 +8319,10 @@ def submit_quiz_attempt(attempt_id: UUID):
                 )
 
             else:
-                is_correct = selected_answer == correct_answer
+                is_correct = (
+                    str(selected_answer or "").strip().upper()
+                    == str(correct_answer or "").strip().upper()
+                )
 
             question_earned_points = (
                 points if is_correct else 0
@@ -8871,7 +9362,8 @@ CẤU TRÚC:
                             UUID(str(review_plan["id"])),
                             RetakeQuizGenerateRequest(
                                 number_of_questions=10,
-                                time_limit_minutes=15
+                                time_limit_minutes=15,
+                                question_mode=retake_mode_for_score(score)
                             )
                         )
 
@@ -8940,6 +9432,59 @@ def _options_as_list(raw_options):
     if isinstance(raw_options, list):
         return raw_options
     return []
+
+
+def _strip_vietnamese_marks(text: str) -> str:
+    import unicodedata
+    decomposed = unicodedata.normalize("NFD", text)
+    without_marks = "".join(char for char in decomposed if unicodedata.category(char) != "Mn")
+    return without_marks.replace("đ", "d").replace("Đ", "D")
+
+
+def normalize_answer(value) -> str:
+    """
+    Chuẩn hoá câu trả lời điền khuyết để so sánh:
+    bỏ khoảng trắng thừa, không phân biệt hoa/thường, bỏ dấu câu ở hai đầu.
+    """
+    import unicodedata
+
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        value = " ".join(str(item) for item in value)
+
+    text = unicodedata.normalize("NFC", str(value)).casefold()
+    text = re.sub(r"\s+", " ", text).strip()
+    text = text.strip(" .,;:!?\"'“”‘’()[]")
+    return text
+
+
+def is_fill_blank_correct(selected, expected_answers) -> bool:
+    """
+    Đúng khi khớp một trong các đáp án (kể cả đáp án viết dạng "A / B" hoặc "A; B"),
+    chấp nhận cả khi người học gõ không dấu.
+    """
+    chosen = normalize_answer(selected)
+    if not chosen:
+        return False
+
+    candidates = []
+    for expected in expected_answers:
+        if expected is None:
+            continue
+        full = normalize_answer(expected)
+        if full:
+            candidates.append(full)
+        for part in re.split(r"\s*(?:/|;|\|| hoặc | or )\s*", str(expected)):
+            part = normalize_answer(part)
+            if part:
+                candidates.append(part)
+
+    chosen_plain = _strip_vietnamese_marks(chosen)
+    return any(
+        chosen == candidate or chosen_plain == _strip_vietnamese_marks(candidate)
+        for candidate in candidates
+    )
 
 
 def _normalize_result_options(raw_options):
@@ -9016,7 +9561,7 @@ def get_quiz_attempt_result(attempt_id: UUID):
             .select(
                 "id, question_text, correct_answer, "
                 "explanation, points, question_order, "
-                "source_chunk_id, options, question_type"
+                "source_chunk_id, options, question_type, difficulty_level"
             )
             .eq("quiz_id", attempt["quiz_id"])
             .eq("user_id", DEMO_USER_ID)
@@ -9126,6 +9671,7 @@ def get_quiz_attempt_result(attempt_id: UUID):
                 ),
                 "explanation": question.get("explanation"),
                 "question_type": question.get("question_type"),
+                "difficulty_level": question.get("difficulty_level"),
                 "options": _normalize_result_options(question.get("options")),
                 "source_location": (
                     {
@@ -9339,6 +9885,8 @@ def get_quiz_attempt_result(attempt_id: UUID):
             "attempt_id": attempt["id"],
             "quiz_id": attempt["quiz_id"],
             "title": quiz_response.data[0]["title"],
+            "started_at": attempt.get("started_at"),
+            "submitted_at": attempt.get("submitted_at"),
             "score": attempt["score"],
             "correct_count": attempt["correct_count"],
             "total_questions": attempt["total_questions"],
