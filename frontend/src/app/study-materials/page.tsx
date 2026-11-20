@@ -27,6 +27,13 @@ import PracticeQuizPanel, {
 } from "@/components/practice-quiz-panel";
 import StudyTimer from "@/components/study-timer";
 import ChapterMindmap from "@/components/chapter-mindmap";
+import {
+  RevisitQuizReview,
+  SessionModeBanner,
+  parseSessionMode,
+  useSessionQuizResult,
+  type SessionMode,
+} from "@/components/session-mode";
 
 /* Bộ sinh số ngẫu nhiên có hạt giống: cùng hạt giống → cùng bộ câu hỏi trong một lần mở trang */
 function seededRandom(seed: number) {
@@ -438,6 +445,7 @@ function StudyMaterialsPageContent() {
         subject={subject}
         plan={plan}
         focusSessionId={searchParams.get("session")}
+        focusMode={parseSessionMode(searchParams.get("mode"))}
         onBack={() => openSubject(null)}
       />
     );
@@ -601,11 +609,14 @@ function MaterialReader({
   subject,
   plan,
   focusSessionId,
+  focusMode = null,
   onBack,
 }: {
   subject: Subject;
   plan: ExamPlan | undefined;
   focusSessionId?: string | null;
+  /* Chế độ mở từ lịch: học mới, ôn lại hoặc xem lại */
+  focusMode?: SessionMode | null;
   onBack: () => void;
 }) {
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -630,6 +641,11 @@ function MaterialReader({
   const [practiceSeed, setPracticeSeed] = useState(() => Math.floor(Math.random() * 1e9));
   const [unlockByDay, setUnlockByDay] = useState<Record<string, UnlockState>>({});
   const tabsRef = useRef<HTMLDivElement>(null);
+  const quizReview = useSessionQuizResult(
+    plan?.id,
+    focusSessionId,
+    focusMode === "review" || focusMode === "revisit"
+  );
 
   useEffect(() => {
     if (!plan) {
@@ -695,6 +711,9 @@ function MaterialReader({
     days.findIndex((day) => day.dateKey === (activeKey || defaultKey))
   );
   const day = days[activeIndex];
+  const focusPart = focusSessionId
+    ? day?.parts.find((part) => part.session.id === focusSessionId)
+    : undefined;
 
   /* Cuộn thanh ngày để ngày đang chọn luôn nằm trong tầm nhìn */
   useEffect(() => {
@@ -1101,6 +1120,14 @@ function MaterialReader({
         </p>
       </section>
 
+      {focusPart && focusMode && (
+        <SessionModeBanner
+          mode={focusMode}
+          topicTitle={focusPart.topic ? getMainTopicTitle(focusPart.topic.name) : "Buổi học"}
+          result={quizReview.result}
+        />
+      )}
+
       {/* Thanh ngày học */}
       <div ref={tabsRef} className="-mx-1 flex items-center gap-2.5 overflow-x-auto px-1 pb-2 pt-3">
         <span className="mr-1 hidden shrink-0 items-center gap-1.5 text-sm text-[var(--sp-muted)] sm:flex">
@@ -1363,6 +1390,15 @@ function MaterialReader({
           />
         </aside>
       </section>
+
+      {focusPart && focusMode === "revisit" && (
+        <RevisitQuizReview
+          result={quizReview.result}
+          loading={quizReview.loading}
+          error={quizReview.error}
+          materialsHref={`/materials?subject=${encodeURIComponent(subject.id)}&session=${encodeURIComponent(focusPart.session.id)}&mode=revisit`}
+        />
+      )}
 
       {/* Mindmap tổng hợp của chương kết thúc trong ngày này (gói Pro) */}
       {plan &&
