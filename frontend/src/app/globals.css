@@ -341,3 +341,62 @@ main button[class*="bg-[#5B7FE3]"]:disabled {
   border-color: #ddd8e3;
   box-shadow: none;
 }
+
+/*
+ * Lộ trình nhỏ trong khung "Tiếp theo nên ôn gì?" (Đánh giá năng lực):
+ * 4 bước chia đều cột, ô bật lên lần lượt, thanh vàng chạy tới bước hiện tại.
+ */
+.sp-route-rail::before {
+  content: "";
+  position: absolute;
+  left: 12.5%;
+  right: 12.5%;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 999px;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.35) 0 6px, transparent 6px 12px);
+  background-size: 24px 4px;
+  animation: sp-route-slide 1s linear infinite;
+}
+.sp-route-fill {
+  position: absolute;
+  left: 12.5%;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 999px;
+  background: var(--sp-yellow);
+  width: 0;
+  animation: sp-route-grow 1.4s 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.sp-route-node {
+  opacity: 0;
+  transform: translateY(8px) scale(0.8);
+  animation: sp-route-pop 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.sp-route-now::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 17px;
+  border: 2px solid var(--sp-pink);
+  opacity: 0;
+  animation: sp-route-ping 1.6s 1s ease-out infinite;
+}
+.sp-route-here {
+  animation: sp-route-bob 1.6s ease-in-out infinite;
+}
+@keyframes sp-route-slide { to { background-position: 24px 0; } }
+@keyframes sp-route-grow { to { width: var(--sp-route-fill, 25%); } }
+@keyframes sp-route-pop { to { opacity: 1; transform: none; } }
+@keyframes sp-route-ping {
+  from { opacity: 0.9; transform: scale(0.85); }
+  to { opacity: 0; transform: scale(1.35); }
+}
+@keyframes sp-route-bob { 50% { transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .sp-route-rail::before, .sp-route-now::after, .sp-route-here { animation: none; }
+  .sp-route-node { animation: none; opacity: 1; transform: none; }
+  .sp-route-fill { animation: none; width: var(--sp-route-fill, 25%); }
+}
