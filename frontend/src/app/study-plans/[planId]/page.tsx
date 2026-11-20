@@ -67,6 +67,7 @@ type Quiz = {
   is_retake?: boolean;
   review_plan_id?: string | null;
   review_status?: string | null;
+  review_date?: string | null;
 };
 
 type ReviewPlanInfo = {
@@ -93,6 +94,8 @@ type SessionInsight = {
   attempt: QuizAttempt | null;
   passed: boolean;
   pendingReviewId: string | null;
+  /* Ngày ôn lại người học đã chọn (YYYY-MM-DD), null nếu chưa chọn */
+  reviewDate: string | null;
   /* Điểm % mới nhất của buổi (bài chính hoặc bài kiểm tra lại), null nếu chưa kiểm tra */
   currentScore: number | null;
 };
@@ -351,23 +354,20 @@ export default function StudyPlanDetailPage() {
         const failed = attempt !== null && score < PASS_SCORE;
 
         let pendingReviewId: string | null = null;
+        const retakeQuiz = retakeBySession.get(session.id);
 
-        if (failed) {
-          const retake = retakeBySession.get(session.id);
-          const reviewPlan = attempt?.review_plan;
-
-          if (reviewPlan && reviewPlan.status !== "completed") {
-            pendingReviewId = reviewPlan.id;
-          } else if (
-            !reviewPlan &&
-            retake?.review_plan_id &&
-            retake.review_status !== "completed"
-          ) {
-            pendingReviewId = retake.review_plan_id;
-          }
+        // Bài kiểm tra lại chỉ được tạo khi dưới 80%: còn bài chưa đạt là còn buổi ôn.
+        if (retakeQuiz?.review_plan_id && retakeQuiz.review_status !== "completed") {
+          pendingReviewId = retakeQuiz.review_plan_id;
+        } else if (
+          failed &&
+          !retakeQuiz &&
+          attempt?.review_plan &&
+          attempt.review_plan.status !== "completed"
+        ) {
+          pendingReviewId = attempt.review_plan.id;
         }
 
-        const retakeQuiz = retakeBySession.get(session.id);
         const retakeAttempt = retakeQuiz ? latestAttemptByQuiz.get(retakeQuiz.id) || null : null;
         const latestAny = [attempt, retakeAttempt]
           .filter((item): item is QuizAttempt => Boolean(item))
@@ -389,30 +389,41 @@ export default function StudyPlanDetailPage() {
           attempt,
           passed: attempt !== null && score >= PASS_SCORE,
           pendingReviewId,
+          reviewDate: pendingReviewId ? retakeQuiz?.review_date || null : null,
         };
       });
   }, [sessions, quizzes, attempts, topicById]);
+
+  /* Buổi ôn lại đã có ngày (người học tự chọn sau bài kiểm tra dưới 80%) */
+  const scheduledReviews = useMemo(
+    () => insights.filter((insight) => insight.pendingReviewId && insight.reviewDate),
+    [insights]
+  );
 
   /* Việc cần làm hôm nay */
   const todayPlan = useMemo(() => {
     const tasks: TodayTask[] = [];
 
-    // 1. Ôn lại các bài có Quiz dưới 50% (đang chặn các buổi sau)
+    // 1. Buổi ôn lại: hiện vào đúng ngày đã chọn (trễ thì hiện tiếp);
+    //    chưa chọn ngày ("Để sau") thì hiện mỗi ngày để nhắc chọn.
     for (const insight of insights) {
-      if (insight.pendingReviewId) {
+      if (
+        insight.pendingReviewId &&
+        (!insight.reviewDate || insight.reviewDate <= todayKey)
+      ) {
         tasks.push({
           key: `review-${insight.session.id}`,
           kind: "review",
           insight,
-          overdue: false,
+          overdue: Boolean(insight.reviewDate && insight.reviewDate < todayKey),
         });
       }
     }
 
-    // 2. Bài đã học xong nhưng chưa làm Quiz
+    // 2. Đã vào học nhưng chưa nộp bài kiểm tra (buổi chỉ hoàn thành khi nộp)
     for (const insight of insights) {
       if (
-        insight.session.status === "completed" &&
+        insight.session.status === "in_progress" &&
         insight.quizId &&
         !insight.attempt
       ) {
@@ -479,12 +490,17 @@ export default function StudyPlanDetailPage() {
     const startKey =
       todayPlan.learningDayKey > todayKey ? todayPlan.learningDayKey : todayKey;
     const futureKeys = Array.from(
-      new Set(
-        insights
+      new Set([
+        ...insights
           .filter((insight) => insight.dateKey > startKey)
-          .map((insight) => insight.dateKey)
-      )
-    ).slice(0, 4);
+          .map((insight) => insight.dateKey),
+        ...scheduledReviews
+          .filter((insight) => insight.reviewDate! > startKey)
+          .map((insight) => insight.reviewDate!),
+      ])
+    )
+      .sort()
+      .slice(0, 4);
 
     if (futureKeys.length === 0) {
       return { days: [], restDays: [] as string[] };
@@ -493,6 +509,7 @@ export default function StudyPlanDetailPage() {
     const days = futureKeys.map((dateKey) => ({
       dateKey,
       items: insights.filter((insight) => insight.dateKey === dateKey),
+      reviews: scheduledReviews.filter((insight) => insight.reviewDate === dateKey),
     }));
 
     const restDays: string[] = [];
@@ -508,7 +525,7 @@ export default function StudyPlanDetailPage() {
     }
 
     return { days, restDays };
-  }, [insights, todayPlan.learningDayKey, todayKey]);
+  }, [insights, scheduledReviews, todayPlan.learningDayKey, todayKey]);
 
   /* Thống kê banner */
   const stats = useMemo(() => {
@@ -571,30 +588,40 @@ export default function StudyPlanDetailPage() {
       number,
       {
         weekNumber: number;
-        days: { dateKey: string; items: SessionInsight[] }[];
+        days: { dateKey: string; items: SessionInsight[]; reviews: SessionInsight[] }[];
       }
     >();
 
-    for (const insight of insights) {
+    const dayOf = (dateKey: string) => {
       const weekNumber =
-        Math.floor(Math.max(0, daysBetween(firstKey, insight.dateKey)) / 7) +
-        1;
+        Math.floor(Math.max(0, daysBetween(firstKey, dateKey)) / 7) + 1;
       const week = weeks.get(weekNumber) || { weekNumber, days: [] };
-      const day = week.days.find((item) => item.dateKey === insight.dateKey);
-
-      if (day) {
-        day.items.push(insight);
-      } else {
-        week.days.push({ dateKey: insight.dateKey, items: [insight] });
-      }
-
       weeks.set(weekNumber, week);
+      let day = week.days.find((item) => item.dateKey === dateKey);
+      if (!day) {
+        day = { dateKey, items: [], reviews: [] };
+        week.days.push(day);
+      }
+      return day;
+    };
+
+    for (const insight of insights) {
+      dayOf(insight.dateKey).items.push(insight);
+    }
+
+    // Buổi ôn lại nằm đúng ngày người học đã chọn (có thể trùng ngày học)
+    for (const insight of scheduledReviews) {
+      dayOf(insight.reviewDate!).reviews.push(insight);
+    }
+
+    for (const week of weeks.values()) {
+      week.days.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
     }
 
     return Array.from(weeks.values()).sort(
       (a, b) => a.weekNumber - b.weekNumber
     );
-  }, [insights]);
+  }, [insights, scheduledReviews]);
 
   /* ---------- Trạng thái tải ---------- */
 
@@ -918,6 +945,17 @@ export default function StudyPlanDetailPage() {
                         </span>
                       </li>
                     ))}
+                    {day.reviews.map((insight) => (
+                      <li
+                        key={`review-${insight.session.id}`}
+                        className="flex items-start gap-2.5 text-[14.5px]"
+                      >
+                        <span className="mt-[7px] h-2 w-2 shrink-0 rounded-full bg-[var(--sp-pink)]" />
+                        <span className="min-w-0 flex-1 text-[var(--sp-ink)]">
+                          Ôn lại: {getShortTopicLabel(insight.topic)}
+                        </span>
+                      </li>
+                    ))}
                   </ul>
                 </li>
               ))}
@@ -1040,7 +1078,7 @@ export default function StudyPlanDetailPage() {
                             {formatDayMonth(day.dateKey)}
                           </p>
                           <p className="text-[11px] font-medium text-[var(--sp-muted)]">
-                            {day.items.length} bài · {minutes} phút
+                            {day.items.length > 0 ? `${day.items.length} bài · ${minutes} phút` : "Ngày ôn lại"}
                           </p>
                         </div>
                         <div className="min-w-0 flex-1 divide-y divide-[var(--sp-line)]">
@@ -1048,6 +1086,14 @@ export default function StudyPlanDetailPage() {
                             <ScheduleRow
                               key={insight.session.id}
                               insight={insight}
+                              onOpen={(href) => router.push(href)}
+                            />
+                          ))}
+                          {day.reviews.map((insight) => (
+                            <ReviewScheduleRow
+                              key={`review-${insight.session.id}`}
+                              insight={insight}
+                              overdue={day.dateKey < todayKey}
                               onOpen={(href) => router.push(href)}
                             />
                           ))}
@@ -1180,6 +1226,21 @@ function TaskReason({ task }: { task: TodayTask }) {
   const { insight } = task;
   const attempt = insight.attempt;
 
+  if (task.kind === "review" && insight.reviewDate) {
+    return (
+      <p
+        className={`mt-1.5 flex items-center gap-1.5 text-sm ${
+          task.overdue ? "font-medium text-[var(--sp-amber-dark)]" : "text-[var(--sp-pink-dark)]"
+        }`}
+      >
+        <IconAlert size={15} className="shrink-0" />
+        {task.overdue
+          ? `Lịch ôn ${formatDayMonth(insight.reviewDate)} đã qua, nên ôn bù hôm nay`
+          : "Hôm nay là ngày ôn lại bạn đã chọn"}
+      </p>
+    );
+  }
+
   if (task.kind === "review" && attempt) {
     return (
       <p className="mt-1.5 flex items-center gap-1.5 text-sm text-[var(--sp-pink-dark)]">
@@ -1193,7 +1254,7 @@ function TaskReason({ task }: { task: TodayTask }) {
   if (task.kind === "quiz") {
     return (
       <p className="mt-1.5 text-sm text-[var(--sp-muted)]">
-        Bạn đã trả lời Tự kiểm tra nhanh, bài kiểm tra của buổi này đã mở.
+        Bạn đã vào học buổi này: nộp bài kiểm tra cuối buổi để hoàn thành.
       </p>
     );
   }
@@ -1801,6 +1862,48 @@ function ChapterOverview({
         );
       })()}
     </section>
+  );
+}
+
+function ReviewScheduleRow({
+  insight,
+  overdue,
+  onOpen,
+}: {
+  insight: SessionInsight;
+  overdue: boolean;
+  onOpen: (href: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 bg-[var(--sp-pink-bg)]/40 px-4 py-3 sm:flex-row sm:items-center">
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1.5 font-semibold text-[var(--sp-ink)]">
+          <IconRepeat size={14} className="shrink-0 text-[var(--sp-pink-dark)]" />
+          Ôn lại: {getTopicTitle(insight.topic)}
+        </p>
+        <p className="text-xs text-[var(--sp-muted)]">
+          {getChapter(insight.topic) || "—"} · Ôn phần còn yếu rồi làm bài kiểm tra lại
+        </p>
+      </div>
+
+      <span
+        className={`sp-chip w-fit ${
+          overdue
+            ? "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]"
+            : "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
+        }`}
+      >
+        {overdue ? "Trễ lịch ôn" : "Lịch ôn lại"}
+      </span>
+
+      <button
+        type="button"
+        onClick={() => onOpen(`/review-plans/${insight.pendingReviewId}`)}
+        className="sp-btn sp-btn-secondary shrink-0 px-4 py-2 text-sm"
+      >
+        Vào ôn
+      </button>
+    </div>
   );
 }
 
