@@ -1,6 +1,8 @@
 "use client";
 
-import { IconCalendar, IconCheck, IconClock, IconFile, IconLayers, IconPen, IconTarget, Sparkle } from "@/components/icons";
+import { useEffect, useRef, useState } from "react";
+import { IconCheck, IconLayers, IconTarget, IconX, Sparkle } from "@/components/icons";
+import { PilotMascot } from "@/components/loading-play";
 import { stripOutlineNumbers } from "@/lib/content-titles";
 
 /* ---------- Kiểu dữ liệu ---------- */
@@ -66,64 +68,107 @@ export function chapterShares(chapters: OutlineChapter[], mode: PlanMode, focus:
   };
 }
 
-/* ---------- Stepper góc phải ---------- */
+/* ---------- Đầu trang: Pilot hướng dẫn + 4 bước ---------- */
 
-export function CreateStepper({ steps }: { steps: CreateStep[] }) {
-  const current = steps.findIndex((step) => !step.complete);
+const HERO_LINES = [
+  "Chào bạn! Cho mình biết môn học và ngày thi trước nhé.",
+  "Ngon! Giờ chọn số ngày bạn học được mỗi tuần nha.",
+  "Đưa mình tài liệu, mình sẽ đọc và chia chương cho.",
+  "Chọn cách chia rồi bấm “Xem kế hoạch dự kiến” nhé!",
+  "Xong hết rồi! Bấm xem kế hoạch dự kiến, mình xếp thử cho bạn xem 🎉",
+];
+const HERO_POKE = ["Hihi, nhột quá!", "Mình đợi bạn điền xong nè~", "Cố lên, sắp có lịch rồi!"];
+
+export function CreatePlanHero({ steps, ready = false }: { steps: CreateStep[]; ready?: boolean }) {
+  const firstOpen = steps.findIndex((step) => !step.complete);
+  const current = firstOpen < 0 ? steps.length : firstOpen;
+  const [poke, setPoke] = useState<{ text: string; at: number } | null>(null);
+  const pokeCount = useRef(0);
+
+  useEffect(() => {
+    if (!poke) return;
+    const id = window.setTimeout(() => setPoke(null), 2200);
+    return () => window.clearTimeout(id);
+  }, [poke]);
+
   return (
-    <ol className="flex flex-wrap items-center gap-x-1 gap-y-2" aria-label="Các bước tạo kế hoạch">
-      {steps.map((step, index) => {
-        const isCurrent = index === current;
-        return (
-          <li key={step.title} className="flex items-center gap-1">
-            <span
-              className={`flex items-center gap-1.5 rounded-full py-1 pl-1 pr-3 text-[13px] font-bold transition ${
+    <section className="relative grid grid-cols-[84px_minmax(0,1fr)] items-center gap-x-4 gap-y-4 overflow-hidden rounded-[26px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-purple)] p-4 text-white shadow-[6px_6px_0_var(--sp-pink)] sm:grid-cols-[110px_minmax(0,1fr)] sm:px-6 xl:grid-cols-[110px_minmax(0,1fr)_auto]">
+      <span aria-hidden="true" className="absolute -right-16 -top-20 h-60 w-60 rounded-full bg-[var(--sp-pink)]/35" />
+      <div className="relative">
+        <PilotMascot
+          key={current}
+          size={110}
+          interactive
+          onPoke={() => setPoke({ text: HERO_POKE[pokeCount.current++ % HERO_POKE.length], at: Date.now() })}
+        />
+      </div>
+      <div className="relative min-w-0">
+        <p className="sp-accent text-[17px] text-[#ffd3e2]">Kế hoạch ôn thi · Tạo mới</p>
+        <h1 className="font-display text-[28px] leading-tight !text-white sm:text-[34px]">Tạo kế hoạch ôn thi</h1>
+        <p
+          key={poke?.at ?? (ready ? "ready" : current)}
+          className="sp-hero-bubble relative mt-2 inline-block max-w-[560px] rounded-[14px] border-2 border-[var(--sp-purple-deep)] bg-white px-3.5 py-2 text-[14px] font-bold text-[var(--sp-ink)] shadow-[3px_3px_0_var(--sp-pink)]"
+          role="status"
+        >
+          {poke?.text ?? HERO_LINES[ready ? HERO_LINES.length - 1 : Math.min(current, HERO_LINES.length - 2)]}
+        </p>
+      </div>
+      <ol className="relative col-span-full grid grid-cols-4 gap-2 xl:col-span-1 xl:grid-cols-[repeat(4,92px)]" aria-label="Các bước tạo kế hoạch">
+        {steps.map((step, index) => {
+          const on = index === Math.min(current, steps.length - 1) && !step.complete;
+          return (
+            <li
+              key={step.title}
+              className={`rounded-2xl border-2 px-2 py-2.5 text-center text-[12.5px] font-bold transition duration-300 ${
                 step.complete
-                  ? "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
-                  : isCurrent
-                    ? "bg-[var(--sp-purple)] text-white shadow-[2px_2px_0_var(--sp-pink)]"
-                    : "bg-white text-[var(--sp-muted)] ring-1 ring-[var(--sp-line)]"
+                  ? "border-emerald-300 bg-emerald-500/20 text-emerald-50"
+                  : on
+                    ? "border-[var(--sp-purple-deep)] bg-white text-[var(--sp-purple)] shadow-[3px_3px_0_var(--sp-pink)]"
+                    : "border-white/20 bg-white/10 text-white/75"
               }`}
+              aria-current={on ? "step" : undefined}
             >
               <span
-                className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] ${
-                  step.complete
-                    ? "bg-[var(--sp-peri)] text-white"
-                    : isCurrent
-                      ? "bg-white text-[var(--sp-purple)]"
-                      : "bg-[var(--sp-surface-2)]"
+                className={`mx-auto mb-1.5 flex h-[30px] w-[30px] items-center justify-center rounded-full text-[14px] font-extrabold ${
+                  step.complete ? "bg-emerald-500 text-white" : on ? "bg-[var(--sp-peri)] text-white" : "bg-white/15"
                 }`}
               >
-                {step.complete ? <IconCheck size={13} /> : index + 1}
+                {step.complete ? <IconCheck size={15} /> : index + 1}
               </span>
               {step.title}
-            </span>
-            {index < steps.length - 1 && (
-              <span aria-hidden="true" className={`h-0.5 w-3 rounded ${step.complete ? "bg-[var(--sp-peri)]" : "bg-[var(--sp-line)]"}`} />
-            )}
-          </li>
-        );
-      })}
-    </ol>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 
 /* ---------- Thẻ chọn cách chia kế hoạch ---------- */
 
-export function PlanModeCards({ mode, onChange }: { mode: PlanMode; onChange: (mode: PlanMode) => void }) {
+export function PlanModeCards({
+  mode,
+  onChange,
+  compact = false,
+}: {
+  mode: PlanMode;
+  onChange: (mode: PlanMode) => void;
+  /* bản gọn cho cột hẹp: bỏ biểu tượng và nhãn phụ, câu mô tả ngắn */
+  compact?: boolean;
+}) {
   const options: { value: PlanMode; title: string; tag: string; text: string; icon: typeof IconLayers }[] = [
     {
       value: "chapter",
       title: "Theo chương",
       tag: "Tuyến tính",
-      text: "Chia đều các chương theo ngày, học lần lượt từ chương đầu đến chương cuối.",
+      text: compact ? "Chia đều các chương, học lần lượt từ đầu đến cuối." : "Chia đều các chương theo ngày, học lần lượt từ chương đầu đến chương cuối.",
       icon: IconLayers,
     },
     {
       value: "focus",
       title: "Theo trọng tâm",
       tag: "Trọng số",
-      text: "Dồn 70–80% thời gian cho chương trọng tâm, phần còn lại đọc lướt.",
+      text: compact ? "Dồn 70–80% thời gian cho chương bạn chọn." : "Dồn 70–80% thời gian cho chương trọng tâm, phần còn lại đọc lướt.",
       icon: IconTarget,
     },
   ];
@@ -140,7 +185,7 @@ export function PlanModeCards({ mode, onChange }: { mode: PlanMode; onChange: (m
             role="radio"
             aria-checked={active}
             onClick={() => onChange(option.value)}
-            className={`relative flex gap-3 rounded-2xl border-2 p-4 text-left transition ${
+            className={`relative flex gap-3 rounded-2xl border-2 text-left transition ${compact ? "px-3.5 py-3 pr-9" : "p-4"} ${
               active
                 ? option.value === "focus"
                   ? "border-[var(--sp-pink)] bg-[var(--sp-pink-bg)] shadow-[3px_3px_0_var(--sp-pink-line)]"
@@ -149,7 +194,7 @@ export function PlanModeCards({ mode, onChange }: { mode: PlanMode; onChange: (m
             }`}
           >
             <span
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+              className={`${compact ? "hidden" : "flex"} h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
                 option.value === "focus" ? "bg-white text-[var(--sp-pink-dark)]" : "bg-white text-[var(--sp-peri-dark)]"
               } ring-1 ring-[var(--sp-line)]`}
             >
@@ -158,7 +203,7 @@ export function PlanModeCards({ mode, onChange }: { mode: PlanMode; onChange: (m
             <span className="min-w-0 flex-1">
               <span className="flex items-center gap-2">
                 <span className="text-[15px] font-bold text-[var(--sp-ink)]">{option.title}</span>
-                <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-[var(--sp-muted)] ring-1 ring-[var(--sp-line)]">
+                <span className={`${compact ? "hidden" : ""} rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-[var(--sp-muted)] ring-1 ring-[var(--sp-line)]`}>
                   {option.tag}
                 </span>
               </span>
@@ -266,193 +311,215 @@ export function FocusChapterChips({
   );
 }
 
-/* ---------- Thẻ xem trước kế hoạch ---------- */
+/* ---------- Popup kế hoạch dự kiến ---------- */
 
-export function PlanPreviewCard({
+const WEEKDAY = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+
+function addDayKey(key: string, days: number) {
+  const date = new Date(`${key}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export function PlanPreviewDialog({
+  open,
+  onClose,
+  onConfirm,
+  submitting,
+  subjectName,
   mode,
-  onModeChange,
   daysToExam,
+  studyDates,
   studyDayCount,
   reviewDayCount,
   dailyHours,
   outline,
   focus,
 }: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  submitting: boolean;
+  subjectName: string;
   mode: PlanMode;
-  onModeChange: (mode: PlanMode) => void;
   daysToExam: number | null;
+  /* ngày học đã chọn, dạng YYYY-MM-DD */
+  studyDates: string[];
   studyDayCount: number;
   reviewDayCount: number;
   dailyHours: number;
   outline: OutlineState;
   focus: Set<number>;
 }) {
+  const [grow, setGrow] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const id = window.requestAnimationFrame(() => setGrow(true));
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      window.cancelAnimationFrame(id);
+      setGrow(false);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
   const chapters = outline.status === "done" ? outline.chapters : [];
   const effectiveFocus = mode === "focus" ? focus : new Set<number>();
   const isFocus = mode === "focus" && focus.size > 0 && focus.size < chapters.length;
   const { shares, review } = chapterShares(chapters, mode, effectiveFocus, reviewDayCount > 0);
-  const focusPct = isFocus ? shares.reduce((sum, share, index) => sum + (focus.has(index) ? share : 0), 0) : 0;
-  const skimPct = isFocus ? 100 - focusPct - review : 0;
   const lessonCount = chapters.reduce((sum, chapter) => sum + chapter.lesson_count, 0);
-  const focusCodes = chapters
-    .map((chapter, index) => (focus.has(index) ? chapterLabel(chapter.name, index).code : null))
-    .filter(Boolean)
-    .join(", ");
+
+  // Tuần đầu tiên có buổi học
+  const sorted = [...studyDates].sort();
+  const firstWeek = sorted[0]
+    ? Array.from({ length: 7 }, (_, index) => {
+        const weekday = new Date(`${sorted[0]}T00:00:00Z`).getUTCDay();
+        return addDayKey(sorted[0], index - ((weekday + 6) % 7));
+      })
+    : [];
 
   const stats = [
-    { value: daysToExam ?? "—", label: "ngày đến thi", icon: IconCalendar, tone: "text-[var(--sp-pink-dark)] bg-[var(--sp-pink-bg)]" },
-    { value: studyDayCount || "—", label: "ngày học", icon: IconPen, tone: "text-[var(--sp-peri-dark)] bg-[var(--sp-lav)]" },
-    {
-      value: lessonCount || "—",
-      label: `bài · ${dailyHours} giờ/ngày`,
-      icon: IconClock,
-      tone: "text-[var(--sp-amber-dark)] bg-[var(--sp-amber-bg)]",
-    },
+    { value: daysToExam ?? "—", label: "ngày đến thi", shadow: "var(--sp-pink-line)" },
+    { value: studyDayCount || "—", label: "ngày học", shadow: "var(--sp-lav-line)" },
+    { value: lessonCount || "—", label: "bài học", shadow: "#f3dc9b" },
+    { value: `${dailyHours} giờ`, label: "mỗi ngày", shadow: "#e3cdf0" },
   ];
 
   return (
-    <aside className="sp-card overflow-hidden lg:sticky lg:top-6">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--sp-line)] px-5 py-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-[var(--sp-muted)]">
-            Xem trước · {mode === "focus" ? "Theo trọng tâm" : "Theo chương"}
-          </p>
-          <h3 className="mt-0.5 text-lg font-bold text-[var(--sp-ink)]">Kế hoạch dự kiến</h3>
+    <div
+      className="sp-dialog-veil fixed inset-0 z-50 flex items-center justify-center bg-[rgba(36,18,58,0.45)] p-4 backdrop-blur-[2px]"
+      onClick={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="plan-preview-title"
+        className="sp-dialog-pop max-h-[92vh] w-full max-w-[760px] overflow-y-auto rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-white p-5 shadow-[6px_6px_0_var(--sp-pink)] sm:px-7 sm:py-6"
+      >
+        <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-3.5 sm:grid-cols-[76px_minmax(0,1fr)_auto]">
+          <PilotMascot size={76} />
+          <div className="min-w-0">
+            <p className="sp-accent text-[16px] text-[var(--sp-pink)]">Pilot đã xếp thử cho bạn</p>
+            <h3 id="plan-preview-title" className="truncate text-[21px] font-extrabold text-[var(--sp-ink)]">
+              Kế hoạch dự kiến · {subjectName}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Đóng"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[var(--sp-line)] bg-white text-[var(--sp-muted)] hover:border-[var(--sp-lav-line)]"
+          >
+            <IconX size={18} />
+          </button>
         </div>
-        <div className="flex rounded-full bg-[var(--sp-surface-2)] p-1 text-[12px] font-bold" role="tablist">
-          {(["chapter", "focus"] as PlanMode[]).map((value) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={mode === value}
-              onClick={() => onModeChange(value)}
-              className={`rounded-full px-3 py-1.5 transition ${
-                mode === value
-                  ? value === "focus"
-                    ? "bg-[var(--sp-pink)] text-white"
-                    : "bg-[var(--sp-peri)] text-white"
-                  : "text-[var(--sp-muted)] hover:text-[var(--sp-ink)]"
-              }`}
+
+        <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          {stats.map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-2xl border-2 border-[var(--sp-purple-deep)] px-3 py-2.5"
+              style={{ boxShadow: `3px 3px 0 ${stat.shadow}` }}
             >
-              {value === "focus" ? "Trọng tâm" : "Theo chương"}
-            </button>
+              <p className="text-[24px] font-extrabold leading-tight text-[var(--sp-purple)]">{stat.value}</p>
+              <p className="text-[12.5px] font-semibold text-[var(--sp-muted)]">{stat.label}</p>
+            </div>
           ))}
         </div>
-      </div>
 
-      <div className="space-y-5 p-5">
-        {/* Số liệu */}
-        <div className="grid grid-cols-3 gap-2">
-          {stats.map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <div key={stat.label} className="rounded-2xl border border-[var(--sp-line)] bg-white px-3 py-3">
-                <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${stat.tone}`}>
-                  <Icon size={15} />
-                </span>
-                <p className="mt-2 text-[24px] font-black leading-none text-[var(--sp-ink)]">{stat.value}</p>
-                <p className="mt-1 text-[11px] font-semibold leading-4 text-[var(--sp-muted)]">{stat.label}</p>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Phân bổ thời gian */}
-        <div>
-          <p className="text-sm font-bold text-[var(--sp-ink)]">Phân bổ thời gian ôn</p>
+        <div className="mt-5">
+          <p className="text-[14.5px] font-bold text-[var(--sp-ink)]">
+            Phân bổ thời gian{" "}
+            <span className="font-semibold text-[var(--sp-muted)]">· {isFocus ? "theo trọng tâm" : "theo chương"}</span>
+          </p>
           {chapters.length === 0 ? (
-            <div className="mt-3 rounded-2xl border-2 border-dashed border-[var(--sp-line)] px-4 py-6 text-center">
-              <IconFile size={22} className="mx-auto text-[var(--sp-soft)]" />
-              <p className="mt-2 text-[13px] text-[var(--sp-muted)]">
-                {outline.status === "loading"
-                  ? "AI đang nhận diện chương…"
-                  : "Tải tài liệu lên để xem phân bổ thời gian theo từng chương."}
-              </p>
-            </div>
+            <p className="mt-2 rounded-2xl border-2 border-dashed border-[var(--sp-line)] px-4 py-4 text-[13px] text-[var(--sp-muted)]">
+              {outline.status === "loading"
+                ? "AI đang nhận diện chương, phân bổ sẽ hiện khi đọc xong."
+                : "Chưa nhận diện trước được chương, AI sẽ chia khi tạo kế hoạch."}
+            </p>
           ) : (
-            <>
-              {isFocus ? (
-                <>
-                  <div className="mt-3 flex h-4 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
-                    <span className="h-full bg-[var(--sp-pink)]" style={{ width: `${focusPct}%` }} />
-                    <span className="h-full bg-[var(--sp-peri)]" style={{ width: `${skimPct}%` }} />
-                    {review > 0 && <span className="h-full bg-[var(--sp-purple)]" style={{ width: `${review}%` }} />}
-                  </div>
-                  <ul className="mt-2.5 space-y-1 text-[12px] text-[var(--sp-muted)]">
-                    <li className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-[var(--sp-pink)]" />
-                      <b className="text-[var(--sp-ink)]">{Math.round(focusPct)}%</b> {focusCodes}: học trước, nhiều thời gian hơn
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full bg-[var(--sp-peri)]" />
-                      <b className="text-[var(--sp-ink)]">{Math.round(skimPct)}%</b> {chapters.length - focus.size} chương đọc lướt
-                    </li>
-                    {review > 0 && (
-                      <li className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full bg-[var(--sp-purple)]" />
-                        <b className="text-[var(--sp-ink)]">{Math.round(review)}%</b> Ôn tổng hợp ({reviewDayCount} ngày cuối)
-                      </li>
-                    )}
-                  </ul>
-                </>
-              ) : (
-                <p className="mt-1 text-[12px] text-[var(--sp-muted)]">
-                  Chia đều theo độ dài từng chương, học lần lượt từ đầu đến cuối.
-                </p>
-              )}
-
-              {/* Từng chương */}
-              <ul className="mt-4 space-y-2.5">
-                {chapters.map((chapter, index) => {
-                  const { code, title } = chapterLabel(chapter.name, index);
-                  const focused = isFocus && focus.has(index);
-                  const share = shares[index] || 0;
-                  return (
-                    <li key={`${chapter.start_chunk}-${index}`} className="grid grid-cols-[38px_minmax(0,1fr)_40px] items-center gap-2">
-                      <span
-                        className={`rounded-md px-1 py-0.5 text-center text-[11px] font-extrabold ${
-                          focused ? "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]" : "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
-                        }`}
-                      >
-                        {code}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-[12px] font-semibold text-[var(--sp-ink)]" title={chapter.name}>
-                          {focused && "★ "}
-                          {title}
-                        </span>
-                        <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
-                          <span
-                            className={`block h-full rounded-full transition-all duration-500 ${
-                              focused ? "bg-[var(--sp-pink)]" : "bg-[var(--sp-peri)]"
-                            } ${isFocus && !focused ? "opacity-60" : ""}`}
-                            style={{ width: `${Math.min(100, share * (isFocus ? 1.3 : 2))}%` }}
-                          />
-                        </span>
-                      </span>
-                      <span className="text-right text-[12px] font-bold text-[var(--sp-ink)]">{Math.round(share)}%</span>
-                    </li>
-                  );
-                })}
-                {isFocus && review > 0 && (
-                  <li className="grid grid-cols-[38px_minmax(0,1fr)_40px] items-center gap-2">
-                    <span className="rounded-md bg-[var(--sp-purple)] px-1 py-0.5 text-center text-[11px] font-extrabold text-white">
-                      ÔN
+            <ul className="mt-2 space-y-2">
+              {chapters.map((chapter, index) => {
+                const { code, title } = chapterLabel(chapter.name, index);
+                const focused = isFocus && focus.has(index);
+                const share = shares[index] || 0;
+                return (
+                  <li key={`${chapter.start_chunk}-${index}`} className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)_44px] items-center gap-3 text-[13px] font-semibold">
+                    <span className="truncate text-[var(--sp-ink)]" title={chapter.name}>
+                      {focused && "★ "}
+                      <b>{code}</b> · {title}
                     </span>
-                    <span className="text-[12px] font-semibold text-[var(--sp-ink)]">Ôn tổng hợp</span>
-                    <span className="text-right text-[12px] font-bold text-[var(--sp-ink)]">{Math.round(review)}%</span>
+                    <span className="h-3 overflow-hidden rounded-full border border-[var(--sp-line)] bg-[var(--sp-surface-2)]">
+                      <span
+                        className={`block h-full rounded-full transition-[width] duration-700 ease-out ${focused ? "bg-[var(--sp-pink)]" : "bg-[var(--sp-peri)]"}`}
+                        style={{ width: grow ? `${Math.min(100, share)}%` : 0 }}
+                      />
+                    </span>
+                    <span className="text-right font-bold text-[var(--sp-muted)]">{Math.round(share)}%</span>
                   </li>
-                )}
-              </ul>
-            </>
+                );
+              })}
+              {review > 0 && (
+                <li className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)_44px] items-center gap-3 text-[13px] font-semibold">
+                  <span className="text-[var(--sp-ink)]">Ôn tổng hợp · {reviewDayCount} ngày cuối</span>
+                  <span className="h-3 overflow-hidden rounded-full border border-[var(--sp-line)] bg-[var(--sp-surface-2)]">
+                    <span className="block h-full rounded-full bg-[var(--sp-purple)] transition-[width] duration-700 ease-out" style={{ width: grow ? `${review}%` : 0 }} />
+                  </span>
+                  <span className="text-right font-bold text-[var(--sp-muted)]">{Math.round(review)}%</span>
+                </li>
+              )}
+            </ul>
           )}
         </div>
-      </div>
 
-      <p className="border-t border-[var(--sp-line)] bg-[var(--sp-surface-2)] px-5 py-3 text-[12px] leading-5 text-[var(--sp-muted)]">
-        Sau khi tạo, bạn chuyển tới trang kế hoạch chi tiết với lịch từng ngày.
-      </p>
-    </aside>
+        {firstWeek.length > 0 && (
+          <div className="mt-5">
+            <p className="text-[14.5px] font-bold text-[var(--sp-ink)]">Tuần học đầu tiên</p>
+            <div className="mt-2 grid grid-cols-7 gap-1.5">
+              {firstWeek.map((key) => {
+                const index = sorted.indexOf(key);
+                return (
+                  <div key={key} className="text-center text-[11.5px] font-extrabold text-[var(--sp-muted)]">
+                    {WEEKDAY[new Date(`${key}T00:00:00Z`).getUTCDay()]} {key.slice(8, 10)}/{key.slice(5, 7)}
+                    <p
+                      className={`mt-1 flex h-[50px] items-center justify-center rounded-xl px-1 text-[12px] ${
+                        index >= 0
+                          ? "border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-peri)] text-white"
+                          : "bg-[repeating-linear-gradient(135deg,#f1edf4_0_6px,#f8f6fa_6px_12px)] text-[var(--sp-soft)]"
+                      }`}
+                    >
+                      {index >= 0 ? `Buổi ${index + 1}` : "Nghỉ"}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[12.5px] text-[var(--sp-muted)]">AI sẽ chia bài vào từng buổi khi tạo kế hoạch.</p>
+          </div>
+        )}
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <button type="button" onClick={onClose} className="sp-btn sp-btn-secondary h-[46px] text-sm !text-[var(--sp-peri-dark)]">
+            ← Sửa lại
+          </button>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={onConfirm}
+            className="sp-btn sp-btn-primary h-[46px] text-sm !bg-[var(--sp-pink)] disabled:opacity-60"
+          >
+            <Sparkle size={15} />
+            Tạo kế hoạch theo dự kiến
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -30,9 +30,12 @@ export default function MaterialDropzone({
   onError,
   status,
   showTips = true,
+  compact = false,
 }: {
   status?: ReactNode;
   showTips?: boolean;
+  /* khu tải lên một hàng, dùng trong biểu mẫu 2 cột */
+  compact?: boolean;
   file: File | null;
   inputKey: number;
   validate: (file: File) => string | null;
@@ -92,7 +95,7 @@ export default function MaterialDropzone({
         /* ---------- Đã chọn file ---------- */
         <div
           {...dragProps}
-          className={`sp-task-expand relative overflow-hidden rounded-[22px] border-2 p-5 transition sm:p-6 ${
+          className={`sp-task-expand relative overflow-hidden border-2 transition ${compact ? "rounded-[18px] p-4" : "rounded-[22px] p-5 sm:p-6"} ${
             isDragging
               ? "border-[var(--sp-peri)] bg-[var(--sp-lav)]"
               : "border-[var(--sp-purple)] bg-white shadow-[5px_5px_0_var(--sp-lav-line)]"
@@ -152,6 +155,34 @@ export default function MaterialDropzone({
             </div>
           </div>
         </div>
+      ) : compact ? (
+        /* ---------- Khu kéo thả gọn: một hàng ---------- */
+        <label
+          htmlFor="study-material"
+          {...dragProps}
+          className={`grid cursor-pointer grid-cols-[60px_minmax(0,1fr)_auto] items-center gap-4 rounded-[18px] border-2 border-dashed p-4 transition duration-200 ${
+            isDragging
+              ? "scale-[1.01] border-[var(--sp-peri)] bg-[var(--sp-lav)]"
+              : error
+                ? "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)]/50"
+                : "border-[var(--sp-lav-line)] bg-[var(--sp-lav)] hover:border-[var(--sp-peri)]"
+          }`}
+        >
+          <span
+            className="relative flex h-[60px] w-[60px] items-center justify-center rounded-[14px] border-2 border-[var(--sp-purple-deep)] bg-white text-[var(--sp-peri-dark)] shadow-[3px_3px_0_var(--sp-pink-line)]"
+            aria-hidden="true"
+          >
+            <IconFile size={26} />
+            <Sparkle size={13} className="sp-twinkle absolute -right-2 -top-2 text-[var(--sp-yellow)]" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[14.5px] font-bold text-[var(--sp-ink)]">
+              {isDragging ? "Thả tài liệu vào đây" : "Kéo thả hoặc bấm để chọn tài liệu"}
+            </span>
+            <span className="mt-0.5 block text-[12.5px] text-[var(--sp-muted)]">PDF, DOCX, PPTX · tối đa 50 MB</span>
+          </span>
+          <span className="text-[13px] font-extrabold text-[var(--sp-peri-dark)]">Chọn tệp</span>
+        </label>
       ) : (
         /* ---------- Khu kéo thả ---------- */
         <label

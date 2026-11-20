@@ -515,3 +515,15 @@ main button[class*="bg-[#5B7FE3]"]:disabled {
   .sp-wait-dots i, .sp-smart-long > section > *, .sp-smart-long .sp-game-overlay { animation: none; }
   .sp-thin-fill { animation: none; width: var(--to); }
 }
+
+/* ===== Trang tạo kế hoạch ===== */
+.sp-hero-bubble { animation: sp-hero-bubble 0.35s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+.sp-hero-bubble::before { content: ""; position: absolute; left: -9px; top: 11px; width: 14px; height: 14px; background: #fff; border-left: 2px solid var(--sp-purple-deep); border-bottom: 2px solid var(--sp-purple-deep); transform: rotate(45deg); }
+@keyframes sp-hero-bubble { from { opacity: 0; transform: translateY(6px) scale(0.96); } }
+.sp-dialog-veil { animation: sp-dialog-fade 0.2s ease-out both; }
+.sp-dialog-pop { animation: sp-dialog-pop 0.3s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+@keyframes sp-dialog-fade { from { opacity: 0; } }
+@keyframes sp-dialog-pop { from { opacity: 0; transform: translateY(16px) scale(0.97); } }
+@media (prefers-reduced-motion: reduce) {
+  .sp-hero-bubble, .sp-dialog-veil, .sp-dialog-pop { animation: none; }
+}
