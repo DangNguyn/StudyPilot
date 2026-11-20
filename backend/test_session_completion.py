@@ -7,6 +7,7 @@ os.environ["SUPABASE_SECRET_KEY"] = "test-key"
 os.environ["DEMO_USER_ID"] = "u1"
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -69,6 +70,10 @@ S1 = "00000000-0000-0000-0000-000000000001"
 S2 = "00000000-0000-0000-0000-000000000002"
 Q1 = "00000000-0000-0000-0000-0000000000a1"
 RETAKE = "00000000-0000-0000-0000-0000000000b1"
+PLAN = "00000000-0000-0000-0000-0000000000c1"
+TODAY = datetime.now(main.VIETNAM_TZ).date()
+DAY1 = f"{TODAY}T03:00:00+00:00"  # 10h giờ Việt Nam, cùng ngày
+DAY2 = f"{TODAY + timedelta(days=1)}T03:00:00+00:00"
 
 
 def fresh_db():
@@ -79,9 +84,9 @@ def fresh_db():
         ],
         "study_sessions": [
             {"id": S1, "topic_id": "t1", "user_id": "u1", "status": "scheduled",
-             "scheduled_start": "2026-11-21T01:00:00+00:00", "started_at": None},
+             "scheduled_start": DAY1, "started_at": None},
             {"id": S2, "topic_id": "t2", "user_id": "u1", "status": "scheduled",
-             "scheduled_start": "2026-11-22T01:00:00+00:00", "started_at": None},
+             "scheduled_start": DAY2, "started_at": None},
         ],
         "quizzes": [
             {"id": Q1, "user_id": "u1", "status": "active", "study_session_id": S1,
@@ -90,6 +95,9 @@ def fresh_db():
         ],
         "quiz_questions": [{"id": "qq1", "quiz_id": Q1, "user_id": "u1", "status": "ready"}],
         "quiz_attempts": [],
+        "exam_plans": [{"id": "p1", "user_id": "u1", "exam_date": f"{TODAY + timedelta(days=30)}"}],
+        "review_plans": [{"id": PLAN, "user_id": "u1", "retake_quiz_id": RETAKE, "status": "pending",
+                          "review_items": [{"origin_session_id": S1, "topic_name": "Bài 1"}]}],
     }
     main.supabase = FakeSupabase(db)
     return db
@@ -141,5 +149,19 @@ raises(403, main.start_quiz, UUID(Q1))
 # 7. Cổng chỉ xét trạng thái completed, không đọc điểm
 assert main._has_passed_session_quiz({"status": "completed"}) is True
 assert main._has_passed_session_quiz({"status": "in_progress"}) is False
+
+# 8. Chọn ngày ôn lại trùng ngày đã có buổi học: được chấp nhận
+db = fresh_db()
+week = main._session_day_context(S1)["week"]
+assert any(d["date"] == TODAY.isoformat() and d["has_study"] for d in week)  # đúng là ngày có buổi học
+main.set_review_date(UUID(PLAN), main.ReviewDateRequest(review_date=TODAY))
+item = db["review_plans"][0]["review_items"][0]
+assert item["review_date"] == TODAY.isoformat(), item
+assert main._plan_review_date(db["review_plans"][0]) == TODAY.isoformat()
+
+# 9. Vẫn chặn ngày đã qua (nếu hôm qua còn cùng tuần) và ngày ngoài tuần
+if TODAY.weekday() > 0:
+    raises(400, main.set_review_date, UUID(PLAN), main.ReviewDateRequest(review_date=TODAY - timedelta(days=1)))
+raises(400, main.set_review_date, UUID(PLAN), main.ReviewDateRequest(review_date=TODAY + timedelta(days=8)))
 
 print("OK: session completion")

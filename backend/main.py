@@ -2076,7 +2076,7 @@ class ReviewDateRequest(BaseModel):
 
 @app.post("/api/review-plans/{review_plan_id}/review-date")
 def set_review_date(review_plan_id: UUID, request: ReviewDateRequest):
-    """Người học chọn ngày ôn lại: chỉ trong tuần của buổi học, không trùng ngày học chính."""
+    """Người học chọn ngày ôn lại trong tuần của buổi học (được trùng ngày có buổi học)."""
     try:
         plan_response = (
             supabase.table("review_plans")
@@ -2122,8 +2122,6 @@ def set_review_date(review_plan_id: UUID, request: ReviewDateRequest):
             raise HTTPException(status_code=400, detail="Chỉ được chọn ngày ôn trong tuần của buổi học.")
         if day["is_past"]:
             raise HTTPException(status_code=400, detail="Không thể chọn ngày đã qua.")
-        if day["has_study"]:
-            raise HTTPException(status_code=400, detail="Ngày này đã có lịch học chính, hãy chọn ngày khác.")
         if day["after_exam"]:
             raise HTTPException(status_code=400, detail="Ngày ôn phải trước ngày thi.")
 
@@ -6811,7 +6809,7 @@ def get_quizzes(exam_plan_id: UUID | None = None):
             supabase.table("review_plans")
             .select(
                 "id, retake_quiz_id, assessment_id, status, "
-                "review_study_seconds"
+                "review_study_seconds, review_items"
             )
             .eq("user_id", DEMO_USER_ID)
             .in_("retake_quiz_id", quiz_ids)
@@ -6987,6 +6985,12 @@ def get_quizzes(exam_plan_id: UUID | None = None):
             )
             quiz["review_status"] = (
                 review_plan.get("status")
+                if review_plan
+                else None
+            )
+            # Ngày ôn lại người học đã chọn: trang Kế hoạch xếp buổi ôn vào ngày này.
+            quiz["review_date"] = (
+                _plan_review_date(review_plan)
                 if review_plan
                 else None
             )
