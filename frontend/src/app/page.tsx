@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type SVGProps } from "react";
 import Link from "next/link";
+import { LoadingMascot } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import { CURRENT_USER } from "@/lib/current-user";
 import {
@@ -563,11 +564,7 @@ function TodayCard({
       </div>
 
       {loading ? (
-        <div className="mt-5 space-y-3">
-          {[0, 1].map((index) => (
-            <div key={index} className="h-[78px] animate-pulse rounded-2xl bg-[var(--sp-surface-2)]" />
-          ))}
-        </div>
+        <LoadingMascot bare className="mt-5" text="Đang xếp lịch hôm nay…" sub="Pilot đang xem hôm nay bạn cần học gì." />
       ) : view.today.length === 0 ? (
         <div className="mt-5 flex flex-col items-center rounded-2xl border-2 border-dashed border-[var(--sp-line)] px-5 py-8 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]">

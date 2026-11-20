@@ -117,14 +117,21 @@ export function LoadingMascot({
   text,
   sub = "Pilot đang lật từng trang, chờ mình xíu nhé!",
   className = "max-w-5xl",
+  bare = false,
 }: {
   text: string;
   sub?: string;
   className?: string;
+  /* bare: không viền/bóng, dùng bên trong một thẻ đã có sẵn */
+  bare?: boolean;
 }) {
   return (
     <div
-      className={`mx-auto grid grid-cols-[96px_minmax(0,1fr)] items-center gap-5 rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-white px-6 py-5 shadow-[6px_6px_0_var(--sp-lav-line)] ${className}`}
+      className={`grid grid-cols-[96px_minmax(0,1fr)] items-center gap-5 ${
+        bare
+          ? "rounded-2xl bg-[var(--sp-surface-2)] px-5 py-4"
+          : "mx-auto rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-white px-6 py-5 shadow-[6px_6px_0_var(--sp-lav-line)]"
+      } ${className}`}
       role="status"
     >
       <PilotMascot size={96} />

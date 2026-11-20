@@ -942,8 +942,8 @@ function QuizCard({
 
       {/* 4 ô thông tin */}
       <div className="mt-3.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Tile icon={<IconBook size={13} />} label="Phạm vi" value={chapter?.label || (context?.day_number ? `Ngày ${context.day_number}` : "Bài học")} sub={studyKey ? `Ngày học ${shortDate(studyKey)}` : "—"} />
-        <Tile icon={<IconList size={13} />} label="Số câu" value={questionCount ? `${questionCount} câu` : "—"} sub={typeLabel} />
+        <Tile loading={!overview && !error} icon={<IconBook size={13} />} label="Phạm vi" value={chapter?.label || (context?.day_number ? `Ngày ${context.day_number}` : "Bài học")} sub={studyKey ? `Ngày học ${shortDate(studyKey)}` : "—"} />
+        <Tile loading={!overview && !error} icon={<IconList size={13} />} label="Số câu" value={questionCount ? `${questionCount} câu` : "—"} sub={typeLabel} />
         <Tile
           icon={<IconClock size={13} />}
           label="Thời gian"
@@ -1095,15 +1095,24 @@ function QuizCard({
   );
 }
 
-function Tile({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub: string }) {
+function Tile({ icon, label, value, sub, loading }: { icon: React.ReactNode; label: string; value: string; sub: string; loading?: boolean }) {
   return (
     <div className="min-w-0 rounded-xl border-2 border-[var(--sp-line)] bg-white px-2 py-2">
       <p className="flex items-center gap-1 whitespace-nowrap text-[9.5px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">
         {icon}
         {label}
       </p>
-      <p className="mt-1 truncate text-[14.5px] font-extrabold leading-tight text-[var(--sp-ink)]">{value}</p>
-      <p className="mt-0.5 text-[11px] leading-snug text-[var(--sp-muted)]">{sub}</p>
+      {loading ? (
+        <>
+          <span className="mt-1.5 block h-3.5 w-3/4 animate-pulse rounded bg-[var(--sp-surface-2)]" />
+          <span className="mt-1.5 block h-2.5 w-1/2 animate-pulse rounded bg-[var(--sp-surface-2)]" />
+        </>
+      ) : (
+        <>
+          <p className="mt-1 truncate text-[14.5px] font-extrabold leading-tight text-[var(--sp-ink)]">{value}</p>
+          <p className="mt-0.5 text-[11px] leading-snug text-[var(--sp-muted)]">{sub}</p>
+        </>
+      )}
     </div>
   );
 }

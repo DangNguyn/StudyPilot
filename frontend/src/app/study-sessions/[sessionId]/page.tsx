@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { LoadingMascot } from "@/components/loading-play";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -50,7 +51,7 @@ export default function StudySessionRedirect() {
           </Link>
         </>
       ) : (
-        <p className="text-sm text-[var(--sp-muted)]">Đang mở bài học…</p>
+        <LoadingMascot bare className="text-left" text="Đang mở bài học…" />
       )}
     </div>
   );

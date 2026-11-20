@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { LoadingMascot } from "@/components/loading-play";
 import { getMainTopicTitle, stripOutlineNumbers } from "@/lib/content-titles";
 
 const API_URL = "http://127.0.0.1:8000";
@@ -286,14 +287,7 @@ export default function ReviewPlanPage() {
   if (loading) {
     return (
       <main className="min-h-screen bg-[#EEF1FD] px-6 py-16">
-        <div className="mx-auto max-w-4xl rounded-3xl bg-[#FFFFFF] p-10 text-center shadow-sm">
-          <p className="text-lg font-semibold text-[#24123A]">
-            Đang chuẩn bị nội dung học bổ trợ...
-          </p>
-          <p className="mt-2 text-sm text-gray-500">
-            Vui lòng chờ trong giây lát.
-          </p>
-        </div>
+        <LoadingMascot className="max-w-4xl" text="Đang chuẩn bị nội dung học bổ trợ…" sub="Pilot đang gom lại phần bạn làm sai lần trước." />
       </main>
     );
   }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { LoadingMascot } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import {
   IconBook,
@@ -395,10 +396,7 @@ export default function FlashcardsPage() {
           </div>
 
           {loading ? (
-            <div className="mt-6 rounded-[24px] bg-[var(--sp-surface-2)] px-6 py-16 text-center text-[var(--sp-muted)]">
-              <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-              Đang tải bộ thẻ...
-            </div>
+            <LoadingMascot bare className="mt-6" text="Đang tải bộ thẻ…" sub="Pilot đang xếp thẻ đến hạn ôn lên trước." />
           ) : error ? (
             <div className="mt-6 rounded-[24px] bg-[var(--sp-pink-bg)] px-6 py-10 text-center">
               <p className="font-semibold text-[var(--sp-pink-dark)]">{error}</p>

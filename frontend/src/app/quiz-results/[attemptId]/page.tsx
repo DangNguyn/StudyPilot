@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { LoadingMascot } from "@/components/loading-play";
 import Link from "next/link";
 import { getMainTopicTitle, stripOutlineNumbers } from "@/lib/content-titles";
 import WrongAnswerReview, { type Mistake } from "@/components/wrong-answer-review";
@@ -290,10 +291,7 @@ export default function QuizResultPage() {
 
   if (loading && !result) {
     return (
-      <div className="sp-card mx-auto max-w-5xl p-10 text-center text-[var(--sp-muted)]">
-        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-        Đang chấm và tổng hợp kết quả...
-      </div>
+      <LoadingMascot text="Đang chấm và tổng hợp kết quả…" sub="Pilot đang chấm từng câu và tìm phần bạn còn yếu." />
     );
   }
 

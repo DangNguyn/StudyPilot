@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { LoadingMascot } from "@/components/loading-play";
 import Link from "next/link";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import {
@@ -300,10 +301,7 @@ export default function QuizTakingPage() {
   // 5. Trạng thái tải
   if (loading) {
     return (
-      <div className="sp-card mx-auto max-w-4xl p-10 text-center text-[var(--sp-muted)]">
-        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-        Đang chuẩn bị bài kiểm tra...
-      </div>
+      <LoadingMascot className="max-w-4xl" text="Đang chuẩn bị bài kiểm tra…" sub="Pilot đang xáo câu hỏi, chuẩn bị bút nhé!" />
     );
   }
 
