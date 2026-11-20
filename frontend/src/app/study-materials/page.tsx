@@ -974,9 +974,11 @@ function MaterialReader({
     setReviewingKey("");
   };
 
-  /* Trả lời xong phần tự kiểm tra → hoàn thành các buổi của ngày, mở bài kiểm tra */
+  /* Trả lời xong phần tự kiểm tra → bắt đầu các buổi của ngày, mở bài kiểm tra.
+     Buổi chỉ "completed" khi đã nộp bài kiểm tra. */
   const unlock = unlockByDay[day.dateKey] ||
-    (day.parts.length > 0 && day.parts.every((part) => part.session.status === "completed")
+    (day.parts.length > 0 &&
+    day.parts.every((part) => part.session.status === "completed" || part.session.status === "in_progress")
       ? { state: "done" as const }
       : { state: "idle" as const });
 
@@ -1003,7 +1005,9 @@ function MaterialReader({
       }
       setSessions((current) =>
         current.map((session) =>
-          sessionIds.includes(session.id) ? { ...session, status: "completed" } : session
+          sessionIds.includes(session.id) && session.status === "scheduled"
+            ? { ...session, status: "in_progress" }
+            : session
         )
       );
 

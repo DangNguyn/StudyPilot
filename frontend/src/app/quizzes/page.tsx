@@ -107,7 +107,9 @@ function getLockMessage(quiz: Quiz) {
     return `Cần ôn lại tài liệu thêm ${formatDuration(quiz.review_study_seconds, 900)}`;
   }
 
-  if (quiz.session_status !== "completed") return "Cần hoàn thành buổi học trước";
+  if (quiz.session_status !== "in_progress" && quiz.session_status !== "completed") {
+    return "Cần bắt đầu buổi học trước";
+  }
 
   return "Quiz đã sẵn sàng để làm.";
 }

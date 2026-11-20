@@ -181,6 +181,8 @@ export default function QuizResultPage() {
   const [error, setError] = useState("");
   const [showWeak, setShowWeak] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  /* "Để sau": chỉ ẩn khối nhắc; ngày ôn chưa chọn vẫn được lưu là trống để nhắc lại sau */
+  const [reviewPromptDismissed, setReviewPromptDismissed] = useState(false);
   const [reviewDate, setReviewDate] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   /* Đánh giá của Claude theo mức điểm (tạo một lần rồi lưu lại) */
@@ -417,6 +419,39 @@ export default function QuizResultPage() {
           )}
         </div>
       </section>
+
+      {/* Dưới 80%: yêu cầu chọn một buổi ôn lại, cho phép để sau, không chặn bài tiếp theo */}
+      {levelKey !== "none" && retake && retake.status !== "completed" && !reviewDate && !reviewPromptDismissed && (
+        <section
+          role="alert"
+          className="rounded-[24px] border-2 border-amber-300 bg-amber-50 px-5 py-4"
+        >
+          <p className="flex items-center gap-2 font-bold text-amber-900">
+            <IconAlert size={18} />
+            Bạn chưa đạt 80% ở bài này: hãy chọn một buổi để ôn lại
+          </p>
+          <p className="mt-1 text-sm text-amber-900/80">
+            Chọn ngày bạn sẽ ôn lại phần kiến thức còn yếu. StudyPilot sẽ dựa vào ngày này để nhắc bạn.
+            Bạn vẫn có thể học bài tiếp theo ngay bây giờ.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="sp-btn sp-btn-primary px-4 py-2.5 text-sm"
+            >
+              Chọn ngày ôn lại
+            </button>
+            <button
+              type="button"
+              onClick={() => setReviewPromptDismissed(true)}
+              className="sp-btn sp-btn-secondary px-4 py-2.5 text-sm"
+            >
+              Để sau
+            </button>
+          </div>
+        </section>
+      )}
 
       <WrongAnswerReview
         results={result.results}

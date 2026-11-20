@@ -467,44 +467,23 @@ export default function StudySessionPage() {
     }
   }
 
-  async function handleCompleteSession() {
+  /* Buổi học chỉ hoàn thành khi nộp bài kiểm tra cuối buổi: dẫn thẳng tới bài kiểm tra. */
+  async function handleGoToQuiz() {
     try {
       setIsCompleting(true);
       setActionError("");
 
-      const response = await fetch(
-        `${API_URL}/api/study-sessions/${sessionId}/complete`,
-        {
-          method: "POST",
-        }
+      const response = await fetch(`${API_URL}/api/quizzes`);
+      const result = await response.json().catch(() => ({}));
+      const quizzes: { id: string; study_session_id?: string | null; is_retake?: boolean }[] =
+        result?.data || [];
+      const quiz = quizzes.find(
+        (item) => !item.is_retake && item.study_session_id === sessionId
       );
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          result.detail || "Không thể hoàn thành buổi học."
-        );
-      }
-
-      setSession((current) =>
-        current
-          ? {
-              ...current,
-              status: "completed",
-            }
-          : current
-      );
-
-      if (result.actual_study_seconds !== undefined) {
-        setStudySeconds(result.actual_study_seconds);
-      }
-    } catch (error) {
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : "Đã xảy ra lỗi khi hoàn thành buổi học."
-      );
+      router.push(quiz ? `/quizzes/${quiz.id}` : "/quizzes");
+    } catch {
+      router.push("/quizzes");
     } finally {
       setIsCompleting(false);
     }
@@ -646,11 +625,13 @@ export default function StudySessionPage() {
 
                   <p className="mt-1 text-sm text-[#716A82]">
                     StudyPilot đang ghi nhận thời gian học thực tế của bạn.
+                    Học xong, hãy làm bài kiểm tra cuối buổi: buổi học chỉ
+                    được tính hoàn thành sau khi bạn nộp bài.
                   </p>
 
                   <button
                     type="button"
-                    onClick={handleCompleteSession}
+                    onClick={handleGoToQuiz}
                     disabled={
                       isCompleting ||
                       studySeconds < MINIMUM_STUDY_SECONDS
@@ -658,12 +639,12 @@ export default function StudySessionPage() {
                     className="mt-4 rounded-xl bg-[#5B7FE3] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#4566D1] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isCompleting
-                      ? "Đang hoàn thành..."
+                      ? "Đang mở bài kiểm tra..."
                       : studySeconds < MINIMUM_STUDY_SECONDS
                         ? `Cần học thêm ${formatStudyTime(
                             MINIMUM_STUDY_SECONDS - studySeconds
                           )}`
-                        : "Hoàn thành buổi học"}
+                        : "Làm bài kiểm tra cuối buổi →"}
                   </button>
                 </div>
 
@@ -691,9 +672,8 @@ export default function StudySessionPage() {
                   </p>
 
                   <p className="mt-1 text-sm text-[#716A82]">
-                    Bài kiểm tra kiến thức đã được StudyPilot tạo tự động
-                    cho buổi học này. Bạn có thể vào mục Kiểm tra kiến thức
-                    để thực hiện bài kiểm tra.
+                    Bạn đã nộp bài kiểm tra cuối buổi. Xem kết quả và phần
+                    cần ôn lại trong mục Kiểm tra kiến thức.
                   </p>
                 </div>
 
