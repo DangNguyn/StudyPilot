@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getMainTopicTitle } from "@/lib/content-titles";
@@ -10,6 +10,7 @@ import {
   IconBook,
   IconCheck,
   IconChevronDown,
+  IconChevronLeft,
   IconChevronRight,
   IconClock,
   IconFile,
@@ -671,31 +672,11 @@ function SubjectQuizzes({
         </p>
       ) : (
         GROUP_ORDER.filter((key) => filter === "all" || filter === key).map((key) => (
-          <section key={key} className="space-y-4 pt-2">
-            <div className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3.5">
-              <span className={`flex h-[52px] w-[52px] items-center justify-center rounded-2xl border-2 border-[var(--sp-purple-deep)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)] ${GROUPS[key].tone}`}>
-                {GROUPS[key].icon}
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-[24px] text-[var(--sp-ink)]">{GROUPS[key].name}</h2>
-                <p className="text-sm text-[var(--sp-muted)]">{GROUPS[key].desc}</p>
-              </div>
-              <span className="sp-chip border-2 border-[var(--sp-line)] bg-white text-[var(--sp-muted)]">
-                {grouped[key].length} bài
-              </span>
-            </div>
-            {grouped[key].length === 0 ? (
-              <p className="rounded-2xl border-2 border-dashed border-[var(--sp-line)] px-5 py-4 text-sm text-[var(--sp-muted)]">
-                {key === "review" ? "Chưa có bài ôn tập. Bài dưới 80% sẽ có bài ôn ở đây." : "Chưa có bài nào."}
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                {grouped[key].map(({ quiz, latest, state }) => (
-                  <QuizCard key={quiz.id} quiz={quiz} latest={latest} state={state} group={key} today={today} />
-                ))}
-              </div>
-            )}
-          </section>
+          <GroupSection key={key} group={key} count={grouped[key].length} horizontal={filter === "all"}>
+            {grouped[key].map(({ quiz, latest, state }) => (
+              <QuizCard key={quiz.id} quiz={quiz} latest={latest} state={state} group={key} today={today} />
+            ))}
+          </GroupSection>
         ))
       )}
 
@@ -716,6 +697,94 @@ function SubjectQuizzes({
         )}
       </p>
     </div>
+  );
+}
+
+/* Một nhóm bài: tab Tất cả xếp một hàng ngang vuốt được, tab riêng xếp lưới dọc 2 cột */
+function GroupSection({
+  group,
+  count,
+  horizontal,
+  children,
+}: {
+  group: QuizGroup;
+  count: number;
+  horizontal: boolean;
+  children: React.ReactNode;
+}) {
+  const track = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ start: true, end: true });
+  const showArrows = horizontal && count > 0;
+
+  const updateEdges = () => {
+    const el = track.current;
+    if (el) setEdges({ start: el.scrollLeft < 4, end: el.scrollLeft + el.clientWidth > el.scrollWidth - 4 });
+  };
+  useEffect(() => {
+    if (!showArrows) return;
+    updateEdges();
+    window.addEventListener("resize", updateEdges);
+    return () => window.removeEventListener("resize", updateEdges);
+  }, [showArrows, count]);
+
+  const arrow = (dir: 1 | -1) => {
+    const disabled = dir < 0 ? edges.start : edges.end;
+    return (
+      <button
+        type="button"
+        aria-label={dir < 0 ? "Xem bài phía trước" : "Xem thêm bài"}
+        disabled={disabled}
+        onClick={() => track.current?.scrollBy({ left: dir * 490, behavior: "smooth" })}
+        className={`flex h-10 w-10 items-center justify-center rounded-xl border-2 bg-white ${
+          disabled
+            ? "cursor-default border-[var(--sp-line)] text-[var(--sp-soft)]"
+            : "border-[var(--sp-purple-deep)] text-[var(--sp-purple-deep)] shadow-[2px_2px_0_var(--sp-purple-deep)]"
+        }`}
+      >
+        {dir < 0 ? <IconChevronLeft size={18} /> : <IconChevronRight size={18} />}
+      </button>
+    );
+  };
+
+  return (
+    <section className="space-y-4 pt-2">
+      <div className={`grid items-center gap-3.5 ${showArrows ? "grid-cols-[52px_minmax(0,1fr)_auto_auto]" : "grid-cols-[52px_minmax(0,1fr)_auto]"}`}>
+        <span className={`flex h-[52px] w-[52px] items-center justify-center rounded-2xl border-2 border-[var(--sp-purple-deep)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)] ${GROUPS[group].tone}`}>
+          {GROUPS[group].icon}
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-[24px] text-[var(--sp-ink)]">{GROUPS[group].name}</h2>
+          <p className="text-sm text-[var(--sp-muted)]">{GROUPS[group].desc}</p>
+        </div>
+        <span className="sp-chip border-2 border-[var(--sp-line)] bg-white text-[var(--sp-muted)]">{count} bài</span>
+        {showArrows && (
+          <div className="flex gap-2">
+            {arrow(-1)}
+            {arrow(1)}
+          </div>
+        )}
+      </div>
+      {count === 0 ? (
+        <p className="rounded-2xl border-2 border-dashed border-[var(--sp-line)] px-5 py-4 text-sm text-[var(--sp-muted)]">
+          {group === "review" ? "Chưa có bài ôn tập. Bài dưới 80% sẽ có bài ôn ở đây." : "Chưa có bài nào."}
+        </p>
+      ) : horizontal ? (
+        <>
+          <p className="-mt-2 pl-[66px] text-[12.5px] text-[var(--sp-muted)]">
+            {group === "done" ? "Mới nhất bên trái · vuốt sang phải để xem bài cũ hơn" : "Bài cần làm trước ở bên trái · vuốt sang phải để xem thêm"}
+          </p>
+          <div
+            ref={track}
+            onScroll={updateEdges}
+            className="flex snap-x snap-mandatory gap-5 overflow-x-auto pb-4 pl-0.5 pr-2.5 pt-1 [&>*]:w-[86vw] [&>*]:shrink-0 [&>*]:snap-start sm:[&>*]:w-[470px]"
+          >
+            {children}
+          </div>
+        </>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">{children}</div>
+      )}
+    </section>
   );
 }
 
@@ -826,7 +895,7 @@ function QuizCard({
 
   return (
     <article
-      className={`flex flex-col rounded-[22px] border-2 bg-white px-5 pb-5 pt-5 sm:px-6 ${
+      className={`flex flex-col rounded-[20px] border-2 bg-white px-5 pb-[18px] pt-[18px] ${
         locked
           ? "border-[var(--sp-line)] bg-[#fdfcfe]"
           : group === "done"
@@ -836,9 +905,9 @@ function QuizCard({
               : "border-[var(--sp-purple-deep)] shadow-[6px_6px_0_var(--sp-peri)]"
       }`}
     >
-      <div className="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-4">
+      <div className="grid grid-cols-[48px_minmax(0,1fr)] items-center gap-3.5">
         <span
-          className={`flex h-14 w-14 items-center justify-center rounded-2xl border-2 ${
+          className={`flex h-12 w-12 items-center justify-center rounded-2xl border-2 ${
             locked
               ? "border-[var(--sp-line)] bg-[var(--sp-surface-2)] text-[var(--sp-soft)]"
               : `border-[var(--sp-purple-deep)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)] ${GROUPS[group].tone}`
@@ -848,7 +917,7 @@ function QuizCard({
         </span>
         <div className="min-w-0">
           <p
-            className={`sp-accent text-[17px] leading-tight ${
+            className={`sp-accent text-[15px] leading-tight ${
               locked
                 ? "text-[var(--sp-soft)]"
                 : group === "done"
@@ -860,7 +929,7 @@ function QuizCard({
           >
             {kicker}
           </p>
-          <h3 className={`mt-1 text-[18px] font-extrabold leading-snug ${locked ? "text-[var(--sp-muted)]" : "text-[var(--sp-ink)]"}`}>
+          <h3 className={`mt-1 min-h-[2.7em] text-[16.5px] font-extrabold leading-snug ${locked ? "text-[var(--sp-muted)]" : "text-[var(--sp-ink)]"}`}>
             {quizTitle(quiz)}
           </h3>
         </div>
@@ -876,7 +945,7 @@ function QuizCard({
       </div>
 
       {/* 4 ô thông tin */}
-      <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      <div className="mt-3.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Tile icon={<IconBook size={13} />} label="Phạm vi" value={chapter?.label || (context?.day_number ? `Ngày ${context.day_number}` : "Bài học")} sub={studyKey ? `Ngày học ${shortDate(studyKey)}` : "—"} />
         <Tile icon={<IconList size={13} />} label="Số câu" value={questionCount ? `${questionCount} câu` : "—"} sub={typeLabel} />
         <Tile
@@ -886,15 +955,15 @@ function QuizCard({
           sub={quiz.time_limit_minutes ? "Tính từ lúc bắt đầu" : "Không giới hạn"}
         />
         {scoreSource && tone ? (
-          <div className={`min-w-0 rounded-[14px] border-2 px-2.5 py-2.5 ${tone.box}`}>
-            <p className={`flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-wide ${tone.text}`}>
+          <div className={`min-w-0 rounded-xl border-2 px-2 py-2 ${tone.box}`}>
+            <p className={`flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wide ${tone.text}`}>
               <IconTrendUp size={13} />
               {group === "done" ? "Kết quả" : "Lần trước"}
             </p>
-            <p className={`mt-1 truncate text-[16px] font-extrabold leading-tight ${tone.text}`}>
+            <p className={`mt-1 truncate text-[14.5px] font-extrabold leading-tight ${tone.text}`}>
               {scoreSource.total ? `${scoreSource.correct}/${scoreSource.total} câu` : `${scoreSource.percent}%`}
             </p>
-            <p className={`mt-0.5 text-[12px] leading-snug ${tone.text}`}>
+            <p className={`mt-0.5 text-[11px] leading-snug ${tone.text}`}>
               {scoreSource.percent}% · {group === "done" ? tone.label : `Bài gốc ${shortDate(scoreSource.date)}`}
             </p>
           </div>
@@ -906,7 +975,7 @@ function QuizCard({
       </div>
 
       {/* Nội dung bài */}
-      <h4 className="mt-5 text-[14px] font-extrabold text-[var(--sp-ink)]">
+      <h4 className="mt-4 text-[13px] font-extrabold text-[var(--sp-ink)]">
         {group === "done" ? "Câu sai cần xem lại" : locked ? "Để mở bài này" : "Câu hỏi được chọn thế nào?"}
       </h4>
       {group === "done" && latest && tone ? (
@@ -946,7 +1015,7 @@ function QuizCard({
               (segment, index) => (
                 <div
                   key={`${segment.label}-${index}`}
-                  className={`flex min-w-0 items-center gap-1.5 px-3 py-2 text-[13px] font-bold text-white ${segmentStyle(segment.kind)} ${
+                  className={`flex min-w-0 items-center gap-1.5 px-3 py-2 text-[12.5px] font-bold text-white ${segmentStyle(segment.kind)} ${
                     index > 0 ? "border-l-2 border-white/60" : ""
                   }`}
                   style={{ flexGrow: segment.count, flexBasis: 0 }}
@@ -981,36 +1050,36 @@ function QuizCard({
       <div className="min-h-2 flex-1" />
 
       {/* Hành động */}
-      <div className="mt-4 grid grid-cols-1 items-center gap-3 border-t-2 border-dashed border-[var(--sp-line)] pt-4 sm:grid-cols-[170px_170px_minmax(0,1fr)]">
+      <div className="mt-4 grid grid-cols-2 items-center gap-2.5 border-t-2 border-dashed border-[var(--sp-line)] pt-3.5">
         {group === "done" && latest ? (
-          <Link href={`/quiz-results/${latest.attempt_id}`} className="sp-btn sp-btn-primary h-11 justify-center !bg-emerald-600 text-[14px]">
+          <Link href={`/quiz-results/${latest.attempt_id}`} className="sp-btn sp-btn-primary h-[42px] justify-center !bg-emerald-600 text-[13.5px]">
             <IconCheck size={16} />
             Xem câu sai
           </Link>
         ) : !locked ? (
           <Link
             href={`/quizzes/${quiz.id}`}
-            className={`sp-btn sp-btn-primary h-11 justify-center text-[14px] ${group === "review" ? "!bg-[var(--sp-pink)]" : ""}`}
+            className={`sp-btn sp-btn-primary h-[42px] justify-center text-[13.5px] ${group === "review" ? "!bg-[var(--sp-pink)]" : ""}`}
           >
             <IconPlay size={16} />
             {group === "review" ? "Làm bài ôn" : "Làm bài"}
           </Link>
         ) : group === "review" ? (
-          <Link href={lessonHref} className="sp-btn sp-btn-primary h-11 justify-center !bg-[var(--sp-pink)] text-[14px]">
+          <Link href={lessonHref} className="sp-btn sp-btn-primary h-[42px] justify-center !bg-[var(--sp-pink)] text-[13.5px]">
             <IconRepeat size={16} />
             Vào ôn
           </Link>
         ) : (
-          <span className="sp-btn h-11 cursor-not-allowed justify-center border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-surface-2)] text-[14px] text-[var(--sp-soft)]">
+          <span className="sp-btn h-[42px] cursor-not-allowed justify-center border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-surface-2)] text-[13.5px] text-[var(--sp-soft)]">
             <IconLock size={15} />
             Chưa mở
           </span>
         )}
-        <Link href={lessonHref} className="sp-btn sp-btn-secondary h-11 justify-center text-[14px]">
+        <Link href={lessonHref} className="sp-btn sp-btn-secondary h-[42px] justify-center text-[13.5px]">
           {locked && group === "todo" ? <IconBook size={16} /> : <IconFile size={16} />}
           {locked && group === "todo" ? "Vào học" : "Xem lại bài học"}
         </Link>
-        <p className="text-[12.5px] leading-5 text-[var(--sp-muted)]">
+        <p className="col-span-2 text-[12px] leading-5 text-[var(--sp-muted)]">
           {group === "done"
             ? quiz.is_retake
               ? "Đã đạt bài ôn tập."
@@ -1032,13 +1101,13 @@ function QuizCard({
 
 function Tile({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub: string }) {
   return (
-    <div className="min-w-0 rounded-[14px] border-2 border-[var(--sp-line)] bg-white px-2.5 py-2.5">
-      <p className="flex items-center gap-1 whitespace-nowrap text-[10.5px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">
+    <div className="min-w-0 rounded-xl border-2 border-[var(--sp-line)] bg-white px-2 py-2">
+      <p className="flex items-center gap-1 whitespace-nowrap text-[9.5px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">
         {icon}
         {label}
       </p>
-      <p className="mt-1 truncate text-[16px] font-extrabold leading-tight text-[var(--sp-ink)]">{value}</p>
-      <p className="mt-0.5 text-[12px] leading-snug text-[var(--sp-muted)]">{sub}</p>
+      <p className="mt-1 truncate text-[14.5px] font-extrabold leading-tight text-[var(--sp-ink)]">{value}</p>
+      <p className="mt-0.5 text-[11px] leading-snug text-[var(--sp-muted)]">{sub}</p>
     </div>
   );
 }
@@ -1047,7 +1116,7 @@ function BulletList({ items, dot }: { items: string[]; dot: string }) {
   return (
     <ul className="mt-2.5 space-y-1.5">
       {items.map((item) => (
-        <li key={item} className="grid grid-cols-[8px_minmax(0,1fr)] items-center gap-2.5 text-[13.5px] text-[var(--sp-text-2)]">
+        <li key={item} className="grid grid-cols-[8px_minmax(0,1fr)] items-center gap-2.5 text-[12.5px] text-[var(--sp-text-2)]">
           <span className={`h-2 w-2 rounded-full ${dot}`} />
           {item}
         </li>
