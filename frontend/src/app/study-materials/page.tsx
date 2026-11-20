@@ -28,6 +28,10 @@ import PracticeQuizPanel, {
 } from "@/components/practice-quiz-panel";
 import StudyTimer from "@/components/study-timer";
 import ChapterMindmap from "@/components/chapter-mindmap";
+import { LoadingPlay } from "@/components/loading-play";
+
+/* Các bước hiện ở màn chờ tải tài liệu (tiến độ ước lượng theo thời gian) */
+const MATERIAL_STAGES = ["Tải tài liệu", "Đọc nội dung", "Chia bài học", "Soạn tóm tắt"];
 import {
   SessionModeBanner,
   parseSessionMode,
@@ -364,6 +368,8 @@ function StudyMaterialsPageContent() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [plans, setPlans] = useState<ExamPlan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Người dùng đang chơi game ở màn chờ: giữ màn chờ tới khi họ bấm "Vào học ngay"
+  const [holdLoading, setHoldLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -420,12 +426,16 @@ function StudyMaterialsPageContent() {
     router.push(id ? `${pathname}?subject=${encodeURIComponent(id)}` : pathname);
   };
 
-  if (isLoading) {
+  if (isLoading || holdLoading) {
     return (
-      <div className="sp-card mx-auto max-w-5xl p-10 text-center text-[var(--sp-muted)]">
-        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-        Đang tải tài liệu học tập...
-      </div>
+      <LoadingPlay
+        title="Đang tải tài liệu học tập…"
+        stages={MATERIAL_STAGES}
+        expectedSeconds={20}
+        done={!isLoading}
+        onPlayingChange={setHoldLoading}
+        onContinue={() => setHoldLoading(false)}
+      />
     );
   }
 
@@ -632,6 +642,7 @@ function MaterialReader({
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [mode, setMode] = useState<"summary" | "source">("summary");
   const [isLoading, setIsLoading] = useState(true);
+  const [holdLoading, setHoldLoading] = useState(false);
   const [error, setError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   /* Câu hỏi ôn nhanh theo chủ đề (không liên quan bài kiểm tra kiến thức) */
@@ -859,14 +870,18 @@ function MaterialReader({
     </nav>
   );
 
-  if (isLoading) {
+  if (isLoading || holdLoading) {
     return (
       <div className="mx-auto max-w-[1240px]">
         {header}
-        <div className="sp-card p-10 text-center text-[var(--sp-muted)]">
-          <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-          Đang mở tài liệu {subject.name}...
-        </div>
+        <LoadingPlay
+          title={`Đang mở tài liệu ${subject.name}…`}
+          stages={MATERIAL_STAGES}
+          expectedSeconds={20}
+          done={!isLoading}
+          onPlayingChange={setHoldLoading}
+          onContinue={() => setHoldLoading(false)}
+        />
       </div>
     );
   }

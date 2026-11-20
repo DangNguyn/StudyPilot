@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { LoadingMascot } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import {
   IconArrowRight,
@@ -151,9 +152,7 @@ export default function QuizzesPage() {
   return (
     <Suspense
       fallback={
-        <div className="sp-card mx-auto max-w-6xl p-10 text-center text-[var(--sp-muted)]">
-          Đang tải bài kiểm tra...
-        </div>
+        <LoadingMascot text="Đang tải bài kiểm tra…" className="max-w-6xl" />
       }
     >
       <QuizzesContent />
@@ -245,10 +244,7 @@ function QuizzesContent() {
 
   if (loading) {
     return (
-      <div className="sp-card mx-auto max-w-6xl p-10 text-center text-[var(--sp-muted)]">
-        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-        Đang tải bài kiểm tra...
-      </div>
+      <LoadingMascot text="Đang tải bài kiểm tra…" className="max-w-6xl" />
     );
   }
 

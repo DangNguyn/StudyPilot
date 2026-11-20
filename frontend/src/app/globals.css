@@ -400,3 +400,41 @@ main button[class*="bg-[#5B7FE3]"]:disabled {
   .sp-route-node { animation: none; opacity: 1; transform: none; }
   .sp-route-fill { animation: none; width: var(--sp-route-fill, 25%); }
 }
+
+/* Linh vật Pilot và màn chờ có game (components/loading-play.tsx) */
+.sp-pilot .sp-pilot-body { transform-origin: 100px 170px; animation: sp-pilot-breathe 2.4s ease-in-out infinite; }
+.sp-pilot.sp-pilot-jump .sp-pilot-body { animation: sp-pilot-hop 0.6s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.sp-pilot .sp-pilot-page { transform-origin: 100px 128px; animation: sp-pilot-flip 2.2s ease-in-out infinite; }
+.sp-pilot .sp-pilot-blink { transform-origin: 105px 86px; animation: sp-pilot-blink 4s infinite; }
+.sp-pilot[role="button"] { transition: transform 0.2s; }
+.sp-pilot[role="button"]:hover { transform: scale(1.04) rotate(-2deg); }
+@keyframes sp-pilot-breathe { 50% { transform: scaleY(1.03) translateY(-2px); } }
+@keyframes sp-pilot-hop { 40% { transform: translateY(-34px) rotate(-6deg); } 70% { transform: translateY(0) scaleY(0.92); } }
+@keyframes sp-pilot-flip { 0%, 40% { transform: scaleX(1); } 55%, 100% { transform: scaleX(-1); } }
+@keyframes sp-pilot-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+.sp-loading-stripes {
+  background: repeating-linear-gradient(135deg, var(--sp-peri) 0 10px, #7b98ec 10px 20px);
+  background-size: 28px 28px;
+  animation: sp-loading-stripes 1s linear infinite;
+}
+@keyframes sp-loading-stripes { to { background-position: 28px 0; } }
+.sp-loading-box { background: var(--sp-paper) radial-gradient(#e9e2d3 1px, transparent 1px) 0 0 / 22px 22px; }
+@media (min-width: 640px) {
+  .sp-loading-bubble::before {
+    content: "";
+    position: absolute;
+    left: -11px;
+    top: 28px;
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    border-left: 2px solid var(--sp-purple-deep);
+    border-bottom: 2px solid var(--sp-purple-deep);
+    transform: rotate(45deg);
+  }
+}
+.sp-spark { animation: sp-spark 0.9s ease-out forwards; }
+@keyframes sp-spark { to { transform: translate(var(--dx), var(--dy)) rotate(90deg) scale(0.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .sp-pilot .sp-pilot-body, .sp-pilot .sp-pilot-page, .sp-pilot .sp-pilot-blink, .sp-loading-stripes { animation: none; }
+}

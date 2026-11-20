@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { LoadingMascot } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import {
   IconAlert,
@@ -551,10 +552,7 @@ function WeakAreasPageContent() {
 
   if (isLoading) {
     return (
-      <div className="sp-card mx-auto max-w-5xl p-10 text-center text-[var(--sp-muted)]">
-        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-        Đang tổng hợp kết quả học tập...
-      </div>
+      <LoadingMascot text="Đang tổng hợp kết quả học tập…" sub="Pilot đang chấm lại từng bài kiểm tra, chờ mình xíu nhé!" />
     );
   }
 

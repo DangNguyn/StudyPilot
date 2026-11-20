@@ -24,6 +24,17 @@ import {
   type PlanMode,
 } from "@/components/plan-create-panels";
 import { IconCheck, Sparkle } from "@/components/icons";
+import { LoadingPlay } from "@/components/loading-play";
+
+/* Màn chờ khi tạo kế hoạch: 4 bước, suy ra từ dòng trạng thái đang chạy */
+const PLAN_STAGES = ["Tải tài liệu lên", "AI đọc & chia chương", "Xếp lịch học", "Tạo bài kiểm tra"];
+function planStage(step: string) {
+  const text = step.toLowerCase();
+  if (/môn học|chuẩn bị|tải tài liệu/.test(text)) return 0;
+  if (/đọc và chia|phân tích/.test(text)) return 1;
+  if (/lịch học|lưu các buổi/.test(text)) return 2;
+  return 3;
+}
 
 type ExamPlan = {
   id: string;
@@ -230,6 +241,9 @@ export default function StudyPlansPage() {
     useState<FeedbackType>("info");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionStep, setSubmissionStep] = useState("");
+  // Đang chơi game ở màn chờ thì tạo xong không tự chuyển trang, chờ người dùng bấm "Xem kế hoạch"
+  const playingWhileWaiting = useRef(false);
+  const [createdHref, setCreatedHref] = useState<string | null>(null);
 
   function setFeedback(
     nextMessage: string,
@@ -1042,7 +1056,8 @@ export default function StudyPlansPage() {
       void loadOutline(null);
 
       // Chuyển tới trang kế hoạch chi tiết với lịch từng ngày
-      router.push(`/study-plans/${planId}`);
+      if (playingWhileWaiting.current) setCreatedHref(`/study-plans/${planId}`);
+      else router.push(`/study-plans/${planId}`);
     } catch (error) {
       const errorMessage =
         error instanceof Error
@@ -1240,6 +1255,25 @@ export default function StudyPlansPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
+      {(isSubmitting || createdHref) && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-[rgba(36,18,58,0.45)] px-4 py-10 backdrop-blur-[2px]">
+          <LoadingPlay
+            kicker="AI đang dựng kế hoạch ôn thi cho bạn"
+            title={submissionStep || "Đang tạo kế hoạch…"}
+            doneTitle="Kế hoạch đã sẵn sàng"
+            stages={PLAN_STAGES}
+            stage={planStage(submissionStep)}
+            expectedSeconds={90}
+            done={Boolean(createdHref)}
+            continueLabel="Xem kế hoạch"
+            onPlayingChange={(playing) => {
+              playingWhileWaiting.current = playing;
+              if (!playing && createdHref) router.push(createdHref);
+            }}
+            onContinue={() => createdHref && router.push(createdHref)}
+          />
+        </div>
+      )}
       {/* Page heading */}
       <section>
         <p className="text-sm font-medium text-[#716A82]">

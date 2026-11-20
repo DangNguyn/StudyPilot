@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { LoadingMascot } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import StudyCalendar from "@/components/study-calendar";
 import type { CalendarEntry } from "@/lib/study-calendar";
@@ -676,13 +677,7 @@ export default function StudyPlanDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="sp-card mx-auto max-w-6xl p-10 text-center text-[var(--sp-muted)]">
-        <Sparkle
-          size={22}
-          className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]"
-        />
-        Đang tải lộ trình ôn tập...
-      </div>
+      <LoadingMascot text="Đang tải lộ trình ôn tập…" className="max-w-6xl" />
     );
   }
 
