@@ -1560,6 +1560,17 @@ function FormulaCard({ formula }: { formula: Formula }) {
   );
 }
 
+/* Tiêu đề thẻ: căn giữa, phần trong ngoặc xuống dòng riêng, vd "Technique (Kỹ thuật)" */
+function CardTitle({ text }: { text: string }) {
+  const match = text.match(/^(.+?)\s*(\([^()]*\))\s*$/);
+  return (
+    <p className="text-center text-lg font-extrabold leading-7 text-[var(--sp-purple)]">
+      {renderMath(match ? match[1] : text)}
+      {match && <span className="block">{renderMath(match[2])}</span>}
+    </p>
+  );
+}
+
 function TableBlock({ table }: { table: SectionTable }) {
   const headers = table.headers || [];
   const rows = (table.rows || []).filter((row) => row.some(Boolean));
@@ -1578,7 +1589,7 @@ function TableBlock({ table }: { table: SectionTable }) {
             key={index}
             className="rounded-2xl border-2 border-[var(--sp-line)] bg-white p-4 transition hover:border-[var(--sp-lav-line)]"
           >
-            <p className="text-lg font-extrabold text-[var(--sp-purple)]">{renderMath(row[0])}</p>
+            <CardTitle text={row[0]} />
             {row.slice(1).map((cell, cellIndex) =>
               cell ? (
                 <p key={cellIndex} className="mt-1 text-sm leading-6 text-[var(--sp-text-2)]">
