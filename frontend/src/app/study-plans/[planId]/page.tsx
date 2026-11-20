@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { SmartLoading } from "@/components/loading-play";
+import { PilotMascot, SmartLoading } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import StudyCalendar from "@/components/study-calendar";
 import type { CalendarEntry } from "@/lib/study-calendar";
@@ -988,93 +988,7 @@ export default function StudyPlanDetailPage() {
           )}
         </section>
 
-        <aside className="sp-card flex flex-col p-5 sm:p-6">
-          <div className="mb-4 flex items-end justify-between">
-            <div>
-              <p className="sp-accent text-[17px] text-[var(--sp-pink)]">
-                {upcomingDays.days.length} ngày học tới
-              </p>
-              <h2 className="text-[22px] text-[var(--sp-ink)]">Sắp tới</h2>
-            </div>
-            <a
-              href="#full-schedule"
-              className="flex items-center gap-1 text-sm font-bold text-[var(--sp-peri-dark)] hover:underline"
-            >
-              Cả lịch <IconArrowRight size={16} />
-            </a>
-          </div>
-
-          {upcomingDays.days.length === 0 ? (
-            <p className="rounded-2xl bg-[var(--sp-surface-2)] p-5 text-sm text-[var(--sp-muted)]">
-              Không còn buổi học nào phía trước. Hãy ôn lại các chương cần
-              củng cố trước ngày thi.
-            </p>
-          ) : (
-            <ul className="divide-y divide-[var(--sp-line)]">
-              {upcomingDays.days.map((day) => (
-                <li
-                  key={day.dateKey}
-                  className="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-3 py-3.5 first:pt-1"
-                >
-                  <div className="flex h-[56px] flex-col items-center justify-center rounded-2xl border-2 border-[var(--sp-lav-line)] bg-[var(--sp-lav)] text-center">
-                    <p className="text-xs font-bold uppercase leading-none text-[var(--sp-muted)]">
-                      {weekdayShort(day.dateKey)}
-                    </p>
-                    <p className="mt-1 text-[17px] font-extrabold leading-none text-[var(--sp-purple)]">
-                      {formatDayMonth(day.dateKey)}
-                    </p>
-                  </div>
-                  <ul className="min-w-0 space-y-2">
-                    {day.items.map((insight) => (
-                      <li
-                        key={insight.session.id}
-                        className="grid grid-cols-[8px_minmax(0,1fr)_30px] items-center gap-2 text-[14px] leading-snug"
-                      >
-                        <span className="h-2 w-2 rounded-full bg-[var(--sp-peri)]" />
-                        <span className="text-[var(--sp-ink)]">
-                          {getTopicTitle(insight.topic)}
-                        </span>
-                        <span className="text-right text-[13px] tabular-nums text-[var(--sp-muted)]">
-                          {insight.session.duration_minutes}′
-                        </span>
-                      </li>
-                    ))}
-                    {day.reviews.map((insight) => (
-                      <li
-                        key={`review-${insight.session.id}`}
-                        className="grid grid-cols-[8px_minmax(0,1fr)_30px] items-center gap-2 text-[14px] leading-snug"
-                      >
-                        <span className="h-2 w-2 rounded-full bg-[var(--sp-pink)]" />
-                        <span className="text-[var(--sp-ink)]">
-                          Ôn lại: {getTopicTitle(insight.topic)}
-                        </span>
-                        <span className="text-right text-[12px] font-bold text-[var(--sp-pink-dark)]">
-                          Ôn
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {upcomingDays.restDays.length > 0 && (
-            <p className="mt-2 flex items-center gap-2 text-sm text-[var(--sp-muted)]">
-              <IconMoon size={16} className="shrink-0" />
-              {upcomingDays.restDays
-                .map((key) => `${weekdayLong(key)} ${formatDayMonth(key)}`)
-                .join(", ")}{" "}
-              nghỉ
-            </p>
-          )}
-
-          <div className="mt-auto flex flex-wrap gap-x-5 gap-y-2 border-t border-[var(--sp-line)] pt-4 text-[13px] text-[var(--sp-text-2)]">
-            <Legend color="var(--sp-peri)" label="Học mới" />
-            <Legend color="var(--sp-pink)" label="Ôn lại" />
-            <Legend color="var(--sp-purple)" label="Kiểm tra" />
-          </div>
-        </aside>
+        <UpcomingCard days={upcomingDays.days} restDays={upcomingDays.restDays} todayKey={todayKey} daysLeft={daysLeft} />
       </div>
 
       {/* ===== Lịch tháng ===== */}
@@ -1131,6 +1045,190 @@ function BannerStat({
       </p>
       {children}
     </div>
+  );
+}
+
+/* ================= Sắp tới: dòng thời gian 4 ngày học tới ================= */
+
+type UpcomingDay = { dateKey: string; items: SessionInsight[]; reviews: SessionInsight[] };
+
+/* 140 → "2h20′", 45 → "45′" */
+function shortMinutes(minutes: number) {
+  if (minutes < 60) return `${minutes}′`;
+  const rest = minutes % 60;
+  return `${Math.floor(minutes / 60)}h${rest ? `${String(rest).padStart(2, "0")}′` : ""}`;
+}
+
+function UpcomingCard({
+  days,
+  restDays,
+  todayKey,
+  daysLeft,
+}: {
+  days: UpcomingDay[];
+  restDays: string[];
+  todayKey: string;
+  daysLeft: number;
+}) {
+  const [line, setLine] = useState(0);
+  const minutesOf = (day: UpcomingDay) => day.items.reduce((sum, insight) => sum + (insight.session.duration_minutes || 0), 0);
+  const lessonCount = days.reduce((sum, day) => sum + day.items.length, 0);
+  const reviewCount = days.reduce((sum, day) => sum + day.reviews.length, 0);
+  const totalMinutes = days.reduce((sum, day) => sum + minutesOf(day), 0);
+  const tomorrow = addDays(todayKey, 1);
+  const dayName = (key: string) => (key === tomorrow ? "Mai" : `${weekdayLong(key)} ${formatDayMonth(key)}`);
+
+  // Câu Pilot nói: việc ngày gần nhất, ngày nặng nhất, đếm ngược ngày thi
+  const lines: string[] = [];
+  const first = days[0];
+  if (first) {
+    lines.push(
+      first.items.length === 0 && first.reviews.length === 1
+        ? `${dayName(first.dateKey)} mình ôn lại “${getTopicTitle(first.reviews[0].topic)}” nha, chỉ một bài thôi!`
+        : `${dayName(first.dateKey)} có ${[
+            first.items.length && `${first.items.length} bài mới`,
+            first.reviews.length && `${first.reviews.length} bài ôn`,
+          ]
+            .filter(Boolean)
+            .join(" + ")}, cố lên!`
+    );
+  }
+  const heaviest = [...days].sort((a, b) => minutesOf(b) - minutesOf(a))[0];
+  if (heaviest && heaviest !== first && heaviest.items.length + heaviest.reviews.length >= 3) {
+    lines.push(
+      `${weekdayLong(heaviest.dateKey)} hơi nặng: ${heaviest.items.length} bài mới${
+        heaviest.reviews.length ? ` + ${heaviest.reviews.length} bài ôn` : ""
+      }. Nhớ ngủ sớm hôm trước nha!`
+    );
+  }
+  lines.push(`Còn ${daysLeft} ngày nữa là thi, mình đi cùng bạn!`);
+
+  return (
+    <aside className="flex flex-col rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-white p-5 shadow-[6px_6px_0_var(--sp-lav-line)] sm:p-6">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+        <div>
+          <p className="sp-accent text-[17px] text-[var(--sp-pink)]">{days.length} ngày học tới</p>
+          <h2 className="text-[22px] text-[var(--sp-ink)]">Sắp tới</h2>
+        </div>
+        <a href="#full-schedule" className="flex items-center gap-1 text-sm font-bold text-[var(--sp-peri-dark)] hover:underline">
+          Cả lịch <IconArrowRight size={16} />
+        </a>
+      </div>
+
+      {days.length === 0 ? (
+        <p className="mt-4 rounded-2xl bg-[var(--sp-surface-2)] p-5 text-sm text-[var(--sp-muted)]">
+          Không còn buổi học nào phía trước. Hãy ôn lại các chương cần củng cố trước ngày thi.
+        </p>
+      ) : (
+        <>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {[
+              { value: lessonCount, label: "buổi học", shadow: "var(--sp-lav-line)" },
+              { value: reviewCount, label: "buổi ôn", shadow: "var(--sp-pink-line)" },
+              { value: shortMinutes(totalMinutes), label: "tổng giờ", shadow: "#f3dc9b" },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="rounded-[14px] border-2 border-[var(--sp-purple-deep)] px-2.5 py-1.5"
+                style={{ boxShadow: `2px 2px 0 ${stat.shadow}` }}
+              >
+                <p className="text-[19px] font-extrabold leading-tight text-[var(--sp-purple)]">{stat.value}</p>
+                <p className="text-[11.5px] font-bold text-[var(--sp-muted)]">{stat.label}</p>
+              </div>
+            ))}
+          </div>
+
+          <ol className="relative mt-4 space-y-3.5 before:absolute before:bottom-3 before:left-[25px] before:top-3 before:border-l-2 before:border-dashed before:border-[var(--sp-lav-line)]">
+            {days.map((day, index) => {
+              const next = index === 0;
+              const minutes = minutesOf(day);
+              return (
+                <li key={day.dateKey} className="relative grid grid-cols-[52px_minmax(0,1fr)] items-start gap-3">
+                  <div
+                    className={`relative z-[1] grid h-14 content-center justify-items-center rounded-[15px] border-2 border-[var(--sp-purple-deep)] ${
+                      next ? "bg-[var(--sp-yellow)] shadow-[3px_3px_0_var(--sp-pink)]" : "bg-white shadow-[2px_2px_0_var(--sp-lav-line)]"
+                    }`}
+                  >
+                    <span className={`text-[11px] font-extrabold uppercase leading-none ${next ? "text-[var(--sp-purple-deep)]" : "text-[var(--sp-muted)]"}`}>
+                      {day.dateKey === addDays(todayKey, 1) ? "Mai" : weekdayShort(day.dateKey)}
+                    </span>
+                    <span className="text-[16px] font-extrabold leading-tight text-[var(--sp-purple)]">{formatDayMonth(day.dateKey)}</span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="mb-1.5 mt-0.5 flex items-center justify-between gap-2 text-[12px] font-extrabold text-[var(--sp-muted)]">
+                      {weekdayLong(day.dateKey)}
+                      <span className={day.items.length === 0 ? "text-[var(--sp-pink-dark)]" : ""}>
+                        {[minutes > 0 && formatDuration(minutes), day.reviews.length > 0 && `${day.reviews.length} buổi ôn`]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    </p>
+                    <ul className="space-y-1.5">
+                      {day.items.map((insight) => (
+                        <li
+                          key={insight.session.id}
+                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-xl border-2 border-l-[5px] border-[var(--sp-lav-line)] border-l-[var(--sp-peri)] bg-white px-2.5 py-1.5 transition hover:-translate-x-px hover:-translate-y-px hover:shadow-[3px_3px_0_var(--sp-lav-line)]"
+                        >
+                          <span className="line-clamp-2 text-[13.5px] font-bold leading-snug text-[var(--sp-ink)]" title={getTopicTitle(insight.topic)}>
+                            {getTopicTitle(insight.topic)}
+                          </span>
+                          <span className="whitespace-nowrap rounded-full bg-[var(--sp-lav)] px-2 py-0.5 text-[11.5px] font-extrabold tabular-nums text-[var(--sp-peri-dark)]">
+                            {insight.session.duration_minutes}′
+                          </span>
+                        </li>
+                      ))}
+                      {day.reviews.map((insight) => (
+                        <li
+                          key={`review-${insight.session.id}`}
+                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-xl border-2 border-l-[5px] border-[var(--sp-pink-line)] border-l-[var(--sp-pink)] bg-[var(--sp-pink-bg)] px-2.5 py-1.5"
+                        >
+                          <span className="line-clamp-2 text-[13.5px] font-bold leading-snug text-[var(--sp-ink)]" title={getTopicTitle(insight.topic)}>
+                            <span className="text-[var(--sp-pink-dark)]">↻ Ôn lại · </span>
+                            {getTopicTitle(insight.topic)}
+                          </span>
+                          <span className="rounded-full bg-[var(--sp-pink)] px-2 py-0.5 text-[11.5px] font-extrabold text-white">Ôn</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+
+          {restDays.length > 0 && (
+            <p className="mt-3 flex items-center gap-2 text-[12.5px] font-semibold text-[var(--sp-muted)]">
+              <IconMoon size={15} className="shrink-0" />
+              {restDays.map((key) => `${weekdayLong(key)} ${formatDayMonth(key)}`).join(", ")} nghỉ
+            </p>
+          )}
+        </>
+      )}
+
+      {/* Pilot nhắc việc sắp tới: lấp chỗ trống cuối thẻ */}
+      <div className="mt-auto grid grid-cols-[72px_minmax(0,1fr)] items-end gap-2.5 pt-4">
+        <button
+          type="button"
+          aria-label="Bấm để Pilot nói câu khác"
+          onClick={() => setLine((value) => (value + 1) % lines.length)}
+          className="h-[72px] w-[72px]"
+        >
+          <PilotMascot size={72} />
+        </button>
+        <p
+          key={line}
+          className="sp-hero-bubble mb-3.5 rounded-[14px_14px_14px_4px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-lav)] px-3 py-2 text-[13px] font-bold leading-snug text-[var(--sp-ink)] shadow-[3px_3px_0_var(--sp-pink-line)] before:hidden"
+          role="status"
+        >
+          {lines[line % lines.length]}
+        </p>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 border-t-2 border-dashed border-[var(--sp-line)] pt-3 text-[12.5px] font-semibold text-[var(--sp-text-2)]">
+        <Legend color="var(--sp-peri)" label="Học mới" />
+        <Legend color="var(--sp-pink)" label="Ôn lại" />
+        <Legend color="var(--sp-yellow)" label="Ngày gần nhất" />
+      </div>
+    </aside>
   );
 }
 
