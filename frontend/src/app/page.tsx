@@ -158,11 +158,12 @@ const QUICK_LINKS: {
   href: string;
   icon: ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
   tone: string;
+  shadow: string;
 }[] = [
-  { title: "Kế hoạch ôn thi", text: "Lịch học và lịch ôn", href: "/study-plans", icon: IconCalendar, tone: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]" },
-  { title: "Tài liệu học tập", text: "Tóm tắt từng bài học", href: "/study-materials", icon: IconFile, tone: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]" },
-  { title: "Kiểm tra kiến thức", text: "Có giải thích câu sai", href: "/quizzes", icon: IconPen, tone: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]" },
-  { title: "Đánh giá năng lực", text: "Tiến độ và điểm yếu", href: "/weak-areas", icon: IconChart, tone: "bg-[#f1e6f7] text-[var(--sp-purple)]" },
+  { title: "Kế hoạch ôn thi", text: "Lịch học và lịch ôn", href: "/study-plans", icon: IconCalendar, tone: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]", shadow: "var(--sp-lav-line)" },
+  { title: "Tài liệu học tập", text: "Tóm tắt từng bài học", href: "/study-materials", icon: IconFile, tone: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]", shadow: "var(--sp-pink-line)" },
+  { title: "Kiểm tra kiến thức", text: "Có giải thích câu sai", href: "/quizzes", icon: IconPen, tone: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]", shadow: "#f3dc9b" },
+  { title: "Đánh giá năng lực", text: "Tiến độ và điểm yếu", href: "/weak-areas", icon: IconChart, tone: "bg-[#f1e6f7] text-[var(--sp-purple)]", shadow: "#e3cdf0" },
 ];
 
 /* ================= Trang ================= */
@@ -295,43 +296,17 @@ export default function Home() {
         </p>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
         {/* ---------- Cột trái ---------- */}
         <div className="min-w-0 space-y-6">
           <PlanHero view={view} percent={percent} loading={loading} />
           <TodayCard view={view} todayKey={todayKey} loading={loading} allDone={allDone} minutesText={minutesText} openCount={open.length} />
+          <QuickLinks />
         </div>
 
-        {/* ---------- Cột phải ---------- */}
-        <div className="min-w-0 space-y-6">
+        {/* ---------- Cột phải: góc đọc kéo dài cho hai cột bằng nhau ---------- */}
+        <div className="flex min-w-0 flex-col gap-6">
           <WeakCard view={view} loading={loading} />
-
-          <section>
-            <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Đi nhanh tới</p>
-            <h2 className="text-[22px] text-[var(--sp-ink)]">Truy cập nhanh</h2>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              {QUICK_LINKS.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="group flex flex-col rounded-[22px] border-2 border-[var(--sp-line)] bg-white p-4 transition hover:-translate-y-0.5 hover:border-[var(--sp-purple)] hover:shadow-[4px_4px_0_var(--sp-lav-line)]"
-                  >
-                    <span className={`flex h-11 w-11 items-center justify-center rounded-xl border-2 border-[var(--sp-purple-deep)] ${item.tone}`}>
-                      <Icon size={20} />
-                    </span>
-                    <span className="mt-3 text-[15px] font-bold leading-snug text-[var(--sp-ink)]">{item.title}</span>
-                    <span className="mt-1 text-[13px] leading-5 text-[var(--sp-muted)]">{item.text}</span>
-                    <span className="mt-3 flex items-center gap-1 text-[13px] font-bold text-[var(--sp-peri-dark)]">
-                      Mở
-                      <IconArrowRight size={14} className="transition group-hover:translate-x-1" />
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
 
           <PilotNook />
         </div>
@@ -805,7 +780,7 @@ function TodayCard({
   const upcoming = view.upcoming;
 
   return (
-    <section className="sp-card relative p-5 sm:p-7">
+    <section className="relative rounded-[26px] border-2 border-[var(--sp-purple-deep)] bg-white p-5 shadow-[6px_6px_0_var(--sp-lav-line)] sm:p-7">
       {/* Chỗ Pilot ngồi trên mép thẻ, chỉ xuống việc đầu tiên */}
       <div className="absolute -top-[96px] right-[160px] hidden h-[120px] w-[110px] lg:block" data-pilot-perch="today" />
 
@@ -880,7 +855,7 @@ function TodayCard({
 
       {/* Sắp tới */}
       {!loading && upcoming && (
-        <div className="mt-3 grid grid-cols-[52px_minmax(0,1fr)] items-center gap-x-4 gap-y-2 rounded-[20px] border-2 border-dashed border-[var(--sp-line)] px-4 py-3 text-[14px] text-[var(--sp-muted)] sm:grid-cols-[64px_minmax(0,1fr)_132px] sm:px-5">
+        <div className="mt-3 grid grid-cols-[52px_minmax(0,1fr)] items-center gap-x-4 gap-y-2 rounded-[20px] border-2 border-[var(--sp-lav-line)] bg-[var(--sp-lav)] px-4 py-3 text-[14px] text-[var(--sp-text-2)] sm:grid-cols-[64px_minmax(0,1fr)_132px] sm:px-5">
           <p className="text-center text-[13px] font-extrabold leading-tight text-[var(--sp-pink-dark)]">
             {daysBetween(todayKey, upcoming.dateKey) === 1 ? "Mai" : WEEKDAY[new Date(`${upcoming.dateKey}T00:00:00Z`).getUTCDay()]}
             <br />
@@ -929,9 +904,9 @@ function TodayCard({
                 : isToday
                   ? "border-2 border-[var(--sp-red)] bg-[var(--sp-red-bg)] text-[var(--sp-red-dark)] shadow-[3px_3px_0_var(--sp-red-line)]"
                   : day.reviews > 0
-                    ? "border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
+                    ? "border-2 border-[var(--sp-pink)] bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)] shadow-[2px_2px_0_var(--sp-pink-line)]"
                     : learnAllDone
-                      ? "bg-[var(--sp-peri)] text-white"
+                      ? "border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-peri)] text-white shadow-[2px_2px_0_var(--sp-purple-deep)]"
                       : isPast
                         ? "border-2 border-[var(--sp-amber-dark)]/30 bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]"
                         : "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]";
@@ -1030,7 +1005,7 @@ function WeakCard({ view, loading }: { view: View; loading: boolean }) {
               <li
                 key={item.key}
                 className={`grid grid-cols-[56px_minmax(0,1fr)] items-center gap-3 rounded-[18px] border-2 px-4 py-3.5 ${
-                  index === 0 ? "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)]" : "border-[var(--sp-line)] bg-white"
+                  index === 0 ? "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)]" : "border-[var(--sp-lav-line)] bg-white"
                 }`}
               >
                 <span className={`text-[23px] font-black ${item.percent < 50 ? "text-[var(--sp-red)]" : "text-[#c98a00]"}`}>{item.percent}%</span>
@@ -1070,15 +1045,68 @@ function WeakCard({ view, loading }: { view: View; loading: boolean }) {
   );
 }
 
+/* ================= Truy cập nhanh ================= */
+
+function QuickLinks() {
+  return (
+    <section>
+      <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Đi nhanh tới</p>
+      <h2 className="text-[22px] text-[var(--sp-ink)]">Truy cập nhanh</h2>
+      <div className="mt-3 grid grid-cols-2 gap-3.5 md:grid-cols-4">
+        {QUICK_LINKS.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              style={{ "--q": item.shadow } as React.CSSProperties}
+              className="group flex flex-col rounded-[20px] border-2 border-[var(--sp-purple-deep)] bg-white p-4 shadow-[4px_4px_0_var(--q)] transition duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_var(--q)]"
+            >
+              <span className={`flex h-11 w-11 items-center justify-center rounded-xl border-2 border-[var(--sp-purple-deep)] ${item.tone}`}>
+                <Icon size={20} />
+              </span>
+              <span className="mt-3 text-[15px] font-bold leading-snug text-[var(--sp-ink)]">{item.title}</span>
+              <span className="mt-1 flex-1 text-[13px] leading-5 text-[var(--sp-muted)]">{item.text}</span>
+              <span className="mt-3 flex items-center gap-1 text-[13px] font-bold text-[var(--sp-peri-dark)]">
+                Mở
+                <IconArrowRight size={14} className="transition group-hover:translate-x-1" />
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /* ================= Góc đọc của Pilot ================= */
 
+const PILOT_TIPS = [
+  "Ôn lại trong vòng 24 giờ sau khi học giúp bạn nhớ lâu hơn nhiều so với học dồn trước ngày thi.",
+  "Tự trả lời câu hỏi trước khi xem đáp án giúp nhớ chắc hơn đọc lại nhiều lần.",
+  "Học 15–25 phút rồi nghỉ 5 phút, não sẽ đỡ mệt hơn.",
+  "Câu sai là món quà: xem lời giải thích ngay sau khi làm bài.",
+];
+
 function PilotNook() {
+  const [tip, setTip] = useState(0);
   return (
-    <section className="relative hidden h-[190px] rounded-[24px] border-2 border-dashed border-[var(--sp-lav-line)] bg-gradient-to-b from-white to-[#f5f2fb] lg:block">
+    <section className="relative hidden min-h-[300px] flex-1 rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-lav)] bg-[radial-gradient(#d5ddf8_1.2px,transparent_1.2px)] bg-[length:18px_18px] shadow-[6px_6px_0_var(--sp-yellow)] lg:block">
       <div className="absolute left-5 top-4">
         <p className="sp-accent text-[15px] text-[var(--sp-pink)]">Góc nhỏ</p>
         <p className="font-bold text-[var(--sp-ink)]">Góc đọc của Pilot</p>
         <p className="text-[12.5px] text-[var(--sp-muted)]">Chạm vào Pilot thử xem!</p>
+      </div>
+      <div className="absolute inset-x-5 top-[92px] rounded-2xl border-2 border-[var(--sp-purple-deep)] bg-white px-3.5 py-3 shadow-[3px_3px_0_var(--sp-pink-line)]">
+        <p className="text-[13.5px] font-bold text-[var(--sp-ink)]">💡 Mẹo của Pilot</p>
+        <p className="mt-1 text-[13px] leading-[1.45] text-[var(--sp-text-2)]">{PILOT_TIPS[tip]}</p>
+        <button
+          type="button"
+          onClick={() => setTip((value) => (value + 1) % PILOT_TIPS.length)}
+          className="mt-2 text-[12.5px] font-extrabold text-[var(--sp-peri-dark)] hover:underline"
+        >
+          Mẹo khác →
+        </button>
       </div>
       <svg className="absolute bottom-[18px] left-[22px]" width="96" height="70" viewBox="0 0 96 70" aria-hidden="true">
         <rect x="2" y="48" width="84" height="18" rx="4" fill="#5b7fe3" stroke="#33094a" strokeWidth="2.5" />
