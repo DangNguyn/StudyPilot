@@ -159,9 +159,11 @@ item = db["review_plans"][0]["review_items"][0]
 assert item["review_date"] == TODAY.isoformat(), item
 assert main._plan_review_date(db["review_plans"][0]) == TODAY.isoformat()
 
-# 9. Vẫn chặn ngày đã qua (nếu hôm qua còn cùng tuần) và ngày ngoài tuần
+# 9. Được chọn ngày ở tuần sau (trước ngày thi); vẫn chặn ngày đã qua và từ ngày thi trở đi
+main.set_review_date(UUID(PLAN), main.ReviewDateRequest(review_date=TODAY + timedelta(days=8)))
+assert main._plan_review_date(db["review_plans"][0]) == (TODAY + timedelta(days=8)).isoformat()
 if TODAY.weekday() > 0:
     raises(400, main.set_review_date, UUID(PLAN), main.ReviewDateRequest(review_date=TODAY - timedelta(days=1)))
-raises(400, main.set_review_date, UUID(PLAN), main.ReviewDateRequest(review_date=TODAY + timedelta(days=8)))
+raises(400, main.set_review_date, UUID(PLAN), main.ReviewDateRequest(review_date=TODAY + timedelta(days=30)))
 
 print("OK: session completion")

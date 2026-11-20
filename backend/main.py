@@ -1846,13 +1846,20 @@ def _session_day_context(study_session_id):
     week = []
 
     if session_date:
-        monday = session_date - timedelta(days=session_date.weekday())
+        # Ngày ôn được chọn từ hôm nay đến trước ngày thi (20/11/2026: nới từ
+        # "trong tuần của buổi học" vì người học bắt buộc phải chọn ngày ôn).
+        # Trả đủ các tuần trọn vẹn để giao diện xếp theo cột thứ.
+        start = min(session_date, today)
+        monday = start - timedelta(days=start.weekday())
+        last_day = (exam_date - timedelta(days=1)) if exam_date else monday + timedelta(days=6)
+        last_day = max(last_day, monday + timedelta(days=6))
+        total_days = min(((last_day - monday).days // 7 + 1) * 7, 8 * 7)
 
-        for offset in range(7):
+        for offset in range(total_days):
             current = monday + timedelta(days=offset)
             week.append({
                 "date": current.isoformat(),
-                "weekday": WEEKDAY_LABELS[offset],
+                "weekday": WEEKDAY_LABELS[current.weekday()],
                 "has_study": current in plan_dates,
                 "is_past": current < today,
                 "after_exam": bool(exam_date and current >= exam_date),
@@ -2076,7 +2083,7 @@ class ReviewDateRequest(BaseModel):
 
 @app.post("/api/review-plans/{review_plan_id}/review-date")
 def set_review_date(review_plan_id: UUID, request: ReviewDateRequest):
-    """Người học chọn ngày ôn lại trong tuần của buổi học (được trùng ngày có buổi học)."""
+    """Người học chọn ngày ôn lại từ hôm nay đến trước ngày thi (được trùng ngày có buổi học)."""
     try:
         plan_response = (
             supabase.table("review_plans")
@@ -2119,7 +2126,7 @@ def set_review_date(review_plan_id: UUID, request: ReviewDateRequest):
         day = next((item for item in context["week"] if item["date"] == chosen), None)
 
         if not day:
-            raise HTTPException(status_code=400, detail="Chỉ được chọn ngày ôn trong tuần của buổi học.")
+            raise HTTPException(status_code=400, detail="Ngày ôn phải từ hôm nay đến trước ngày thi.")
         if day["is_past"]:
             raise HTTPException(status_code=400, detail="Không thể chọn ngày đã qua.")
         if day["after_exam"]:
