@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { LoadingMascot } from "@/components/loading-play";
+import { SmartLoading } from "@/components/loading-play";
 import { getMainTopicTitle, stripOutlineNumbers } from "@/lib/content-titles";
 
 const API_URL = "http://127.0.0.1:8000";
@@ -113,6 +113,7 @@ export default function ReviewPlanPage() {
   const [material, setMaterial] = useState<ReviewMaterial | null>(null);
   const [studySeconds, setStudySeconds] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [holdLoading, setHoldLoading] = useState(false);
   const [error, setError] = useState("");
   const [activityError, setActivityError] = useState("");
   const [completing, setCompleting] = useState(false);
@@ -284,10 +285,17 @@ export default function ReviewPlanPage() {
     }
   };
 
-  if (loading) {
+  if (loading || holdLoading) {
     return (
       <main className="min-h-screen bg-[#EEF1FD] px-6 py-16">
-        <LoadingMascot className="max-w-4xl" text="Đang chuẩn bị nội dung học bổ trợ…" sub="Pilot đang gom lại phần bạn làm sai lần trước." />
+        <SmartLoading
+          text="Đang chuẩn bị nội dung học bổ trợ…"
+          sub="Pilot đang gom lại phần bạn làm sai lần trước."
+          stages={["Tìm câu sai", "Gom kiến thức", "Soạn nội dung", "Sẵn sàng"]}
+          continueLabel="Vào học bổ trợ"
+          done={!loading}
+          onHoldChange={setHoldLoading}
+        />
       </main>
     );
   }

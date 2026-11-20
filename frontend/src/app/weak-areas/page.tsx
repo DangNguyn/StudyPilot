@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { LoadingMascot } from "@/components/loading-play";
+import { SmartLoading } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import {
   IconAlert,
@@ -234,6 +234,7 @@ function WeakAreasPageContent() {
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [holdLoading, setHoldLoading] = useState(false);
   const [isLoadingPlan, setIsLoadingPlan] = useState(false);
   const [error, setError] = useState("");
   const [masteryView, setMasteryView] = useState<"chapter" | "week">("chapter");
@@ -550,9 +551,16 @@ function WeakAreasPageContent() {
 
   /* ---------- Hiển thị ---------- */
 
-  if (isLoading) {
+  if (isLoading || holdLoading) {
     return (
-      <LoadingMascot text="Đang tổng hợp kết quả học tập…" sub="Pilot đang chấm lại từng bài kiểm tra, chờ mình xíu nhé!" />
+      <SmartLoading
+        text="Đang tổng hợp kết quả học tập…"
+        sub="Pilot đang chấm lại từng bài kiểm tra, chờ mình xíu nhé!"
+        stages={["Lấy bài làm", "Tính điểm", "Tìm phần yếu", "Gợi ý ôn"]}
+        continueLabel="Xem đánh giá"
+        done={!isLoading}
+        onHoldChange={setHoldLoading}
+      />
     );
   }
 

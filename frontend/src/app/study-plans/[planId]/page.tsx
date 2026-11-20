@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { LoadingMascot } from "@/components/loading-play";
+import { SmartLoading } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import StudyCalendar from "@/components/study-calendar";
 import type { CalendarEntry } from "@/lib/study-calendar";
@@ -220,6 +220,7 @@ export default function StudyPlanDetailPage() {
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [holdLoading, setHoldLoading] = useState(false);
   const [error, setError] = useState("");
   // Buổi đang được mở rộng trong "Hôm nay học gì?" (null = mặc định buổi của hôm nay)
   const [selectedTaskKey, setSelectedTaskKey] = useState<string | null>(null);
@@ -675,9 +676,16 @@ export default function StudyPlanDetailPage() {
 
   /* ---------- Trạng thái tải ---------- */
 
-  if (isLoading) {
+  if (isLoading || holdLoading) {
     return (
-      <LoadingMascot text="Đang tải lộ trình ôn tập…" className="max-w-6xl" />
+      <SmartLoading
+        text="Đang tải lộ trình ôn tập…"
+        sub="Pilot đang xếp lịch học và lịch ôn của bạn."
+        stages={["Tải kế hoạch", "Xếp buổi học", "Gắn lịch ôn", "Vẽ lịch tháng"]}
+        continueLabel="Xem kế hoạch"
+        done={!isLoading}
+        onHoldChange={setHoldLoading}
+      />
     );
   }
 

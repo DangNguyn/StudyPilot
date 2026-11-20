@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { LoadingMascot } from "@/components/loading-play";
+import { SmartLoading } from "@/components/loading-play";
 import Link from "next/link";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import {
@@ -134,6 +134,7 @@ export default function QuizTakingPage() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [holdLoading, setHoldLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -299,9 +300,16 @@ export default function QuizTakingPage() {
   );
 
   // 5. Trạng thái tải
-  if (loading) {
+  if (loading || holdLoading) {
     return (
-      <LoadingMascot className="max-w-4xl" text="Đang chuẩn bị bài kiểm tra…" sub="Pilot đang xáo câu hỏi, chuẩn bị bút nhé!" />
+      <SmartLoading
+        text="Đang chuẩn bị bài kiểm tra…"
+        sub="Pilot đang xáo câu hỏi, chuẩn bị bút nhé!"
+        stages={["Tải đề", "Xếp câu hỏi", "Hẹn giờ", "Sẵn sàng"]}
+        continueLabel="Vào làm bài"
+        done={!loading}
+        onHoldChange={setHoldLoading}
+      />
     );
   }
 

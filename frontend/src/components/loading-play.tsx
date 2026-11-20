@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconBook, IconCheck, IconPlay } from "@/components/icons";
 
 /*
@@ -143,6 +143,166 @@ export function LoadingMascot({
   );
 }
 
+/* ================= Màn chờ hai chặng ================= */
+
+const WAIT_SAYS = [
+  "Mình vẫn đang làm nè, sắp xong rồi!",
+  "Mạng hơi chậm, để mình chạy nhanh hơn chút…",
+  "Chơi một ván đi, xong là mình gọi liền!",
+];
+const SWITCH_AFTER_MS = 3000;
+const SMART_EXPECTED_S = 12;
+
+/*
+ * 3 giây đầu: màn chờ ngắn (Pilot nhỏ + câu chữ của trang).
+ * Quá 3 giây: thẻ nở ra, Pilot nhảy vào khung game "Pilot chạy deadline".
+ * Tải xong: chưa chơi thì tự vào trang; đang chơi thì dừng game, chờ người dùng bấm.
+ * Trang hiển thị: if (loading || hold) return <SmartLoading done={!loading} onHoldChange={setHold} … />
+ */
+export function SmartLoading({
+  text,
+  sub = "Pilot đang lật từng trang, chờ mình xíu nhé!",
+  stages,
+  continueLabel = "Xem ngay",
+  done = false,
+  onHoldChange,
+}: {
+  text: string;
+  sub?: string;
+  /* 4 bước hiện ở màn chờ dài */
+  stages: string[];
+  continueLabel?: string;
+  done?: boolean;
+  /* true khi đã sang màn game: trang giữ màn chờ tới khi gọi lại false */
+  onHoldChange?: (hold: boolean) => void;
+}) {
+  const [long, setLong] = useState(false);
+  const [played, setPlayed] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const miniRef = useRef<HTMLDivElement>(null);
+  const before = useRef<{ height: number; pilot: DOMRect | null; svg: string }>({ height: 0, pilot: null, svg: "" });
+  const holdRef = useRef(onHoldChange);
+  useEffect(() => {
+    holdRef.current = onHoldChange;
+  }, [onHoldChange]);
+
+  useEffect(() => {
+    if (done || long) return;
+    const id = window.setTimeout(() => {
+      const pilot = miniRef.current?.querySelector("svg");
+      before.current = {
+        height: wrapRef.current?.offsetHeight || 0,
+        pilot: pilot?.getBoundingClientRect() || null,
+        svg: pilot?.outerHTML || "",
+      };
+      setLong(true);
+      holdRef.current?.(true);
+    }, SWITCH_AFTER_MS);
+    return () => window.clearTimeout(id);
+  }, [done, long]);
+
+  // Tải xong mà chưa bấm chơi: báo xong một nhịp rồi tự vào trang
+  useEffect(() => {
+    if (!long || !done || played) return;
+    const id = window.setTimeout(() => holdRef.current?.(false), 700);
+    return () => window.clearTimeout(id);
+  }, [long, done, played]);
+
+  // Bỏ giữ nếu màn chờ bị gỡ giữa chừng
+  useEffect(() => () => holdRef.current?.(false), []);
+
+  // Chuyển cảnh: thẻ nở chiều cao, Pilot bay vòng cung vào chỗ xuất phát trong game
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    if (!long || !wrap) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const { height, pilot, svg } = before.current;
+    const target = wrap.scrollHeight;
+    wrap.style.height = `${height}px`;
+    void wrap.offsetHeight;
+    wrap.style.height = `${target}px`;
+    const clear = window.setTimeout(() => (wrap.style.height = ""), 600);
+
+    let clone: HTMLDivElement | null = null;
+    const canvas = wrap.querySelector("canvas");
+    if (pilot && svg && canvas) {
+      clone = document.createElement("div");
+      clone.innerHTML = svg;
+      clone.className = "pointer-events-none fixed z-50 [&>svg]:h-full [&>svg]:w-full";
+      document.body.appendChild(clone);
+      const box = canvas.getBoundingClientRect();
+      // nội dung bên trong đã ở vị trí cuối, chỉ khung ngoài đang nở chiều cao
+      const size = 70;
+      const toLeft = box.left + 64 - size * 0.24;
+      const toTop = box.top + (box.height - 38) - size * 0.86;
+      const peak = Math.min(pilot.top, toTop) - 70;
+      const mid = (pilot.width + size) / 2;
+      clone.animate(
+        [
+          { left: `${pilot.left}px`, top: `${pilot.top}px`, width: `${pilot.width}px`, height: `${pilot.height}px`, transform: "rotate(0deg)" },
+          { left: `${(pilot.left + toLeft) / 2}px`, top: `${peak}px`, width: `${mid}px`, height: `${mid}px`, transform: "rotate(-12deg)", offset: 0.5 },
+          { left: `${toLeft}px`, top: `${toTop}px`, width: `${size}px`, height: `${size}px`, transform: "rotate(0deg)" },
+        ],
+        { duration: 900, easing: "cubic-bezier(.35,0,.25,1)", fill: "forwards" }
+      ).onfinish = () => {
+        clone?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: "forwards" }).finished.then(() => clone?.remove());
+      };
+    }
+    return () => {
+      window.clearTimeout(clear);
+      clone?.remove();
+    };
+  }, [long]);
+
+  return (
+    <div ref={wrapRef} className={`mx-auto max-w-[908px] overflow-hidden pb-2 pr-2 transition-[height] duration-500 ease-[cubic-bezier(.3,1.1,.4,1)] ${long ? "sp-smart-long" : ""}`}>
+      {long ? (
+        <LoadingPlay
+          kicker={done ? "Cảm ơn bạn đã chờ" : "Hơi lâu một chút… chạy cùng Pilot nhé!"}
+          title={text}
+          doneTitle="Xong rồi!"
+          stages={stages}
+          expectedSeconds={SMART_EXPECTED_S}
+          startAt={SWITCH_AFTER_MS / 1000}
+          startInGame
+          says={WAIT_SAYS}
+          doneNote="Đã xong!"
+          done={done}
+          continueLabel={continueLabel}
+          onGameStart={() => setPlayed(true)}
+          onContinue={() => holdRef.current?.(false)}
+        />
+      ) : (
+        <div
+          className="grid grid-cols-[96px_minmax(0,1fr)] items-center gap-5 rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-white px-6 py-5 shadow-[6px_6px_0_var(--sp-lav-line)]"
+          role="status"
+        >
+          <div ref={miniRef}>
+            <PilotMascot size={96} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-base font-extrabold text-[var(--sp-ink)]">
+              {text}
+              <span className="sp-wait-dots ml-1 inline-flex gap-[3px] align-middle" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+            </p>
+            <p className="mt-0.5 text-sm text-[var(--sp-muted)]">{sub}</p>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
+              <span
+                className="sp-thin-fill block h-full rounded-full bg-[var(--sp-peri)]"
+                style={{ "--to": `${95 * (1 - Math.exp(-(SWITCH_AFTER_MS / 1000) / (SMART_EXPECTED_S / 2.5)))}%` } as React.CSSProperties}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ================= Màn chờ dài ================= */
 
 export function LoadingPlay({
@@ -156,6 +316,11 @@ export function LoadingPlay({
   continueLabel = "Vào học ngay",
   onContinue,
   onPlayingChange,
+  startInGame = false,
+  startAt = 0,
+  says = SAY,
+  doneNote = "Tài liệu đã sẵn sàng!",
+  onGameStart,
 }: {
   kicker?: string;
   title: string;
@@ -168,12 +333,20 @@ export function LoadingPlay({
   continueLabel?: string;
   onContinue?: () => void;
   onPlayingChange?: (playing: boolean) => void;
+  /* mở thẳng khung game thay vì khung Pilot nói chuyện */
+  startInGame?: boolean;
+  /* số giây đã chờ trước đó, để thanh tiến độ chạy tiếp chứ không về 0 */
+  startAt?: number;
+  says?: string[];
+  doneNote?: string;
+  /* người dùng bấm bắt đầu một ván */
+  onGameStart?: () => void;
 }) {
   const [progress, setProgress] = useState(0);
   const [sayIndex, setSayIndex] = useState(0);
   const [pokeText, setPokeText] = useState<string | null>(null);
   const [tipIndex, setTipIndex] = useState(0);
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(startInGame);
   const [sparks, setSparks] = useState<{ id: number; x: number; y: number; dx: number; dy: number }[]>([]);
   const boxRef = useRef<HTMLDivElement>(null);
   const stageStart = useRef<{ stage: number | undefined; at: number }>({ stage: undefined, at: 0 });
@@ -182,7 +355,7 @@ export function LoadingPlay({
   // Tiến độ ước lượng: tiến dần tới 95% rồi chờ backend xong mới lên 100%.
   useEffect(() => {
     if (done) return;
-    const started = performance.now();
+    const started = performance.now() - startAt * 1000;
     const timer = window.setInterval(() => {
       const now = performance.now();
       if (stage === undefined) {
@@ -195,23 +368,23 @@ export function LoadingPlay({
       setProgress(Math.min(95, stage * span + (span - 2) * (1 - Math.exp(-inStage / (expectedSeconds / stages.length)))));
     }, 200);
     return () => window.clearInterval(timer);
-  }, [done, stage, stages.length, expectedSeconds]);
+  }, [done, stage, stages.length, expectedSeconds, startAt]);
 
   useEffect(() => {
     const talk = window.setInterval(() => {
       setPokeText(null);
-      setSayIndex((value) => (value + 1) % SAY.length);
+      setSayIndex((value) => (value + 1) % says.length);
     }, 6000);
     const tip = window.setInterval(() => setTipIndex((value) => (value + 1) % TIPS.length), 8000);
     return () => {
       window.clearInterval(talk);
       window.clearInterval(tip);
     };
-  }, []);
+  }, [says.length]);
 
   const shown = done ? 100 : progress;
   const current = done ? stages.length : stage ?? Math.min(stages.length - 1, Math.floor(shown / (100 / stages.length)));
-  const speech = done ? "Xong rồi! Vào học thôi nào 🎉" : pokeText ?? SAY[sayIndex];
+  const speech = done ? "Xong rồi! Vào thôi nào 🎉" : pokeText ?? says[sayIndex % says.length];
 
   const togglePlaying = () => {
     const next = !playing;
@@ -275,7 +448,7 @@ export function LoadingPlay({
         className="sp-loading-box relative mt-5 h-[300px] overflow-hidden rounded-[20px] border-2 border-dashed border-[var(--sp-lav-line)] sm:h-[260px]"
       >
         {playing ? (
-          <RunnerGame paused={done} />
+          <RunnerGame paused={done} onStart={onGameStart} pauseText={`${doneNote} Bấm để chơi tiếp hoặc vào ngay.`} />
         ) : (
           <div className="grid h-full grid-cols-1 items-center gap-1.5 p-3 sm:grid-cols-[220px_minmax(0,1fr)] sm:gap-6 sm:px-7">
             <div className="justify-self-center">
@@ -307,7 +480,7 @@ export function LoadingPlay({
       {done && (
         <p className="mt-3.5 grid grid-cols-[22px_minmax(0,1fr)] items-center gap-2.5 rounded-[14px] border-2 border-[#a7e3c4] bg-emerald-50 px-3.5 py-3 text-sm font-bold text-emerald-700">
           <IconCheck size={20} />
-          {playing ? "Tài liệu đã sẵn sàng! Game đã tạm dừng, bạn có thể vào học hoặc chơi tiếp." : "Tài liệu đã sẵn sàng!"}
+          {playing ? `${doneNote} Game đã tạm dừng, bạn có thể vào ngay hoặc chơi tiếp.` : doneNote}
         </p>
       )}
 
@@ -350,7 +523,19 @@ const saveBest = (value: number) => {
   }
 };
 
-function RunnerGame({ paused }: { paused: boolean }) {
+function RunnerGame({
+  paused,
+  onStart,
+  pauseText = "Tài liệu đã sẵn sàng. Bấm để chơi tiếp hoặc vào học ngay.",
+}: {
+  paused: boolean;
+  onStart?: () => void;
+  pauseText?: string;
+}) {
+  const hooks = useRef({ onStart, pauseText });
+  useEffect(() => {
+    hooks.current = { onStart, pauseText };
+  }, [onStart, pauseText]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scoreRef = useRef<HTMLSpanElement>(null);
   const [best, setBest] = useState(readBest);
@@ -610,6 +795,7 @@ function RunnerGame({ paused }: { paused: boolean }) {
       start: () => {
         if (!alive) reset();
         running = true;
+        hooks.current.onStart?.();
         setOverlay(null);
         last = performance.now();
         cancelAnimationFrame(raf);
@@ -619,7 +805,7 @@ function RunnerGame({ paused }: { paused: boolean }) {
         if (!running) return;
         running = false;
         cancelAnimationFrame(raf);
-        setOverlay({ title: "Tạm dừng", text: "Tài liệu đã sẵn sàng. Bấm để chơi tiếp hoặc vào học ngay.", label: "Chơi tiếp" });
+        setOverlay({ title: "Tạm dừng", text: hooks.current.pauseText, label: "Chơi tiếp" });
       },
       jump: () => {
         if (running && p.onGround) {
@@ -670,7 +856,7 @@ function RunnerGame({ paused }: { paused: boolean }) {
         </span>
       </div>
       {overlay && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-[rgba(251,248,241,0.85)] px-4 text-center">
+        <div className="sp-game-overlay absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-[rgba(251,248,241,0.85)] px-4 text-center">
           <p className="font-display text-[30px] text-[var(--sp-purple)]">{overlay.title}</p>
           <p className="text-sm text-[var(--sp-text-2)]">{overlay.text}</p>
           <p className="text-sm text-[var(--sp-text-2)]">

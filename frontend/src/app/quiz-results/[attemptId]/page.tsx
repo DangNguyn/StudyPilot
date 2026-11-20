@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { LoadingMascot } from "@/components/loading-play";
+import { SmartLoading } from "@/components/loading-play";
 import Link from "next/link";
 import { getMainTopicTitle, stripOutlineNumbers } from "@/lib/content-titles";
 import WrongAnswerReview, { type Mistake } from "@/components/wrong-answer-review";
@@ -179,6 +179,7 @@ export default function QuizResultPage() {
 
   const [result, setResult] = useState<QuizResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [holdLoading, setHoldLoading] = useState(false);
   const [error, setError] = useState("");
   const [showWeak, setShowWeak] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -289,9 +290,16 @@ export default function QuizResultPage() {
       : Math.round(Number(result.score || 0));
   }, [result]);
 
-  if (loading && !result) {
+  if ((loading && !result) || holdLoading) {
     return (
-      <LoadingMascot text="Đang chấm và tổng hợp kết quả…" sub="Pilot đang chấm từng câu và tìm phần bạn còn yếu." />
+      <SmartLoading
+        text="Đang chấm và tổng hợp kết quả…"
+        sub="Pilot đang chấm từng câu và tìm phần bạn còn yếu."
+        stages={["Nhận bài làm", "Chấm từng câu", "AI nhận xét", "Tổng hợp"]}
+        continueLabel="Xem kết quả"
+        done={!(loading && !result)}
+        onHoldChange={setHoldLoading}
+      />
     );
   }
 

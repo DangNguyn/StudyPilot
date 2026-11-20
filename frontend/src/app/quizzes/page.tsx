@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { LoadingMascot } from "@/components/loading-play";
+import { SmartLoading } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import {
   IconArrowRight,
@@ -148,11 +148,13 @@ function quizTitle(quiz: Quiz) {
 
 /* ================= Trang ================= */
 
+const QUIZ_LIST_STAGES = ["Tìm bài", "Xem điểm cũ", "Kiểm tra mở khoá", "Xếp nhóm"];
+
 export default function QuizzesPage() {
   return (
     <Suspense
       fallback={
-        <LoadingMascot text="Đang tải bài kiểm tra…" className="max-w-6xl" />
+        <SmartLoading text="Đang tìm bài kiểm tra của bạn…" stages={QUIZ_LIST_STAGES} />
       }
     >
       <QuizzesContent />
@@ -167,6 +169,7 @@ function QuizzesContent() {
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
   const [loading, setLoading] = useState(true);
+  const [holdLoading, setHoldLoading] = useState(false);
   const [error, setError] = useState("");
   const [historyError, setHistoryError] = useState("");
 
@@ -242,9 +245,16 @@ function QuizzesContent() {
 
   const subject = planParam ? subjects.find((item) => item.planId === planParam) : undefined;
 
-  if (loading) {
+  if (loading || holdLoading) {
     return (
-      <LoadingMascot text="Đang tải bài kiểm tra…" className="max-w-6xl" />
+      <SmartLoading
+        text="Đang tìm bài kiểm tra của bạn…"
+        sub="Pilot đang lục từng ngăn bài kiểm tra."
+        stages={QUIZ_LIST_STAGES}
+        continueLabel="Xem bài kiểm tra"
+        done={!loading}
+        onHoldChange={setHoldLoading}
+      />
     );
   }
 
