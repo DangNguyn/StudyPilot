@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getMainTopicTitle } from "@/lib/content-titles";
@@ -51,6 +51,7 @@ interface Quiz {
   is_unlocked?: boolean;
   lock_reason?: string | null;
   question_count?: number;
+  review_date?: string | null;
 }
 
 interface QuizAttempt {
@@ -497,6 +498,42 @@ function quizState(quiz: Quiz, latest: QuizAttempt | undefined): QuizState {
   return canStartQuiz(quiz) ? "open" : "locked";
 }
 
+type QuizGroup = "done" | "todo" | "review";
+
+/* Phân loại: đã hoàn thành (xem câu sai) · chưa làm/đang khoá (bài cuối buổi) · ôn tập (bài kiểm tra lại) */
+function quizGroup(quiz: Quiz, state: QuizState): QuizGroup {
+  if (state === "done") return "done";
+  return quiz.is_retake ? "review" : "todo";
+}
+
+const GROUPS: Record<QuizGroup, { name: string; desc: string; icon: React.ReactNode; tone: string }> = {
+  done: {
+    name: "Đã hoàn thành",
+    desc: "Bấm để xem lại câu sai kèm giải thích và nguồn trong tài liệu.",
+    icon: <IconCheck size={22} />,
+    tone: "bg-emerald-600",
+  },
+  todo: {
+    name: "Chưa làm · Đang khoá",
+    desc: "Bài kiểm tra trắc nghiệm cuối mỗi buổi. Học xong buổi thì bài mở.",
+    icon: <IconBolt size={22} />,
+    tone: "bg-[var(--sp-peri)]",
+  },
+  review: {
+    name: "Ôn tập",
+    desc: "Đề dựng theo điểm lần trước: ưu tiên câu sai, dưới 50% có thêm điền khuyết.",
+    icon: <IconRepeat size={22} />,
+    tone: "bg-[var(--sp-pink)]",
+  },
+};
+const GROUP_ORDER: QuizGroup[] = ["done", "todo", "review"];
+
+function scoreTone(percent: number) {
+  if (percent >= 80) return { box: "border-emerald-200 bg-emerald-50", text: "text-emerald-700", fill: "bg-emerald-600", label: "Đạt" };
+  if (percent >= 50) return { box: "border-[#f0d98a] bg-[var(--sp-amber-bg)]", text: "text-[var(--sp-amber-dark)]", fill: "bg-[#d99a1c]", label: "Cần củng cố" };
+  return { box: "border-[var(--sp-red-line)] bg-[var(--sp-red-bg)]", text: "text-[var(--sp-red-dark)]", fill: "bg-[var(--sp-red)]", label: "Cần ôn cấp tốc" };
+}
+
 function SubjectQuizzes({
   subject,
   subjects,
@@ -507,8 +544,8 @@ function SubjectQuizzes({
   historyError: string;
 }) {
   const router = useRouter();
-  const panelRef = useRef<HTMLDivElement>(null);
   const today = vnDateKey(new Date().toISOString());
+  const [filter, setFilter] = useState<QuizGroup | "all">("all");
 
   const latestByQuiz = useMemo(() => {
     const map = new Map<string, QuizAttempt>();
@@ -520,25 +557,27 @@ function SubjectQuizzes({
     return map;
   }, [subject.attempts]);
 
-  /* Thứ tự: bài đang mở → bài đã làm (mới nhất trước) → bài đang khóa (theo lịch) */
-  const ordered = useMemo(() => {
-    const time = (quiz: Quiz) => new Date(quiz.scheduled_start || quiz.created_at).getTime();
-    const items = subject.quizzes.map((quiz) => {
+  /* Trong mỗi nhóm: đã làm mới nhất trước; chưa làm/ôn tập: bài đang mở trước, rồi theo ngày */
+  const grouped = useMemo(() => {
+    const result: Record<QuizGroup, { quiz: Quiz; latest: QuizAttempt | undefined; state: QuizState }[]> = {
+      done: [],
+      todo: [],
+      review: [],
+    };
+    for (const quiz of subject.quizzes) {
       const latest = latestByQuiz.get(quiz.id);
-      return { quiz, latest, state: quizState(quiz, latest) };
-    });
-    const rank = { open: 0, done: 1, locked: 2 } as const;
-    return items.sort((a, b) => {
-      if (a.state !== b.state) return rank[a.state] - rank[b.state];
-      if (a.state === "done") {
-        return new Date(b.latest?.submitted_at || 0).getTime() - new Date(a.latest?.submitted_at || 0).getTime();
-      }
-      return time(a.quiz) - time(b.quiz);
-    });
+      const state = quizState(quiz, latest);
+      result[quizGroup(quiz, state)].push({ quiz, latest, state });
+    }
+    const when = (quiz: Quiz) => vnDateKey(quiz.review_date || quiz.scheduled_start || quiz.created_at);
+    result.done.sort((a, b) => String(b.latest?.submitted_at || "").localeCompare(String(a.latest?.submitted_at || "")));
+    for (const key of ["todo", "review"] as const) {
+      result[key].sort((a, b) =>
+        a.state !== b.state ? (a.state === "open" ? -1 : 1) : when(a.quiz).localeCompare(when(b.quiz))
+      );
+    }
+    return result;
   }, [subject.quizzes, latestByQuiz]);
-
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = ordered.find((item) => item.quiz.id === selectedId) || ordered[0];
 
   const totals = subject.attempts.reduce(
     (sum, attempt) => ({
@@ -548,12 +587,10 @@ function SubjectQuizzes({
     { questions: 0, correct: 0 }
   );
 
-  function select(id: string) {
-    setSelectedId(id);
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      window.setTimeout(() => panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-    }
-  }
+  const tabs: { key: QuizGroup | "all"; name: string; icon: React.ReactNode; tone: string; count: number }[] = [
+    { key: "all", name: "Tất cả", icon: <IconList size={16} />, tone: "bg-[var(--sp-purple-deep)]", count: subject.quizzes.length },
+    ...GROUP_ORDER.map((key) => ({ key, name: GROUPS[key].name, icon: GROUPS[key].icon, tone: GROUPS[key].tone, count: grouped[key].length })),
+  ];
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -596,210 +633,104 @@ function SubjectQuizzes({
         </label>
       </section>
 
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-        {/* ---------- Danh sách bài ---------- */}
-        <section className="space-y-3">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Theo lịch ôn của bạn</p>
-              <h2 className="text-[22px] text-[var(--sp-ink)]">Bài kiểm tra</h2>
-            </div>
-            <span className="sp-chip bg-[var(--sp-surface-2)] text-[var(--sp-text-2)]">
-              {subject.quizzes.length} bài
-            </span>
-          </div>
-
-          {ordered.length === 0 ? (
-            <p className="sp-card p-6 text-center text-sm text-[var(--sp-muted)]">
-              Chưa có bài kiểm tra nào. Học xong buổi đầu tiên để mở bài.
-            </p>
-          ) : (
-            <ul className="space-y-3">
-              {ordered.map(({ quiz, latest, state }) => (
-                <li key={quiz.id}>
-                  <QuizListCard
-                    quiz={quiz}
-                    latest={latest}
-                    state={state}
-                    today={today}
-                    active={selected?.quiz.id === quiz.id}
-                    onSelect={() => select(quiz.id)}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <p className="flex items-start gap-2.5 rounded-2xl bg-[var(--sp-lav)] px-4 py-3.5 text-sm text-[var(--sp-text-2)]">
-            <IconInfo size={17} className="mt-0.5 shrink-0" />
-            {historyError ? (
-              historyError
-            ) : subject.attempts.length === 0 ? (
-              "Bạn chưa làm bài nào của môn này."
-            ) : (
-              <span>
-                Đã làm <b className="text-[var(--sp-ink)]">{totals.questions} câu</b> qua{" "}
-                {subject.attempts.length} lượt, đúng{" "}
-                <b className="text-[var(--sp-ink)]">
-                  {totals.correct} câu ({totals.questions ? Math.round((totals.correct / totals.questions) * 100) : 0}%)
-                </b>
-                .
-              </span>
-            )}
-          </p>
-        </section>
-
-        {/* ---------- Tổng quan trước khi làm ---------- */}
-        <div ref={panelRef} className="scroll-mt-24 lg:sticky lg:top-6">
-          {selected ? (
-            <QuizOverviewPanel
-              key={selected.quiz.id}
-              quiz={selected.quiz}
-              latest={selected.latest}
-              state={selected.state}
-              today={today}
-            />
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function QuizListCard({
-  quiz,
-  latest,
-  state,
-  today,
-  active,
-  onSelect,
-}: {
-  quiz: Quiz;
-  latest: QuizAttempt | undefined;
-  state: QuizState;
-  today: string;
-  active: boolean;
-  onSelect: () => void;
-}) {
-  const percent = latest ? getAttemptPercent(latest) : null;
-  const dateKey = vnDateKey(quiz.scheduled_start || quiz.created_at);
-  const isToday = dateKey === today;
-
-  const chip =
-    state === "done"
-      ? { text: `Đã làm · ${shortDate(latest?.submitted_at || dateKey)}`, style: "bg-emerald-50 text-emerald-700" }
-      : state === "open"
-        ? {
-            text: quiz.is_retake
-              ? `Kiểm tra lại${quiz.study_day ? ` · ngày học ${quiz.study_day}` : ""}`
-              : isToday
-                ? `Hôm nay${quiz.study_day ? ` · ngày học ${quiz.study_day}` : ""}`
-                : `Đang mở · ${shortDate(dateKey)}`,
-            style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]",
-          }
-        : { text: weekdayDate(dateKey) || "Đang khóa", style: "bg-[var(--sp-surface-2)] text-[var(--sp-text-2)]" };
-
-  const icon =
-    state === "done" ? (
-      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-        <IconCheck size={22} />
-      </span>
-    ) : state === "open" ? (
-      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-pink)] text-white">
-        {quiz.is_retake ? <IconRepeat size={21} /> : <IconBolt size={21} />}
-      </span>
-    ) : (
-      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--sp-surface-2)] text-[var(--sp-muted)]">
-        <IconLock size={20} />
-      </span>
-    );
-
-  const style = percent !== null ? scoreStyle(percent) : null;
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-pressed={active}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      className={`group relative flex cursor-pointer gap-4 rounded-[22px] border-2 p-4 text-left transition sm:p-5 ${
-        active
-          ? "border-[var(--sp-purple)] bg-[#fff6fa] shadow-[5px_5px_0_var(--sp-pink)]"
-          : state === "locked"
-            ? "border-dashed border-[var(--sp-line)] bg-[var(--sp-surface-2)]/50 hover:border-[var(--sp-lav-line)]"
-            : "border-[var(--sp-line)] bg-white hover:border-[var(--sp-lav-line)]"
-      }`}
-    >
-      {icon}
-      <div className="min-w-0 flex-1">
-        <span className={`sp-chip ${chip.style}`}>{chip.text}</span>
-        <h3 className={`mt-2 line-clamp-2 text-[17px] font-bold ${state === "locked" ? "text-[var(--sp-text-2)]" : "text-[var(--sp-ink)]"}`}>
-          {quizTitle(quiz)}
-        </h3>
-        <p className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-[var(--sp-muted)]">
-          {!!quiz.question_count && (
-            <span className="flex items-center gap-1.5">
-              <IconList size={14} />
-              {quiz.question_count} câu
-            </span>
-          )}
-          <span className="flex items-center gap-1.5">
-            <IconClock size={14} />
-            {quiz.time_limit_minutes ? `${quiz.time_limit_minutes} phút` : "Không giới hạn"}
-          </span>
-          {quiz.is_retake && state !== "locked" && (
-            <span className="flex items-center gap-1.5">
-              <IconTarget size={14} />
-              Ưu tiên phần yếu
-            </span>
-          )}
-        </p>
-
-        {state === "done" && latest && style && (
-          <div className="mt-3 flex items-center gap-3">
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
-              <div className={`h-full rounded-full ${style.bar}`} style={{ width: `${Math.max(3, percent!)}%` }} />
-            </div>
-            <span className="text-[15px] font-extrabold text-[var(--sp-ink)]">
-              {latest.correct_count}/{latest.total_questions}
-            </span>
-            <Link
-              href={`/quiz-results/${latest.attempt_id}`}
-              onClick={(event) => event.stopPropagation()}
-              className="sp-btn sp-btn-secondary shrink-0 px-3.5 py-1.5 text-[13px]"
+      {/* Lọc theo loại */}
+      <div className="flex flex-wrap gap-3" role="group" aria-label="Lọc bài kiểm tra">
+        {tabs.map((tab) => {
+          const active = filter === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setFilter(tab.key)}
+              className={`flex items-center gap-2.5 rounded-full border-2 py-2 pl-2 pr-4 text-sm font-bold transition ${
+                active
+                  ? "border-[var(--sp-purple-deep)] bg-[var(--sp-purple-deep)] text-white shadow-[3px_3px_0_var(--sp-lav-line)]"
+                  : "border-[var(--sp-line)] bg-white text-[var(--sp-text-2)] hover:border-[var(--sp-lav-line)]"
+              }`}
             >
-              Xem lại bài
-            </Link>
-          </div>
-        )}
-
-        {state === "locked" && (
-          <p className="mt-2 flex items-start gap-1.5 text-[13px] text-[var(--sp-muted)]">
-            <IconInfo size={14} className="mt-0.5 shrink-0" />
-            {getLockMessage(quiz)}
-          </p>
-        )}
+              <span className={`flex h-7 w-7 items-center justify-center rounded-[10px] border-2 border-[var(--sp-purple-deep)] text-white ${tab.tone} [&_svg]:h-4 [&_svg]:w-4`}>
+                {tab.icon}
+              </span>
+              {tab.name}
+              <span
+                className={`flex h-[22px] min-w-[26px] items-center justify-center rounded-full px-1.5 text-xs ${
+                  active ? "bg-[var(--sp-yellow)] text-[var(--sp-purple-deep)]" : "bg-[var(--sp-surface-2)] text-[var(--sp-muted)]"
+                }`}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
-      {active && <IconChevronRight size={18} className="absolute right-4 top-5 text-[var(--sp-ink)]" />}
+
+      {subject.quizzes.length === 0 ? (
+        <p className="sp-card p-6 text-center text-sm text-[var(--sp-muted)]">
+          Chưa có bài kiểm tra nào. Học xong buổi đầu tiên để mở bài.
+        </p>
+      ) : (
+        GROUP_ORDER.filter((key) => filter === "all" || filter === key).map((key) => (
+          <section key={key} className="space-y-4 pt-2">
+            <div className="grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3.5">
+              <span className={`flex h-[52px] w-[52px] items-center justify-center rounded-2xl border-2 border-[var(--sp-purple-deep)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)] ${GROUPS[key].tone}`}>
+                {GROUPS[key].icon}
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-[24px] text-[var(--sp-ink)]">{GROUPS[key].name}</h2>
+                <p className="text-sm text-[var(--sp-muted)]">{GROUPS[key].desc}</p>
+              </div>
+              <span className="sp-chip border-2 border-[var(--sp-line)] bg-white text-[var(--sp-muted)]">
+                {grouped[key].length} bài
+              </span>
+            </div>
+            {grouped[key].length === 0 ? (
+              <p className="rounded-2xl border-2 border-dashed border-[var(--sp-line)] px-5 py-4 text-sm text-[var(--sp-muted)]">
+                {key === "review" ? "Chưa có bài ôn tập. Bài dưới 80% sẽ có bài ôn ở đây." : "Chưa có bài nào."}
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                {grouped[key].map(({ quiz, latest, state }) => (
+                  <QuizCard key={quiz.id} quiz={quiz} latest={latest} state={state} group={key} today={today} />
+                ))}
+              </div>
+            )}
+          </section>
+        ))
+      )}
+
+      <p className="flex items-start gap-2.5 rounded-2xl bg-[var(--sp-lav)] px-4 py-3.5 text-sm text-[var(--sp-text-2)]">
+        <IconInfo size={17} className="mt-0.5 shrink-0" />
+        {historyError ? (
+          historyError
+        ) : subject.attempts.length === 0 ? (
+          "Bạn chưa làm bài nào của môn này."
+        ) : (
+          <span>
+            Đã làm <b className="text-[var(--sp-ink)]">{totals.questions} câu</b> qua {subject.attempts.length} lượt, đúng{" "}
+            <b className="text-[var(--sp-ink)]">
+              {totals.correct} câu ({totals.questions ? Math.round((totals.correct / totals.questions) * 100) : 0}%)
+            </b>
+            .
+          </span>
+        )}
+      </p>
     </div>
   );
 }
 
-function QuizOverviewPanel({
+/* Thẻ bài kiểm tra: icon theo loại + 4 ô thông tin + cách chọn câu hỏi + hành động */
+function QuizCard({
   quiz,
   latest,
   state,
+  group,
   today,
 }: {
   quiz: Quiz;
   latest: QuizAttempt | undefined;
   state: QuizState;
+  group: QuizGroup;
   today: string;
 }) {
   const [overview, setOverview] = useState<QuizOverview | null>(null);
@@ -810,239 +741,317 @@ function QuizOverviewPanel({
     fetch(`${API_URL}/api/quizzes/${quiz.id}/overview`)
       .then(async (response) => {
         const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.detail || "Không tải được tổng quan bài kiểm tra.");
+        if (!response.ok) throw new Error(result.detail || "Không tải được thông tin bài.");
         if (!cancelled) setOverview(result.data);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Không tải được tổng quan bài kiểm tra.");
+        if (!cancelled) setError(err instanceof Error ? err.message : "Không tải được thông tin bài.");
       });
     return () => {
       cancelled = true;
     };
   }, [quiz.id]);
 
+  const locked = state === "locked";
   const context = overview?.context;
-  const dateKey = vnDateKey(quiz.scheduled_start || context?.scheduled_date || quiz.created_at);
+  const studyKey = vnDateKey(context?.scheduled_date || quiz.scheduled_start || quiz.created_at);
   const chapter = chapterCode(context?.chapter);
   const questionCount = overview?.question_count ?? quiz.question_count ?? 0;
-  const previous = overview?.previous;
-  const summaryHref =
+  const typeLabel =
+    overview && overview.fill_count > 0 ? `${overview.choice_count} trắc nghiệm · ${overview.fill_count} điền` : "Trắc nghiệm";
+  const mode = group === "done" ? "revisit" : group === "review" ? "review" : "learn";
+  const lessonHref =
     context?.subject_id && context?.study_session_id
-      ? `/study-materials?subject=${encodeURIComponent(context.subject_id)}&session=${encodeURIComponent(context.study_session_id)}`
+      ? `/materials?subject=${encodeURIComponent(context.subject_id)}&session=${encodeURIComponent(context.study_session_id)}&mode=${mode}`
       : "/study-materials";
 
-  const eyebrow = `${quiz.is_retake ? "Kiểm tra lại" : "Kiểm tra kiến thức"} · ${
-    dateKey === today ? `hôm nay, ${weekdayDate(dateKey)}` : weekdayDate(dateKey)
-  }`;
+  /* Điểm: bài đã làm → lần làm gần nhất; ôn tập → lần trước */
+  const scoreSource =
+    group === "done" && latest
+      ? { correct: latest.correct_count, total: latest.total_questions, percent: getAttemptPercent(latest), date: latest.submitted_at }
+      : overview?.previous
+        ? {
+            correct: overview.previous.correct_count,
+            total: overview.previous.total_questions || 0,
+            percent: Math.round(overview.previous.score),
+            date: overview.previous.submitted_at,
+          }
+        : null;
+  const tone = scoreSource ? scoreTone(scoreSource.percent) : null;
 
-  const badge = quiz.is_retake
-    ? state === "done"
-      ? "Đã hoàn thành"
-      : `Lần làm thứ ${overview?.attempt_round ?? 1}`
-    : state === "done"
-      ? "Đã làm · chỉ 1 lần"
-      : "Chỉ làm 1 lần";
+  const reviewKey = vnDateKey(quiz.review_date);
+  const kicker =
+    group === "review"
+      ? `Ôn tập · ${weekdayDate(reviewKey || studyKey)}`
+      : `Bài kiểm tra · ${weekdayDate(studyKey)}`;
 
-  const typeLabel =
-    overview && overview.fill_count > 0
-      ? `${overview.choice_count} trắc nghiệm · ${overview.fill_count} điền khuyết`
-      : "Trắc nghiệm";
+  const chips: { text: string; style: string; icon: React.ReactNode }[] = [];
+  if (group === "done") {
+    chips.push({ text: `Đã nộp ${shortDate(latest?.submitted_at || studyKey)}`, style: "bg-emerald-50 text-emerald-700", icon: <IconCheck size={13} /> });
+    if (quiz.is_retake) chips.push({ text: "Bài ôn tập", style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]", icon: <IconRepeat size={13} /> });
+  } else if (group === "todo") {
+    chips.push(
+      locked
+        ? { text: "Đang khoá", style: "bg-[var(--sp-surface-2)] text-[var(--sp-muted)]", icon: <IconLock size={13} /> }
+        : { text: studyKey === today ? "Hôm nay" : "Đang mở", style: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]", icon: <IconBolt size={13} /> }
+    );
+  } else {
+    chips.push({ text: `Lần làm thứ ${overview?.attempt_round ?? 1}`, style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]", icon: <IconRepeat size={13} /> });
+    if (reviewKey) {
+      chips.push(
+        reviewKey < today
+          ? { text: `Quá hạn ôn ${shortDate(reviewKey)}`, style: "bg-[var(--sp-red-bg)] text-[var(--sp-red-dark)]", icon: <IconClock size={13} /> }
+          : reviewKey === today
+            ? { text: "Hạn ôn hôm nay", style: "bg-[var(--sp-red-bg)] text-[var(--sp-red-dark)]", icon: <IconClock size={13} /> }
+            : { text: `Hạn ôn ${shortDate(reviewKey)}`, style: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]", icon: <IconClock size={13} /> }
+      );
+    }
+  }
 
-  const segmentColors = ["bg-[var(--sp-peri)]", "bg-[var(--sp-purple)]", "bg-[#8aa3ee]", "bg-[var(--sp-pink)]"];
-  const segmentStyle = (kind: string, index: number) =>
-    kind === "weak" ? "bg-[var(--sp-pink)]" : kind === "rest" ? "bg-[var(--sp-peri)]" : segmentColors[index % segmentColors.length];
-  const segments = overview?.segments || [];
-  const segmentTotal = segments.reduce((sum, item) => sum + item.count, 0) || 1;
+  const icon = locked ? (
+    <IconLock size={24} />
+  ) : group === "done" ? (
+    <IconCheck size={26} />
+  ) : group === "review" ? (
+    <IconRepeat size={24} />
+  ) : (
+    <IconBolt size={24} />
+  );
+
+  // Bài cuối buổi: một thanh gộp (chia theo trang thì vụn); ôn tập: giữ phần yếu / phần còn lại
+  const pageNames = (overview?.segments || []).filter((segment) => segment.kind === "page").map((segment) => segment.label);
+  const segments =
+    group === "todo" ? [] : (overview?.segments || []).filter((segment) => segment.kind !== "page");
+  const segmentStyle = (kind: string) => (kind === "weak" ? "bg-[var(--sp-pink)]" : kind === "rest" ? "bg-[var(--sp-peri)]" : "bg-[var(--sp-purple)]");
 
   return (
-    <article className="relative rounded-[28px] border-2 border-[var(--sp-purple-deep)] bg-white px-5 pb-5 pt-9 shadow-[6px_6px_0_var(--sp-peri)] sm:px-8 sm:pb-7">
-      <span className="absolute -top-4 left-6 -rotate-2 rounded-xl border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] px-3.5 py-1.5 text-sm font-extrabold text-[var(--sp-purple-deep)] shadow-[3px_3px_0_var(--sp-pink)]">
-        Tổng quan trước khi làm
-      </span>
-
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="sp-accent text-[18px] text-[var(--sp-pink)]">{eyebrow}</p>
-          <h2 className="mt-0.5 text-[26px] leading-tight text-[var(--sp-ink)] sm:text-[30px]">{quizTitle(quiz)}</h2>
-        </div>
-        <span className="sp-chip flex items-center gap-1.5 bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
-          {quiz.is_retake ? <IconRepeat size={14} /> : <IconPen size={14} />}
-          {badge}
+    <article
+      className={`flex flex-col rounded-[22px] border-2 bg-white px-5 pb-5 pt-5 sm:px-6 ${
+        locked
+          ? "border-[var(--sp-line)] bg-[#fdfcfe]"
+          : group === "done"
+            ? "border-[var(--sp-purple-deep)] shadow-[6px_6px_0_#a7e3c4]"
+            : group === "review"
+              ? "border-[var(--sp-purple-deep)] shadow-[6px_6px_0_var(--sp-pink)]"
+              : "border-[var(--sp-purple-deep)] shadow-[6px_6px_0_var(--sp-peri)]"
+      }`}
+    >
+      <div className="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-4">
+        <span
+          className={`flex h-14 w-14 items-center justify-center rounded-2xl border-2 ${
+            locked
+              ? "border-[var(--sp-line)] bg-[var(--sp-surface-2)] text-[var(--sp-soft)]"
+              : `border-[var(--sp-purple-deep)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)] ${GROUPS[group].tone}`
+          }`}
+        >
+          {icon}
         </span>
+        <div className="min-w-0">
+          <p
+            className={`sp-accent text-[17px] leading-tight ${
+              locked
+                ? "text-[var(--sp-soft)]"
+                : group === "done"
+                  ? "text-emerald-700"
+                  : group === "review"
+                    ? "text-[var(--sp-pink)]"
+                    : "text-[var(--sp-peri-dark)]"
+            }`}
+          >
+            {kicker}
+          </p>
+          <h3 className={`mt-1 text-[18px] font-extrabold leading-snug ${locked ? "text-[var(--sp-muted)]" : "text-[var(--sp-ink)]"}`}>
+            {quizTitle(quiz)}
+          </h3>
+        </div>
+      </div>
+
+      <div className="mt-3.5 flex flex-wrap gap-2">
+        {chips.map((chip) => (
+          <span key={chip.text} className={`sp-chip flex items-center gap-1.5 ${chip.style}`}>
+            {chip.icon}
+            {chip.text}
+          </span>
+        ))}
       </div>
 
       {/* 4 ô thông tin */}
-      <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <InfoTile
-          icon={<IconBook size={15} />}
-          label="Phạm vi"
-          value={chapter?.label || (context?.day_number ? `Ngày học ${context.day_number}` : "Bài học")}
-          sub={dateKey ? `Học ngày ${shortDate(context?.scheduled_date || dateKey)}` : "—"}
-          title={context?.chapter || undefined}
-        />
-        <InfoTile icon={<IconList size={15} />} label="Số câu" value={questionCount ? `${questionCount} câu` : "—"} sub={typeLabel} />
-        <InfoTile
-          icon={<IconClock size={15} />}
+      <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <Tile icon={<IconBook size={13} />} label="Phạm vi" value={chapter?.label || (context?.day_number ? `Ngày ${context.day_number}` : "Bài học")} sub={studyKey ? `Ngày học ${shortDate(studyKey)}` : "—"} />
+        <Tile icon={<IconList size={13} />} label="Số câu" value={questionCount ? `${questionCount} câu` : "—"} sub={typeLabel} />
+        <Tile
+          icon={<IconClock size={13} />}
           label="Thời gian"
           value={quiz.time_limit_minutes ? `${quiz.time_limit_minutes} phút` : "Tự do"}
           sub={quiz.time_limit_minutes ? "Tính từ lúc bắt đầu" : "Không giới hạn"}
         />
-        <InfoTile
-          icon={<IconTrendUp size={15} />}
-          label="Lần trước"
-          highlight
-          value={
-            previous
-              ? `${previous.total_questions ? `${previous.correct_count}/${previous.total_questions} · ` : ""}${previous.score}%`
-              : latest
-                ? `${getAttemptPercent(latest)}%`
-                : "Chưa làm"
-          }
-          sub={
-            previous
-              ? `${previous.is_original && quiz.is_retake ? "Bài gốc" : "Ngày"} ${shortDate(previous.submitted_at)}`
-              : "Đây là lần đầu"
-          }
-        />
+        {scoreSource && tone ? (
+          <div className={`min-w-0 rounded-[14px] border-2 px-2.5 py-2.5 ${tone.box}`}>
+            <p className={`flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-wide ${tone.text}`}>
+              <IconTrendUp size={13} />
+              {group === "done" ? "Kết quả" : "Lần trước"}
+            </p>
+            <p className={`mt-1 truncate text-[16px] font-extrabold leading-tight ${tone.text}`}>
+              {scoreSource.total ? `${scoreSource.correct}/${scoreSource.total} câu` : `${scoreSource.percent}%`}
+            </p>
+            <p className={`mt-0.5 text-[12px] leading-snug ${tone.text}`}>
+              {scoreSource.percent}% · {group === "done" ? tone.label : `Bài gốc ${shortDate(scoreSource.date)}`}
+            </p>
+          </div>
+        ) : locked ? (
+          <Tile icon={<IconLock size={13} />} label="Điều kiện" value="Học xong" sub="Buổi học của bài" />
+        ) : (
+          <Tile icon={<IconPlay size={13} />} label="Mở từ" value={shortDate(studyKey) || "—"} sub="Sau câu hỏi lồng" />
+        )}
       </div>
 
-      {/* Câu hỏi được chọn thế nào */}
-      <h3 className="mt-7 text-[16px] font-bold text-[var(--sp-ink)]">Câu hỏi được chọn thế nào?</h3>
-      {error ? (
+      {/* Nội dung bài */}
+      <h4 className="mt-5 text-[14px] font-extrabold text-[var(--sp-ink)]">
+        {group === "done" ? "Câu sai cần xem lại" : locked ? "Để mở bài này" : "Câu hỏi được chọn thế nào?"}
+      </h4>
+      {group === "done" && latest && tone ? (
+        <>
+          <p className={`mt-2 flex items-center gap-2 rounded-xl border-2 border-[var(--sp-purple-deep)] px-3 py-2 text-[13.5px] font-bold text-white ${tone.fill}`}>
+            <IconTarget size={15} />
+            {Math.max(0, latest.total_questions - latest.correct_count)} câu sai · đã có giải thích
+          </p>
+          <BulletList
+            dot={tone.fill}
+            items={["Mỗi câu sai có giải thích và nguồn trong tài liệu gốc", "Câu sai được ưu tiên trong bài ôn tập"]}
+          />
+        </>
+      ) : locked ? (
+        <>
+          <p className="mt-2 flex items-center gap-2 rounded-xl border-2 border-[var(--sp-line)] bg-[var(--sp-soft)] px-3 py-2 text-[13.5px] font-bold text-white">
+            <IconLock size={15} />
+            {getLockMessage(quiz)}
+          </p>
+          <BulletList
+            dot="bg-[var(--sp-soft)]"
+            items={
+              group === "review"
+                ? ["Vào ôn, đọc lại tóm tắt", "Trả lời câu hỏi lồng để mở bài ôn"]
+                : ["Vào học, đọc tóm tắt của buổi", "Trả lời câu hỏi lồng để mở bài"]
+            }
+          />
+        </>
+      ) : error ? (
         <p className="mt-2 text-sm text-[var(--sp-pink-dark)]">{error}</p>
       ) : !overview ? (
-        <div className="mt-3 h-11 animate-pulse rounded-xl bg-[var(--sp-surface-2)]" />
-      ) : segments.length === 0 ? (
-        <p className="mt-2 text-sm text-[var(--sp-muted)]">Câu hỏi lấy từ nội dung của buổi học này.</p>
+        <div className="mt-2 h-10 animate-pulse rounded-xl bg-[var(--sp-surface-2)]" />
       ) : (
         <>
-          <div className="mt-3 flex min-h-11 overflow-hidden rounded-xl border-2 border-[var(--sp-purple-deep)]">
-            {segments.map((segment, index) => (
-              <div
-                key={`${segment.label}-${index}`}
-                className={`flex min-w-0 items-center gap-1.5 px-3 py-2 text-[13px] font-bold text-white ${segmentStyle(segment.kind, index)} ${
-                  index > 0 ? "border-l-2 border-white/60" : ""
-                }`}
-                style={{ flexGrow: segment.count, flexBasis: 0 }}
-                title={`${segment.count} câu · ${segment.label}`}
-              >
-                {segment.kind === "weak" && <IconTarget size={15} className="shrink-0" />}
-                <span className="truncate">
-                  {segment.count} câu · {segment.label}
-                </span>
-              </div>
-            ))}
+          <div className="mt-2 flex min-h-10 overflow-hidden rounded-xl border-2 border-[var(--sp-purple-deep)]">
+            {(segments.length ? segments : [{ kind: "rest", count: questionCount || 1, label: "phần đã học trong buổi", detail: "" }]).map(
+              (segment, index) => (
+                <div
+                  key={`${segment.label}-${index}`}
+                  className={`flex min-w-0 items-center gap-1.5 px-3 py-2 text-[13px] font-bold text-white ${segmentStyle(segment.kind)} ${
+                    index > 0 ? "border-l-2 border-white/60" : ""
+                  }`}
+                  style={{ flexGrow: segment.count, flexBasis: 0 }}
+                  title={`${segment.count} câu · ${segment.label}`}
+                >
+                  <IconTarget size={15} className="shrink-0" />
+                  <span className="truncate">
+                    {segment.count} câu · {segment.label}
+                  </span>
+                </div>
+              )
+            )}
           </div>
-          <ul className="mt-2.5 flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-[var(--sp-text-2)]">
-            {segments.map((segment, index) => (
-              <li key={`${segment.label}-legend-${index}`} className="flex items-center gap-2">
-                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${segmentStyle(segment.kind, index)}`} />
-                {segment.kind === "page"
-                  ? `${segment.detail}: ${Math.round((segment.count / segmentTotal) * 100)}% số câu`
-                  : segment.detail}
-              </li>
-            ))}
-          </ul>
+          <BulletList
+            dot={group === "review" ? "bg-[var(--sp-pink)]" : "bg-[var(--sp-peri)]"}
+            items={[
+              ...(group === "todo"
+                ? pageNames.length
+                  ? [`Lấy từ ${pageNames.join(", ")} của tài liệu`]
+                  : []
+                : segments.filter((segment) => segment.detail).map((segment) => segment.detail).slice(0, 1)),
+              group === "review"
+                ? overview.fill_count > 0
+                  ? "Dưới 50%: trắc nghiệm kết hợp điền khuyết, cần đạt từ 80%"
+                  : "50–79%: trắc nghiệm, cần đạt từ 80%"
+                : "Chỉ làm 1 lần; dưới 80% sẽ có bài ôn tập",
+            ]}
+          />
         </>
       )}
 
-      {/* Sau khi nộp bài */}
-      <h3 className="mt-7 text-[16px] font-bold text-[var(--sp-ink)]">Sau khi nộp bài</h3>
-      <ol className="mt-3 grid gap-3 sm:grid-cols-3">
-        {[
-          <>Xem <b className="text-[var(--sp-ink)]">điểm từng câu</b> và danh sách câu sai.</>,
-          <>Mỗi câu sai có <b className="text-[var(--sp-ink)]">giải thích</b> và <b className="text-[var(--sp-ink)]">nguồn</b> trong tài liệu gốc.</>,
-          quiz.is_retake ? (
-            <>Đạt từ 80% là <b className="text-[var(--sp-ink)]">hoàn thành</b>; chưa đạt thì ôn và làm lại.</>
-          ) : (
-            <>Kết quả cập nhật vào <b className="text-[var(--sp-ink)]">Đánh giá năng lực</b>; dưới 80% có bài kiểm tra lại.</>
-          ),
-        ].map((text, index) => (
-          <li key={index} className="flex gap-3 rounded-2xl bg-[var(--sp-lav)]/70 px-4 py-3.5 text-[13.5px] leading-5 text-[var(--sp-text-2)]">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[var(--sp-purple-deep)] bg-white text-sm font-extrabold text-[var(--sp-purple-deep)]">
-              {index + 1}
-            </span>
-            <span>{text}</span>
-          </li>
-        ))}
-      </ol>
+      <div className="min-h-2 flex-1" />
 
       {/* Hành động */}
-      <div className="mt-7 flex flex-col gap-3 border-t-2 border-dashed border-[var(--sp-line)] pt-5 sm:flex-row sm:flex-wrap sm:items-center">
-        {state === "open" ? (
-          <Link href={`/quizzes/${quiz.id}`} className="sp-btn sp-btn-primary justify-center whitespace-nowrap px-6 py-3 text-[16px]">
-            <IconPlay size={17} />
-            {quiz.is_retake ? "Làm lại" : "Bắt đầu làm bài"}
+      <div className="mt-4 grid grid-cols-1 items-center gap-3 border-t-2 border-dashed border-[var(--sp-line)] pt-4 sm:grid-cols-[170px_170px_minmax(0,1fr)]">
+        {group === "done" && latest ? (
+          <Link href={`/quiz-results/${latest.attempt_id}`} className="sp-btn sp-btn-primary h-11 justify-center !bg-emerald-600 text-[14px]">
+            <IconCheck size={16} />
+            Xem câu sai
           </Link>
-        ) : state === "done" && latest ? (
-          <Link href={`/quiz-results/${latest.attempt_id}`} className="sp-btn sp-btn-primary justify-center whitespace-nowrap px-6 py-3 text-[16px]">
-            <IconCheck size={17} />
-            Xem kết quả
+        ) : !locked ? (
+          <Link
+            href={`/quizzes/${quiz.id}`}
+            className={`sp-btn sp-btn-primary h-11 justify-center text-[14px] ${group === "review" ? "!bg-[var(--sp-pink)]" : ""}`}
+          >
+            <IconPlay size={16} />
+            {group === "review" ? "Làm bài ôn" : "Làm bài"}
+          </Link>
+        ) : group === "review" ? (
+          <Link href={lessonHref} className="sp-btn sp-btn-primary h-11 justify-center !bg-[var(--sp-pink)] text-[14px]">
+            <IconRepeat size={16} />
+            Vào ôn
           </Link>
         ) : (
-          <span className="sp-btn cursor-not-allowed justify-center bg-[var(--sp-surface-2)] px-6 py-3 text-[15px] text-[var(--sp-muted)]">
-            <IconLock size={16} />
-            Chưa mở khóa
+          <span className="sp-btn h-11 cursor-not-allowed justify-center border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-surface-2)] text-[14px] text-[var(--sp-soft)]">
+            <IconLock size={15} />
+            Chưa mở
           </span>
         )}
-        <Link href={summaryHref} className="sp-btn sp-btn-secondary justify-center whitespace-nowrap px-5 py-3 text-[15px]">
-          <IconFile size={16} />
-          {state === "locked" ? "Đến bài học để mở khóa" : `Xem lại bài học${chapter ? ` ${chapter.code}` : ""}`}
+        <Link href={lessonHref} className="sp-btn sp-btn-secondary h-11 justify-center text-[14px]">
+          {locked && group === "todo" ? <IconBook size={16} /> : <IconFile size={16} />}
+          {locked && group === "todo" ? "Vào học" : "Xem lại bài học"}
         </Link>
-        <p className="text-[13px] text-[var(--sp-muted)] sm:min-w-[180px] sm:flex-1 sm:text-right">
-          {state === "open"
-            ? "Chưa sẵn sàng? Bài vẫn giữ trong lịch, bạn làm lúc khác cũng được."
-            : state === "locked"
-              ? getLockMessage(quiz)
-              : quiz.is_retake
-                ? "Bạn đã đạt bài kiểm tra lại."
-                : "Bài kiểm tra kiến thức chỉ làm 1 lần."}
+        <p className="text-[12.5px] leading-5 text-[var(--sp-muted)]">
+          {group === "done"
+            ? quiz.is_retake
+              ? "Đã đạt bài ôn tập."
+              : scoreSource && scoreSource.percent < 80
+                ? "Bài ôn tập của buổi này ở mục Ôn tập."
+                : "Đạt từ 80%: buổi này đã hoàn thành."
+            : locked
+              ? group === "review"
+                ? "Trả lời câu hỏi lồng trước để mở bài ôn."
+                : "Bài tự mở khi bạn học xong buổi."
+              : group === "review"
+                ? "Cần đạt từ 80% để hoàn thành phần ôn."
+                : "Chưa sẵn sàng? Bạn làm lúc khác cũng được."}
         </p>
       </div>
     </article>
   );
 }
 
-function InfoTile({
-  icon,
-  label,
-  value,
-  sub,
-  highlight,
-  title,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub: string;
-  highlight?: boolean;
-  title?: string;
-}) {
+function Tile({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub: string }) {
   return (
-    <div
-      title={title}
-      className={`min-w-0 rounded-2xl border-2 px-3 py-3 ${
-        highlight ? "border-[#f3dca0] bg-[var(--sp-amber-bg)]" : "border-[var(--sp-line)] bg-white"
-      }`}
-    >
-      <p
-        className={`flex items-center gap-1 whitespace-nowrap text-[11px] font-bold uppercase tracking-wide ${
-          highlight ? "text-[var(--sp-amber-dark)]" : "text-[var(--sp-muted)]"
-        }`}
-      >
+    <div className="min-w-0 rounded-[14px] border-2 border-[var(--sp-line)] bg-white px-2.5 py-2.5">
+      <p className="flex items-center gap-1 whitespace-nowrap text-[10.5px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">
         {icon}
         {label}
       </p>
-      <p
-        className={`mt-1.5 truncate text-[19px] font-extrabold leading-tight ${
-          highlight ? "text-[#c98a00]" : "text-[var(--sp-ink)]"
-        }`}
-      >
-        {value}
-      </p>
-      <p className={`mt-0.5 truncate text-[12px] ${highlight ? "text-[var(--sp-amber-dark)]" : "text-[var(--sp-muted)]"}`}>
-        {sub}
-      </p>
+      <p className="mt-1 truncate text-[16px] font-extrabold leading-tight text-[var(--sp-ink)]">{value}</p>
+      <p className="mt-0.5 text-[12px] leading-snug text-[var(--sp-muted)]">{sub}</p>
     </div>
+  );
+}
+
+function BulletList({ items, dot }: { items: string[]; dot: string }) {
+  return (
+    <ul className="mt-2.5 space-y-1.5">
+      {items.map((item) => (
+        <li key={item} className="grid grid-cols-[8px_minmax(0,1fr)] items-center gap-2.5 text-[13.5px] text-[var(--sp-text-2)]">
+          <span className={`h-2 w-2 rounded-full ${dot}`} />
+          {item}
+        </li>
+      ))}
+    </ul>
   );
 }
