@@ -328,6 +328,7 @@ export default function QuizResultPage() {
     .map((item) => (typeof item === "string" ? { topic_name: item } : item))
     .filter((item) => item.topic_name || item.description);
   const retake = context?.retake || null;
+  const reviewDatePassed = Boolean(reviewDate && context?.today && reviewDate < context.today);
   const materialsHref = context?.subject_id
     ? `/study-materials?subject=${encodeURIComponent(context.subject_id)}&session=${encodeURIComponent(context.study_session_id)}`
     : "/study-materials";
@@ -421,14 +422,16 @@ export default function QuizResultPage() {
       </section>
 
       {/* Dưới 80%: yêu cầu chọn một buổi ôn lại, cho phép để sau, không chặn bài tiếp theo */}
-      {levelKey !== "none" && retake && retake.status !== "completed" && !reviewDate && !reviewPromptDismissed && (
+      {levelKey !== "none" && retake && retake.status !== "completed" && (!reviewDate || reviewDatePassed) && !reviewPromptDismissed && (
         <section
           role="alert"
           className="rounded-[24px] border-2 border-amber-300 bg-amber-50 px-5 py-4"
         >
           <p className="flex items-center gap-2 font-bold text-amber-900">
             <IconAlert size={18} />
-            Bạn chưa đạt 80% ở bài này: hãy chọn một buổi để ôn lại
+            {reviewDatePassed
+              ? "Ngày ôn đã qua mà bài này vẫn chưa đạt 80%: hãy chọn ngày ôn mới"
+              : "Bạn chưa đạt 80% ở bài này: hãy chọn một buổi để ôn lại"}
           </p>
           <p className="mt-1 text-sm text-amber-900/80">
             Chọn ngày bạn sẽ ôn lại phần kiến thức còn yếu. StudyPilot sẽ dựa vào ngày này để nhắc bạn.
@@ -866,7 +869,7 @@ function ReviewDayPicker({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const available = context.week.filter((day) => !day.has_study && !day.is_past && !day.after_exam);
+  const available = context.week.filter((day) => !day.is_past && !day.after_exam);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
@@ -916,7 +919,7 @@ function ReviewDayPicker({
             </p>
             <h2 className="text-[22px] text-[var(--sp-ink)]">Chọn ngày ôn lại</h2>
             <p className="mt-1 text-sm text-[var(--sp-muted)]">
-              Chỉ ôn trong tuần của bài học, vào ngày không trùng lịch học chính.
+              Chỉ ôn trong tuần của bài học. Được chọn cả ngày đã có lịch học: hãy xem ngày nào còn trống để chọn cho phù hợp.
             </p>
           </div>
           <button
@@ -932,7 +935,7 @@ function ReviewDayPicker({
         <div className="mt-5 grid grid-cols-7 gap-1.5 sm:gap-2">
           {context.week.map((day) => {
             const isLesson = day.date === context.scheduled_date;
-            const disabled = day.has_study || day.is_past || day.after_exam;
+            const disabled = day.is_past || day.after_exam;
             const isSelected = selected === day.date;
             const isToday = day.date === context.today;
             return (
@@ -943,21 +946,21 @@ function ReviewDayPicker({
                 onClick={() => setSelected(day.date)}
                 aria-pressed={isSelected}
                 title={
-                  day.has_study
-                    ? "Ngày học chính"
-                    : day.is_past
-                      ? "Ngày đã qua"
-                      : day.after_exam
-                        ? "Từ ngày thi trở đi"
-                        : "Có thể chọn"
+                  day.is_past
+                    ? "Ngày đã qua"
+                    : day.after_exam
+                      ? "Từ ngày thi trở đi"
+                      : day.has_study
+                        ? "Có lịch học: vẫn chọn được, ôn thêm sau buổi học"
+                        : "Trống lịch"
                 }
                 className={`relative flex flex-col items-center rounded-2xl border-2 px-1 py-2.5 transition ${
                   isSelected
                     ? "border-[var(--sp-purple)] bg-[var(--sp-pink)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)]"
-                    : day.has_study
-                      ? "cursor-not-allowed border-[var(--sp-lav-line)] bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
-                      : disabled
-                        ? "cursor-not-allowed border-transparent bg-[var(--sp-surface-2)] text-[var(--sp-soft)]"
+                    : disabled
+                      ? "cursor-not-allowed border-transparent bg-[var(--sp-surface-2)] text-[var(--sp-soft)]"
+                      : day.has_study
+                        ? "border-[var(--sp-lav-line)] bg-[var(--sp-lav)] text-[var(--sp-peri-dark)] hover:border-[var(--sp-pink)]"
                         : "border-[var(--sp-line)] bg-white text-[var(--sp-ink)] hover:border-[var(--sp-pink)]"
                 }`}
               >
@@ -975,6 +978,11 @@ function ReviewDayPicker({
                     <span className="block h-1.5 w-1.5 rounded-full bg-[var(--sp-peri)]" />
                   ) : null}
                 </span>
+                {!disabled && (
+                  <span className="mt-1 text-[9.5px] font-semibold leading-none">
+                    {day.has_study ? "Có lịch" : "Trống"}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -983,7 +991,7 @@ function ReviewDayPicker({
         <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px] text-[var(--sp-text-2)]">
           <li className="flex items-center gap-1.5">
             <span className="h-3 w-3 rounded border-2 border-[var(--sp-lav-line)] bg-[var(--sp-lav)]" />
-            Ngày học chính (đã chọn khi tạo kế hoạch)
+            Có lịch học (vẫn chọn được)
           </li>
           <li className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-[var(--sp-pink)]" />
@@ -995,13 +1003,13 @@ function ReviewDayPicker({
           </li>
           <li className="flex items-center gap-1.5">
             <span className="h-3 w-3 rounded border-2 border-[var(--sp-line)] bg-white" />
-            Có thể chọn
+            Trống lịch
           </li>
         </ul>
 
         {available.length === 0 && (
           <p className="mt-4 rounded-2xl bg-[var(--sp-amber-bg)] px-4 py-3 text-sm text-[var(--sp-amber-dark)]">
-            Tuần này không còn ngày trống. Hãy ôn ngay hôm nay hoặc tranh thủ sau giờ học chính.
+            Tuần này không còn ngày nào chọn được. Hãy bấm Học lại & tự kiểm tra để ôn ngay hôm nay.
           </p>
         )}
         {error && <p className="mt-3 text-sm font-medium text-[var(--sp-pink-dark)]">{error}</p>}
