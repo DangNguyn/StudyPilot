@@ -28,7 +28,6 @@ import PracticeQuizPanel, {
 import StudyTimer from "@/components/study-timer";
 import ChapterMindmap from "@/components/chapter-mindmap";
 import {
-  RevisitQuizReview,
   SessionModeBanner,
   parseSessionMode,
   useSessionQuizResult,
@@ -1406,15 +1405,6 @@ function MaterialReader({
           />
         </aside>
       </section>
-
-      {focusPart && focusMode === "revisit" && (
-        <RevisitQuizReview
-          result={quizReview.result}
-          loading={quizReview.loading}
-          error={quizReview.error}
-          materialsHref={`/materials?subject=${encodeURIComponent(subject.id)}&session=${encodeURIComponent(focusPart.session.id)}&mode=revisit`}
-        />
-      )}
 
       {/* Mindmap tổng hợp của chương kết thúc trong ngày này (gói Pro) */}
       {plan &&

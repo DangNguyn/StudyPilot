@@ -4,13 +4,13 @@
  * Trang Tài liệu học tập mở theo 3 chế độ (từ lịch tháng):
  * - learn: học như bình thường (không có khối riêng);
  * - review: buổi ôn lại, trả lời Tự kiểm tra nhanh để mở bài kiểm tra lại;
- * - revisit: xem lại buổi đã học, kèm câu sai và giải thích của bài kiểm tra.
+ * - revisit: xem lại buổi đã học, nút Xem câu sai dẫn sang trang kết quả bài kiểm tra.
  */
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import WrongAnswerReview, { type ReviewQuestion } from "@/components/wrong-answer-review";
-import { IconAlert, IconRepeat } from "@/components/icons";
+import { type ReviewQuestion } from "@/components/wrong-answer-review";
+import { IconRepeat } from "@/components/icons";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -140,73 +140,15 @@ export function SessionModeBanner({
         <p className="text-lg font-extrabold text-[var(--sp-ink)]">{topicTitle}</p>
         <p className="text-sm text-[var(--sp-text-2)]">
           {percent !== null
-            ? `Bài kiểm tra: ${result?.correct_count}/${result?.total_questions} câu (${percent}%). Câu sai và giải thích ở cuối trang.`
+            ? `Bài kiểm tra: ${result?.correct_count}/${result?.total_questions} câu (${percent}%).`
             : "Ôn lại tóm tắt và câu hỏi lồng của buổi này."}
         </p>
       </div>
-      {percent !== null && (
-        <a href="#quiz-review" className="sp-btn sp-btn-primary px-4 py-2.5 text-sm">
+      {percent !== null && result && (
+        <Link href={`/quiz-results/${result.attempt_id}`} className="sp-btn sp-btn-primary px-4 py-2.5 text-sm">
           Xem câu sai
-        </a>
-      )}
-    </section>
-  );
-}
-
-/* Câu sai và giải thích của bài kiểm tra (chế độ Xem lại) */
-export function RevisitQuizReview({
-  result,
-  loading,
-  error,
-  materialsHref,
-}: {
-  result: AttemptResult | null;
-  loading: boolean;
-  error: string;
-  materialsHref: string;
-}) {
-  if (loading) {
-    return <p className="sp-card p-6 text-sm text-[var(--sp-muted)]">Đang tải bài kiểm tra của buổi này…</p>;
-  }
-  if (error) {
-    return (
-      <p className="sp-card flex items-center gap-2 p-6 text-sm font-medium text-[var(--sp-pink-dark)]">
-        <IconAlert size={16} /> {error}
-      </p>
-    );
-  }
-  if (!result) return null;
-  const percent = percentOf(result);
-  const level =
-    percent >= 80
-      ? { label: "Nắm vững", chip: "bg-emerald-600 text-white" }
-      : percent >= 50
-        ? { label: "Cần ôn lại", chip: "bg-[var(--sp-yellow)] text-[var(--sp-purple-deep)]" }
-        : { label: "Ôn cấp tốc", chip: "bg-[var(--sp-pink)] text-white" };
-
-  return (
-    <section id="quiz-review" className="scroll-mt-24 space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Bài kiểm tra của buổi này</p>
-          <h2 className="text-[24px] text-[var(--sp-ink)]">Câu sai và giải thích</h2>
-        </div>
-        <Link href={`/quiz-results/${result.attempt_id}`} className="text-sm font-bold text-[var(--sp-peri-dark)] hover:underline">
-          Mở trang kết quả đầy đủ
         </Link>
-      </div>
-      <WrongAnswerReview
-        results={result.results}
-        correct={result.correct_count}
-        total={result.total_questions}
-        percent={percent}
-        levelLabel={level.label}
-        levelChip={level.chip}
-        weakNumbers={new Set<number>()}
-        mistakes={[]}
-        weakHints={[]}
-        materialsHref={materialsHref}
-      />
+      )}
     </section>
   );
 }
