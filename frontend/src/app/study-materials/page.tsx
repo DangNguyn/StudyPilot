@@ -1561,12 +1561,10 @@ function FormulaCard({ formula }: { formula: Formula }) {
 }
 
 /* Tiêu đề thẻ: căn giữa, phần trong ngoặc xuống dòng riêng, vd "Technique (Kỹ thuật)" */
-function CardTitle({ text }: { text: string }) {
+function CardTitle({ text, small }: { text: string; small: boolean }) {
   const match = text.match(/^(.+?)\s*(\([^()]*\))\s*$/);
-  // Tiêu đề dài (nhiều chữ) → chữ nhỏ hơn để thẻ cân đối
-  const long = (match ? match[1] : text).length > 18;
   return (
-    <p className={`text-center font-extrabold text-[var(--sp-purple)] ${long ? "text-[15px] leading-6" : "text-lg leading-7"}`}>
+    <p className={`text-center font-extrabold text-[var(--sp-purple)] ${small ? "text-[15px] leading-6" : "text-lg leading-7"}`}>
       {renderMath(match ? match[1] : text)}
       {match && <span className="block">{renderMath(match[2])}</span>}
     </p>
@@ -1580,6 +1578,9 @@ function TableBlock({ table }: { table: SectionTable }) {
 
   /* Bảng nhỏ (phân loại, so sánh ngắn) → thẻ so sánh */
   if (rows.length <= 4 && headers.length <= 3) {
+    // Đồng bộ cả nhóm thẻ: một tiêu đề dài → mọi tiêu đề cùng cỡ nhỏ; nội dung đều ngắn → cùng căn giữa
+    const smallTitles = rows.some((row) => (row[0] || "").length > 18);
+    const centerBody = rows.every((row) => row.slice(1).every((cell) => !cell || cell.length <= 100));
     return (
       <div
         className={`grid grid-cols-1 gap-3 ${
@@ -1591,13 +1592,12 @@ function TableBlock({ table }: { table: SectionTable }) {
             key={index}
             className="rounded-2xl border-2 border-[var(--sp-line)] bg-white p-4 transition hover:border-[var(--sp-lav-line)]"
           >
-            <CardTitle text={row[0]} />
+            <CardTitle text={row[0]} small={smallTitles} />
             {row.slice(1).map((cell, cellIndex) =>
               cell ? (
                 <p
                   key={cellIndex}
-                  // Nội dung ngắn: căn giữa (căn đều sẽ giãn chữ thưa); dài: giữ căn đều
-                  className={`mt-1.5 text-sm leading-6 text-[var(--sp-text-2)] ${cell.length <= 60 ? "text-center" : ""}`}
+                  className={`mt-1.5 text-sm leading-6 text-[var(--sp-text-2)] ${centerBody ? "text-center" : ""}`}
                 >
                   <Highlightable text={`${row[0]} ${cell}`}>{renderRich(cell)}</Highlightable>
                 </p>
