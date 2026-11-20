@@ -1958,6 +1958,8 @@ QUIZ_OPEN_SESSION_STATUSES = ("in_progress", "completed")
 class PracticeCompleteRequest(BaseModel):
     answered: int = Field(default=0, ge=0)
     correct: int = Field(default=0, ge=0)
+    # False khi vào từ nút "Vào học": không mở bài kiểm tra lại
+    open_retake: bool = True
 
 
 @app.post("/api/study-sessions/{session_id}/practice-complete")
@@ -2004,6 +2006,9 @@ def complete_session_practice(
             .eq("study_session_id", str(session_id))
             .execute()
         ).data or []
+
+        if request is not None and not request.open_retake:
+            session_quizzes = []
 
         for session_quiz in session_quizzes:
             try:

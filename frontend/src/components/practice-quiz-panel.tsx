@@ -83,6 +83,7 @@ export type UnlockState = {
   quizHref?: string;
   retakeHref?: string;
   quizLabel?: string;
+  title?: string;
   message?: string;
 };
 
@@ -429,10 +430,10 @@ function UnlockBlock({
       <div className="sp-task-expand mt-4 w-full rounded-2xl border-2 border-emerald-200 bg-emerald-50 px-4 py-3 text-left">
         <p className="flex items-center gap-2 text-sm font-bold text-emerald-800">
           <IconCheck size={16} />
-          {unlock.retakeHref
+          {unlock.title ? unlock.title : unlock.retakeHref
             ? "Bài kiểm tra lại đã mở"
             : unlock.quizLabel
-              ? "Bạn đã làm bài kiểm tra hôm nay"
+              ? "Bạn đã làm bài kiểm tra của buổi này"
               : "Bài kiểm tra hôm nay đã mở"}
         </p>
         {unlock.retakeHref && (
@@ -444,7 +445,7 @@ function UnlockBlock({
             Làm bài kiểm tra lại
           </Link>
         )}
-        {!unlock.retakeHref && (
+        {!unlock.retakeHref && (!unlock.title || unlock.quizHref) && (
           <Link
             href={unlock.quizHref || "/quizzes"}
             className="sp-btn sp-btn-primary mt-2.5 w-full justify-center py-2 text-[13px]"

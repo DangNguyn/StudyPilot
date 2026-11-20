@@ -996,7 +996,8 @@ function MaterialReader({
   /* Trả lời xong phần tự kiểm tra → bắt đầu các buổi của ngày, mở bài kiểm tra.
      Buổi chỉ "completed" khi đã nộp bài kiểm tra. */
   const unlock = unlockByDay[day.dateKey] ||
-    (day.parts.length > 0 &&
+    // Mở từ lịch: nút tính theo chế độ khi trả lời xong, không dùng nút mặc định
+    (!focusMode && day.parts.length > 0 &&
     day.parts.every((part) => part.session.status === "completed" || part.session.status === "in_progress")
       ? { state: "done" as const }
       : { state: "idle" as const });
@@ -1004,6 +1005,20 @@ function MaterialReader({
   const completeDay = async (answered: number, correct: number) => {
     const dateKey = day.dateKey;
     const sessionIds = day.parts.map((part) => part.session.id);
+    /* Xem lại: chỉ dẫn tới kết quả + câu sai của bài kiểm tra gốc, không đổi trạng thái gì */
+    if (focusMode === "revisit") {
+      const attemptId = quizReview.result?.attempt_id;
+      setUnlockByDay((state) => ({
+        ...state,
+        [dateKey]: {
+          state: "done",
+          title: attemptId ? "Xem lại bài kiểm tra của buổi này" : "Buổi này chưa có kết quả bài kiểm tra",
+          quizHref: attemptId ? `/quiz-results/${attemptId}` : undefined,
+          quizLabel: attemptId ? "Xem kết quả và câu sai" : undefined,
+        },
+      }));
+      return;
+    }
     setUnlockByDay((state) => ({ ...state, [dateKey]: { state: "saving" } }));
     try {
       const retakeIds: string[] = [];
@@ -1013,7 +1028,7 @@ function MaterialReader({
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ answered, correct }),
+            body: JSON.stringify({ answered, correct, open_retake: focusMode !== "learn" }),
           }
         );
         const result = await response.json().catch(() => ({}));
@@ -1060,7 +1075,8 @@ function MaterialReader({
           state: "done",
           quizHref,
           quizLabel,
-          retakeHref: retakeIds[0] ? `/quizzes/${retakeIds[0]}` : undefined,
+          // Vào học → bài kiểm tra gốc; Vào ôn (hoặc mở thường) → bài kiểm tra lại nếu có
+          retakeHref: focusMode !== "learn" && retakeIds[0] ? `/quizzes/${retakeIds[0]}` : undefined,
         },
       }));
     } catch (unlockError) {
