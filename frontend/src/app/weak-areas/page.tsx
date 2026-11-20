@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { SmartLoading } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import {
   IconAlert,
@@ -12,12 +13,12 @@ import {
   IconCheck,
   IconChevronDown,
   IconChevronRight,
+  IconClock,
   IconFile,
+  IconFlag,
   IconPlay,
   IconRepeat,
   IconTarget,
-  IconTrendDown,
-  IconTrendUp,
   Sparkle,
 } from "@/components/icons";
 
@@ -79,6 +80,8 @@ type Quiz = {
   is_retake?: boolean;
   review_plan_id?: string | null;
   review_status?: string | null;
+  review_date?: string | null;
+  is_unlocked?: boolean;
 };
 
 type WeakAreaItem = {
@@ -150,29 +153,11 @@ function toDateKey(value: string | Date) {
 function formatDate(value?: string | null) {
   if (!value) return "";
   return new Date(value).toLocaleDateString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
   });
-}
-
-function formatDayLabel(value: string) {
-  const key = toDateKey(value);
-  const today = toDateKey(new Date());
-  if (key === today) return "hôm nay";
-  const date = new Date(`${key}T00:00:00`);
-  const weekday = date.toLocaleDateString("vi-VN", { weekday: "long" });
-  const [, month, day] = key.split("-");
-  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${day}/${month}`;
-}
-
-function formatWeekday(value: string) {
-  const key = toDateKey(value);
-  if (key === toDateKey(new Date())) return "Hôm nay";
-  const weekday = new Date(`${key}T00:00:00`).toLocaleDateString("vi-VN", {
-    weekday: "long",
-  });
-  return weekday.charAt(0).toUpperCase() + weekday.slice(1);
 }
 
 function getAttemptPercent(attempt: QuizAttempt) {
@@ -249,9 +234,10 @@ function WeakAreasPageContent() {
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [holdLoading, setHoldLoading] = useState(false);
   const [isLoadingPlan, setIsLoadingPlan] = useState(false);
   const [error, setError] = useState("");
-  const [historyFilter, setHistoryFilter] = useState<"all" | "improve">("all");
+  const [masteryView, setMasteryView] = useState<"chapter" | "week">("chapter");
 
   useEffect(() => {
     let cancelled = false;
@@ -542,6 +528,7 @@ function WeakAreasPageContent() {
 
     return {
       weeks,
+      lessons: weeks.flatMap((week) => week.lessons),
       rows,
       chapters,
       tested,
@@ -564,12 +551,16 @@ function WeakAreasPageContent() {
 
   /* ---------- Hiển thị ---------- */
 
-  if (isLoading) {
+  if (isLoading || holdLoading) {
     return (
-      <div className="sp-card mx-auto max-w-5xl p-10 text-center text-[var(--sp-muted)]">
-        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-        Đang tổng hợp kết quả học tập...
-      </div>
+      <SmartLoading
+        text="Đang tổng hợp kết quả học tập…"
+        sub="Pilot đang chấm lại từng bài kiểm tra, chờ mình xíu nhé!"
+        stages={["Lấy bài làm", "Tính điểm", "Tìm phần yếu", "Gợi ý ôn"]}
+        continueLabel="Xem đánh giá"
+        done={!isLoading}
+        onHoldChange={setHoldLoading}
+      />
     );
   }
 
@@ -589,43 +580,163 @@ function WeakAreasPageContent() {
     );
   }
 
-  const {
-    rows,
-    chapters,
-    tested,
-    mastered,
-    needWork,
-    completedChapters,
-    remainingChapters,
-  } = analysis;
+  const { rows, chapters, tested, mastered, needWork, lessons } = analysis;
+  const todayKey = toDateKey(new Date());
   const percent = analysis.totalSessions
     ? Math.round((analysis.completedSessions / analysis.totalSessions) * 100)
     : 0;
-  const priorities = needWork.slice(0, 2);
-  const history = [...rows]
-    .reverse()
-    .filter((row) => historyFilter === "all" || row.percent < MASTERY_SCORE);
+  // Tài liệu có từ 2 chương trở lên thì đánh giá theo chương, còn lại theo từng bài học nhỏ.
+  const byChapter = chapters.filter((chapter) => chapter.sessions.length > 0).length >= 2;
+  const lessonBySession = new Map(lessons.map((lesson) => [lesson.session.id, lesson]));
+  const chapterLessons = (chapter: ChapterStat) =>
+    chapter.sessions.map((session) => lessonBySession.get(session.id)).filter((lesson): lesson is LessonScore => Boolean(lesson));
+  const testedLessons = lessons.filter((lesson) => lesson.current !== null);
+  const weakLessons = testedLessons.filter((lesson) => (lesson.current as number) < MASTERY_SCORE);
 
-  const nextAdvice = (() => {
-    const first = priorities[0];
-    const next = analysis.nextLessonChapter || analysis.nextChapter;
-    if (first && next && next.key !== first.key) {
-      return `Ôn lại ${first.code} · ${first.shortTitle} trước, sau đó học tiếp ${next.code} · ${next.shortTitle}.`;
+  const examKey = plan.exam_date ? toDateKey(plan.exam_date) : null;
+  const daysLeft = examKey
+    ? Math.max(0, Math.round((Date.parse(examKey) - Date.parse(todayKey)) / 86_400_000))
+    : null;
+  const lastStudy = analysis.lastSessionDate ? formatDate(analysis.lastSessionDate).slice(0, 5) : "";
+
+  const lessonHref = (lesson: LessonScore, mode: "review" | "revisit") =>
+    `/materials?subject=${encodeURIComponent(subject.id)}&session=${encodeURIComponent(lesson.session.id)}&mode=${mode}`;
+
+  /* Trạng thái bài ôn của một bài học: ngày ôn đã chọn + nút đi tiếp */
+  const reviewFor = (lesson: LessonScore): ReviewInfo => {
+    const retake = [...quizzes]
+      .reverse()
+      .find((quiz) => quiz.is_retake && quiz.study_session_id === lesson.session.id && quiz.review_status !== "completed");
+    if (!retake) {
+      return { text: "Chưa có bài ôn cho bài này", tone: "muted", rank: 3, primary: { label: "Xem lại bài", href: lessonHref(lesson, "revisit") } };
     }
-    if (first) return `Ôn lại ${first.code} · ${first.shortTitle} rồi làm lại bài kiểm tra.`;
-    if (next) return `Bạn đang làm tốt! Tiếp tục học ${next.code} · ${next.shortTitle} theo lịch.`;
-    return "Bạn đã hoàn thành lộ trình. Hãy ôn Flashcards để giữ kiến thức trước ngày thi.";
-  })();
+    if (!retake.review_date) {
+      const attempt = (lesson.main || lesson.latest)?.attempt.attempt_id;
+      return {
+        text: "Chưa chọn ngày ôn",
+        tone: "pink",
+        rank: 1,
+        primary: { label: "Chọn ngày ôn", href: attempt ? `/quiz-results/${attempt}` : lessonHref(lesson, "review") },
+      };
+    }
+    const key = retake.review_date.slice(0, 10);
+    const primary = retake.is_unlocked
+      ? { label: "Làm bài ôn", href: `/quizzes/${retake.id}` }
+      : { label: "Vào ôn", href: lessonHref(lesson, "review") };
+    if (key > todayKey) return { text: `Bài ôn hẹn ngày ${formatDayMonth(key)}`, tone: "amber", rank: 2, primary };
+    return {
+      text: key === todayKey ? "Bài ôn đến hạn hôm nay" : `Bài ôn quá hạn từ ${formatDayMonth(key)}`,
+      tone: "red",
+      rank: 0,
+      primary,
+    };
+  };
+
+  /* Phần AI chỉ ra là còn yếu ở lần làm gần nhất của bài học */
+  const missFor = (lesson: LessonScore) => {
+    const row = [...rows]
+      .reverse()
+      .find((item) => item.session?.id === lesson.session.id && (item.attempt.ai_assessment?.weak_areas || []).length > 0);
+    const area = row?.attempt.ai_assessment?.weak_areas?.[0];
+    return area?.topic_name || area?.description || null;
+  };
+  const lessonName = (lesson: LessonScore) => (lesson.topic ? getMainTopicTitle(lesson.topic.name) : "Bài học");
+  const resultsHref = (lesson: LessonScore) =>
+    lesson.latest ? `/quiz-results/${lesson.latest.attempt.attempt_id}` : null;
+
+  const weakItems: WeakItem[] = byChapter
+    ? needWork.slice(0, 2).map((chapter) => {
+        const all = chapterLessons(chapter);
+        const done = all.filter((lesson) => lesson.current !== null);
+        const weakest = [...done].sort((a, b) => (a.current as number) - (b.current as number))[0];
+        return {
+          key: chapter.key,
+          kicker: `${chapter.code.replace(/^C/, "Chương ")} · ${done.length}/${all.length} bài đã kiểm tra`,
+          title: `${chapter.code}. ${chapter.shortTitle}`,
+          score: chapter.current ?? 0,
+          lines: [
+            weakest ? { label: "Bài yếu nhất", value: `${lessonName(weakest)} (${weakest.current}%)` } : null,
+            weakest && missFor(weakest) ? { label: "Sai nhiều ở", value: missFor(weakest) as string } : null,
+          ].filter((line): line is { label: string; value: string } => Boolean(line)),
+          review: weakest ? reviewFor(weakest) : null,
+          resultsHref: weakest ? resultsHref(weakest) : null,
+          stepLabel: chapter.code,
+          stepText: chapter.shortTitle,
+        };
+      })
+    : weakLessons
+        .map((lesson) => ({ lesson, review: reviewFor(lesson) }))
+        .sort(
+          (a, b) =>
+            a.review.rank - b.review.rank ||
+            (a.lesson.current as number) - (b.lesson.current as number) ||
+            a.lesson.dayNumber - b.lesson.dayNumber
+        )
+        .map(({ lesson, review }) => {
+          const miss = missFor(lesson);
+          return {
+            key: lesson.session.id,
+            kicker: `Ngày học ${lesson.dayNumber} · ${formatDayMonth(lesson.dateKey)}`,
+            title: lessonName(lesson),
+            score: lesson.current as number,
+            lines: miss ? [{ label: "Sai nhiều ở", value: miss }] : [],
+            review,
+            resultsHref: resultsHref(lesson),
+            stepLabel: `Ngày học ${lesson.dayNumber}`,
+            stepText: lessonName(lesson),
+          };
+        });
+  const shownWeak = weakItems.slice(0, byChapter ? 2 : 3);
+  const moreWeak = byChapter ? 0 : weakItems.length - shownWeak.length;
+
+  /* Tiếp theo: ôn phần yếu nhất, rồi học bài kế tiếp theo lịch */
+  const nextLesson = analysis.nextLesson ? lessonBySession.get(analysis.nextLesson.id) : undefined;
+  const nextChapter = analysis.nextLessonChapter || analysis.nextChapter;
+  const learnStep = byChapter
+    ? nextChapter && { label: nextChapter.code, text: nextChapter.shortTitle }
+    : nextLesson && { label: `Ngày học ${nextLesson.dayNumber}`, text: lessonName(nextLesson) };
+  const reviewStep = shownWeak[0] && { label: shownWeak[0].stepLabel, text: shownWeak[0].stepText };
+  const shortStep = (label?: string) => (label ? label.replace("Ngày học", "Ngày") : "—");
+
   /* Tiếp tục luyện tập → Tài liệu học tập của môn này, mở đúng bài tiếp theo */
   const continueHref = `/study-materials?subject=${encodeURIComponent(subject.id)}${
     analysis.nextLesson ? `&session=${encodeURIComponent(analysis.nextLesson.id)}` : ""
   }`;
-  const continueLabel = analysis.nextLessonChapter
-    ? `Tiếp tục luyện tập · ${analysis.nextLessonChapter.code}`
-    : "Tiếp tục luyện tập";
+  const continueLabel = learnStep ? `Tiếp tục luyện tập · ${shortStep(learnStep.label)}` : "Tiếp tục luyện tập";
+
+  const groupCards = byChapter && masteryView === "chapter"
+    ? chapters
+        .filter((chapter) => chapter.sessions.length > 0)
+        .map((chapter, index) => {
+          const items = chapterLessons(chapter);
+          const doneSessions = chapter.sessions.filter((session) => session.status === "completed").length;
+          return {
+            key: chapter.key,
+            kind: "Chương",
+            number: chapter.code.replace(/^C/, ""),
+            title: chapter.shortTitle,
+            sub: `${doneSessions}/${chapter.sessions.length} buổi đã học · ${items.filter((lesson) => lesson.current !== null).length} bài đã kiểm tra`,
+            lessons: items,
+            tint: index % 2 === 0 ? "peri" : "pink",
+          } as const;
+        })
+    : analysis.weeks.map((week, index) => {
+        const improved = week.average !== null && week.firstAverage !== null && week.average > week.firstAverage;
+        return {
+          key: String(week.number),
+          kind: "Tuần",
+          number: String(week.number),
+          title: `${formatDayMonth(week.startKey)} – ${formatDayMonth(week.endKey)}`,
+          sub: `${week.tested}/${week.lessons.length} bài đã kiểm tra${improved ? ` · tăng từ ${week.firstAverage}% sau kiểm tra lại` : ""}`,
+          lessons: week.lessons,
+          tint: index % 2 === 0 ? "peri" : "pink",
+        } as const;
+      });
+  // Mở sẵn nhóm gần nhất đã có bài kiểm tra
+  const openKey = [...groupCards].reverse().find((card) => card.lessons.some((lesson) => lesson.current !== null))?.key ?? groupCards[0]?.key;
 
   return (
-    <div className={`mx-auto max-w-[1240px] space-y-6 transition-opacity ${isLoadingPlan ? "opacity-60" : ""}`}>
+    <div className={`mx-auto max-w-[1240px] space-y-7 transition-opacity ${isLoadingPlan ? "opacity-60" : ""}`}>
       {/* Tiêu đề + chọn môn */}
       <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
@@ -654,104 +765,134 @@ function WeakAreasPageContent() {
         />
       </section>
 
-      {/* Thẻ tổng quan */}
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      {/* Thẻ tổng quan: % kế hoạch · buổi đã hoàn thành · cần ôn lại */}
+      <section className="grid grid-cols-1 gap-5 md:grid-cols-3">
         <StatCard
-          icon={<IconCalendar size={22} />}
-          iconStyle="bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
+          icon={<IconCalendar size={24} />}
+          iconStyle="bg-[var(--sp-peri)]"
+          shadow="shadow-[5px_5px_0_var(--sp-lav-line)] hover:shadow-[7px_7px_0_var(--sp-lav-line)]"
           label="Tiến độ kế hoạch"
         >
-          <p className="text-[30px] font-extrabold leading-tight text-[var(--sp-ink)]">
-            {percent}%
-            <span className="ml-1.5 text-base font-semibold text-[var(--sp-muted)]">
-              · {analysis.completedSessions}/{analysis.totalSessions} buổi
-            </span>
-          </p>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
-            <div className="h-full rounded-full bg-[var(--sp-peri)]" style={{ width: `${percent}%` }} />
+          <p className="text-[30px] font-extrabold leading-tight text-[var(--sp-ink)]">{percent}%</p>
+          <div className="mt-2.5 h-2.5 overflow-hidden rounded-full border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-surface-2)]">
+            <div className="h-full bg-[var(--sp-peri)] transition-all duration-700" style={{ width: `${percent}%` }} />
           </div>
+          <p className="mt-2 text-[13px] text-[var(--sp-muted)]">
+            {examKey ? `Thi ngày ${formatDayMonth(examKey)} · còn ${daysLeft} ngày` : `Theo lịch đến ${lastStudy}`}
+          </p>
         </StatCard>
 
         <StatCard
-          icon={<IconBook size={22} />}
-          iconStyle="bg-emerald-50 text-emerald-700"
-          label="Chương đã học"
+          icon={<IconCheck size={24} />}
+          iconStyle="bg-emerald-500"
+          shadow="shadow-[5px_5px_0_#a7e3c4] hover:shadow-[7px_7px_0_#a7e3c4]"
+          label="Buổi học đã hoàn thành"
         >
           <p className="text-[30px] font-extrabold leading-tight text-[var(--sp-ink)]">
-            {completedChapters.length}
-            <span className="text-lg font-semibold text-[var(--sp-muted)]">/{chapters.length} chương</span>
+            {analysis.completedSessions}
+            <span className="ml-1 text-base font-semibold text-[var(--sp-muted)]">/{analysis.totalSessions} buổi</span>
           </p>
-          <p className="truncate text-sm text-[var(--sp-muted)]">
-            {remainingChapters.length > 0
-              ? `${remainingChapters.map((item) => item.code).slice(0, 4).join(", ")}${remainingChapters.length > 4 ? "…" : ""} theo lịch đến ${formatDate(analysis.lastSessionDate).slice(0, 5)}`
-              : "Đã học hết các chương"}
+          {analysis.totalSessions <= 30 ? (
+            <div className="mt-2.5 grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.max(1, analysis.totalSessions)}, minmax(0, 1fr))` }}>
+              {Array.from({ length: analysis.totalSessions }, (_, index) => (
+                <span
+                  key={index}
+                  className={`h-2.5 rounded border-2 ${
+                    index < analysis.completedSessions
+                      ? "border-[var(--sp-purple-deep)] bg-emerald-500"
+                      : "border-[var(--sp-line)] bg-[var(--sp-surface-2)]"
+                  }`}
+                />
+              ))}
+            </div>
+          ) : (
+            // shortcut: quá 30 buổi thì vạch quá nhỏ, đổi sang một thanh liền
+            <div className="mt-2.5 h-2.5 overflow-hidden rounded-full border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-surface-2)]">
+              <div className="h-full bg-emerald-500" style={{ width: `${percent}%` }} />
+            </div>
+          )}
+          <p className="mt-2 text-[13px] text-[var(--sp-muted)]">
+            {analysis.totalSessions > analysis.completedSessions
+              ? `Còn ${analysis.totalSessions - analysis.completedSessions} buổi theo lịch đến ${lastStudy}`
+              : "Đã học hết các buổi theo lịch"}
           </p>
         </StatCard>
 
         <StatCard
-          icon={<IconAlert size={22} />}
-          iconStyle="bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]"
+          icon={<IconAlert size={24} />}
+          iconStyle="bg-[var(--sp-pink)]"
+          shadow="shadow-[5px_5px_0_var(--sp-pink-line)] hover:shadow-[7px_7px_0_var(--sp-pink-line)]"
           label="Cần ôn lại"
         >
-          <p className="text-[30px] font-extrabold leading-tight text-[var(--sp-amber-dark)]">
-            {needWork.length}
-            <span className="ml-1 text-lg font-semibold text-[var(--sp-muted)]">chương</span>
+          <p className="text-[30px] font-extrabold leading-tight text-[var(--sp-pink-dark)]">
+            {byChapter ? needWork.length : weakLessons.length}
+            <span className="ml-1.5 text-base font-semibold text-[var(--sp-muted)]">{byChapter ? "chương" : "bài học"}</span>
           </p>
-          <p className="truncate text-sm text-[var(--sp-muted)]">
-            {needWork.length > 0
-              ? needWork.map((item) => item.code).join(", ") + " dưới 80%"
-              : tested.length > 0
-                ? "Các chương đã kiểm tra đều nắm vững"
-                : "Chưa có dữ liệu kiểm tra"}
+          <p className="mt-3 text-[13px] text-[var(--sp-muted)]">
+            {tested.length === 0
+              ? "Chưa có dữ liệu kiểm tra"
+              : byChapter
+                ? needWork.length > 0
+                  ? `${needWork.map((item) => item.code).join(", ")} dưới 80% · ${weakLessons.length} bài học cần ôn`
+                  : "Các chương đã kiểm tra đều nắm vững"
+                : `dưới 80% trong ${testedLessons.length} bài đã kiểm tra`}
           </p>
         </StatCard>
       </section>
 
       {/* Mức nắm vững + điểm yếu */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_370px]">
+      {/* Màn hình chưa đủ rộng thì khung điểm yếu xuống dưới để cột bài học không bị bóp hẹp */}
+      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1fr)_380px] 2xl:items-start">
         <section className="sp-card p-5 sm:p-7">
-          <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div className="mb-5 grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
             <div>
-              <p className="sp-accent text-[17px] text-[var(--sp-pink)]">
-                Tổng hợp điểm sau từng bài kiểm tra
-              </p>
+              <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Tổng hợp điểm sau từng bài kiểm tra</p>
               <h2 className="text-[22px] text-[var(--sp-ink)]">Nắm vững đến đâu?</h2>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 sm:justify-end">
               <span className="sp-chip bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]">
-                {analysis.weeks.length} tuần
+                {groupCards.length} {byChapter && masteryView === "chapter" ? "chương" : "tuần"}
               </span>
               <span className="sp-chip bg-emerald-50 text-emerald-700">
-                {analysis.weeks.reduce((sum, week) => sum + week.tested, 0)}/
-                {analysis.weeks.reduce((sum, week) => sum + week.lessons.length, 0)} bài đã kiểm tra
+                {testedLessons.length}/{lessons.length} bài đã kiểm tra
               </span>
-              <span className="sp-chip bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
-                {analysis.weeks.reduce(
-                  (sum, week) =>
-                    sum + week.lessons.filter((lesson) => lesson.current !== null && lesson.current < MASTERY_SCORE).length,
-                  0
-                )}{" "}
-                bài dưới 80%
-              </span>
+              <span className="sp-chip bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">{weakLessons.length} bài dưới 80%</span>
             </div>
           </div>
 
-          {analysis.weeks.length === 0 ? (
+          {byChapter && (
+            <div className="mb-4 flex w-fit rounded-xl bg-[var(--sp-surface-2)] p-1">
+              {(
+                [
+                  ["chapter", "Theo chương"],
+                  ["week", "Theo tuần"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={masteryView === value}
+                  onClick={() => setMasteryView(value)}
+                  className={`rounded-lg px-4 py-1.5 text-sm font-bold transition ${
+                    masteryView === value
+                      ? "bg-white text-[var(--sp-peri-dark)] shadow-sm"
+                      : "text-[var(--sp-muted)] hover:text-[var(--sp-ink)]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {groupCards.length === 0 ? (
             <p className="rounded-2xl bg-[var(--sp-surface-2)] p-6 text-center text-sm text-[var(--sp-muted)]">
               Chưa có lịch học cho môn này.
             </p>
           ) : (
-            <div className="space-y-4">
-              {analysis.weeks.map((week, index) => (
-                <WeekCard
-                  key={week.number}
-                  week={week}
-                  tint={index % 2 === 0 ? "peri" : "pink"}
-                  defaultOpen={
-                    week.number ===
-                    ([...analysis.weeks].reverse().find((item) => item.tested > 0)?.number ?? analysis.weeks[0].number)
-                  }
-                />
+            <div className="space-y-3.5">
+              {groupCards.map(({ key, ...card }) => (
+                <GroupCard key={`${masteryView}-${key}`} {...card} defaultOpen={key === openKey} />
               ))}
             </div>
           )}
@@ -761,125 +902,157 @@ function WeakAreasPageContent() {
               <span className="h-3 border-l-2 border-dashed border-[var(--sp-text-2)]" />
               Ngưỡng nắm vững {MASTERY_SCORE}%
             </span>
-            <span>Điểm tuần = trung bình điểm mới nhất của các bài đã kiểm tra trong tuần</span>
+            <span>
+              {byChapter && masteryView === "chapter" ? "Điểm chương" : "Điểm tuần"} = trung bình điểm mới nhất của các bài đã kiểm tra
+            </span>
           </p>
         </section>
 
         <section className="rounded-[22px] border-2 border-[var(--sp-purple)] bg-white p-5 shadow-[6px_6px_0_var(--sp-pink-line)] sm:p-6">
           <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Phát hiện từ kết quả câu hỏi</p>
-          <h2 className="text-[22px] text-[var(--sp-ink)]">Đang yếu phần nào?</h2>
+          <h2 className="text-[22px] text-[var(--sp-ink)]">Đang yếu {byChapter ? "chương nào" : "bài nào"}?</h2>
+          <p className="mb-4 mt-1 text-[13px] text-[var(--sp-muted)]">
+            {byChapter
+              ? "Tài liệu có nhiều chương nên xếp hạng theo chương, kèm bài yếu nhất trong chương."
+              : "Xếp hạng theo từng bài học nhỏ, bài ôn đến hạn được ưu tiên trước."}
+          </p>
 
-          <div className="mt-4 space-y-3">
-            {priorities.length === 0 ? (
-              <div className="rounded-2xl border border-[var(--sp-line)] bg-[var(--sp-surface-2)] p-5 text-center">
-                <Sparkle size={22} className="mx-auto mb-2 text-[var(--sp-yellow)]" />
-                <p className="font-bold text-[var(--sp-ink)]">
-                  {tested.length > 0 ? "Chưa phát hiện phần yếu" : "Chưa có bài kiểm tra"}
-                </p>
-                <p className="mt-1 text-sm text-[var(--sp-muted)]">
-                  {tested.length > 0
-                    ? "Các chương đã kiểm tra đều đạt từ 80% trở lên."
-                    : "Làm Quiz sau mỗi buổi học để AI chỉ ra phần bạn còn yếu."}
-                </p>
-              </div>
-            ) : (
-              priorities.map((chapter, index) => (
-                <PriorityCard key={chapter.key} chapter={chapter} rank={index + 1} />
-              ))
-            )}
-          </div>
+          {shownWeak.length === 0 ? (
+            <div className="rounded-2xl border border-[var(--sp-line)] bg-[var(--sp-surface-2)] p-5 text-center">
+              <Sparkle size={22} className="mx-auto mb-2 text-[var(--sp-yellow)]" />
+              <p className="font-bold text-[var(--sp-ink)]">
+                {tested.length > 0 ? "Chưa phát hiện phần yếu" : "Chưa có bài kiểm tra"}
+              </p>
+              <p className="mt-1 text-sm text-[var(--sp-muted)]">
+                {tested.length > 0
+                  ? "Các bài đã kiểm tra đều đạt từ 80% trở lên."
+                  : "Làm Quiz sau mỗi buổi học để AI chỉ ra phần bạn còn yếu."}
+              </p>
+            </div>
+          ) : (
+            <div className={`grid gap-4 ${shownWeak.length > 1 ? (shownWeak.length > 2 ? "md:grid-cols-3" : "md:grid-cols-2") : ""} 2xl:grid-cols-1`}>
+              {shownWeak.map((item, index) => (
+                <WeakCard key={item.key} item={item} rank={index + 1} />
+              ))}
+            </div>
+          )}
 
-          {mastered.length > 0 && (
-            <p className="mt-3 flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-              <IconCheck size={16} className="shrink-0" />
+          {moreWeak > 0 && (
+            <p className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 rounded-2xl border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-lav)] px-3.5 py-3 text-[13.5px] text-[var(--sp-text-2)]">
+              Còn {moreWeak} bài học khác dưới 80%
+              <Link href={`/quizzes?plan=${plan.id}`} className="flex items-center gap-1 font-extrabold text-[var(--sp-peri-dark)] hover:underline">
+                Xem ở mục Ôn tập
+                <IconArrowRight size={14} />
+              </Link>
+            </p>
+          )}
+          {byChapter && mastered.length > 0 && (
+            <p className="mt-4 grid grid-cols-[18px_minmax(0,1fr)] items-center gap-2 rounded-2xl bg-emerald-50 px-3.5 py-3 text-[13.5px] text-emerald-800">
+              <IconCheck size={16} />
               {mastered.map((item) => item.code).join(", ")} đã nắm vững, chỉ cần ôn theo lịch
             </p>
           )}
         </section>
       </div>
 
-      {/* Gợi ý tiếp theo */}
-      <section className="flex flex-col gap-4 rounded-[24px] bg-[var(--sp-purple)] px-5 py-5 text-white shadow-[6px_6px_0_var(--sp-lav-line)] sm:px-7 lg:flex-row lg:items-center">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--sp-pink)] text-white">
+      {/* Gợi ý tiếp theo + lộ trình */}
+      <section className="grid grid-cols-[48px_minmax(0,1fr)] items-start gap-x-[18px] gap-y-4 rounded-[24px] bg-[var(--sp-purple)] px-5 py-5 text-white shadow-[6px_6px_0_var(--sp-lav-line)] sm:px-7 xl:grid-cols-[48px_minmax(0,1fr)_360px]">
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--sp-pink)] text-white">
           <IconTarget size={24} />
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 self-center">
           <p className="sp-accent text-[17px] text-[#ffbcd3]">Tiếp theo nên ôn gì?</p>
-          <p className="text-[17px] font-semibold">{nextAdvice}</p>
+          {reviewStep || learnStep ? (
+            <div className="mt-2 grid gap-2">
+              {reviewStep && <NextStep icon={<IconRepeat size={14} />} tone="bg-[var(--sp-pink)]" label="1 · Ôn lại" step={reviewStep} />}
+              {learnStep && (
+                <NextStep
+                  icon={<IconBook size={14} />}
+                  tone="bg-white/15"
+                  label={reviewStep ? "2 · Học tiếp" : "1 · Học tiếp"}
+                  step={learnStep}
+                />
+              )}
+            </div>
+          ) : (
+            <p className="mt-1 text-[16.5px] font-semibold">
+              Bạn đã hoàn thành lộ trình. Hãy ôn Flashcards để giữ kiến thức trước ngày thi.
+            </p>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2.5">
+
+        {/* Lộ trình: Đã học → Ôn lại → Học tiếp → Thi */}
+        <div className="hidden xl:col-start-3 xl:row-start-1 xl:grid xl:grid-rows-[auto_1fr_auto] xl:gap-2.5 xl:rounded-[20px] xl:border-2 xl:border-white/15 xl:bg-white/[0.07] xl:px-4 xl:py-3.5" aria-hidden="true">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center">
+            <span className="text-[11px] font-extrabold uppercase tracking-[0.8px] text-white/70">Lộ trình của bạn</span>
+            {daysLeft !== null && (
+              <span className="flex items-center gap-1 rounded-full border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] px-2.5 text-[12px] font-extrabold text-[var(--sp-purple-deep)] shadow-[2px_2px_0_var(--sp-purple-deep)]">
+                <IconClock size={13} />
+                Còn {daysLeft} ngày
+              </span>
+            )}
+          </div>
+          <div
+            className="sp-route-rail relative grid grid-cols-4 items-center"
+            style={{ "--sp-route-fill": reviewStep ? "25%" : "50%" } as React.CSSProperties}
+          >
+            <span className="sp-route-fill" />
+            {[
+              { icon: <IconCheck size={19} />, tone: "bg-emerald-500 text-white" },
+              { icon: <IconRepeat size={19} />, tone: "bg-[var(--sp-pink)] text-white", now: Boolean(reviewStep) },
+              { icon: <IconBook size={19} />, tone: "bg-[var(--sp-peri)] text-white", now: !reviewStep },
+              { icon: <IconFlag size={19} />, tone: "bg-[var(--sp-yellow)] text-[var(--sp-purple-deep)]" },
+            ].map((node, index) => (
+              <span
+                key={index}
+                className={`sp-route-node relative flex h-10 w-10 items-center justify-center justify-self-center rounded-[13px] border-2 border-[var(--sp-purple-deep)] shadow-[3px_3px_0_var(--sp-purple-deep)] ${node.tone} ${node.now ? "sp-route-now" : ""}`}
+                style={{ animationDelay: `${0.1 + index * 0.15}s` }}
+              >
+                {node.now && (
+                  <IconChevronDown size={16} className="sp-route-here absolute -top-6 left-1/2 -translate-x-1/2 text-[var(--sp-yellow)]" />
+                )}
+                {node.icon}
+              </span>
+            ))}
+          </div>
+          <div className="grid grid-cols-4 text-center">
+            {[
+              ["Đã học", `${analysis.completedSessions}/${analysis.totalSessions} buổi`],
+              ["Ôn lại", shortStep(reviewStep?.label)],
+              ["Học tiếp", shortStep(learnStep?.label)],
+              ["Thi", examKey ? formatDayMonth(examKey) : "—"],
+            ].map(([caption, value]) => (
+              <div key={caption}>
+                <p className="text-[10.5px] font-bold uppercase tracking-wide text-white/65">{caption}</p>
+                <p className="text-[13px] font-extrabold">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="col-span-2 grid grid-cols-1 gap-3 border-t border-white/15 pt-4 sm:grid-cols-3 xl:col-start-2">
           <Link
             href={`/materials?subject=${encodeURIComponent(subject.id)}`}
-            className="sp-btn border-2 border-white/25 px-4 py-2.5 text-sm text-white hover:bg-white/10"
+            className="sp-btn h-[42px] whitespace-nowrap border-2 border-white/25 px-3 text-[13.5px] text-white hover:bg-white/10"
           >
             <IconFile size={16} />
             Xem lại nội dung
           </Link>
           <Link
             href={`/study-plans/${plan.id}`}
-            className="sp-btn border-2 border-white/25 px-4 py-2.5 text-sm text-white hover:bg-white/10"
+            className="sp-btn h-[42px] whitespace-nowrap border-2 border-white/25 px-3 text-[13.5px] text-white hover:bg-white/10"
           >
             <IconCalendar size={16} />
             Về kế hoạch ôn tập
           </Link>
           <Link
             href={continueHref}
-            className="sp-btn border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] px-5 py-2.5 text-sm text-[var(--sp-purple-deep)] shadow-[3px_3px_0_var(--sp-purple-deep)] hover:-translate-y-0.5"
+            className="sp-btn h-[42px] whitespace-nowrap border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] px-3 text-[13.5px] text-[var(--sp-purple-deep)] shadow-[3px_3px_0_var(--sp-purple-deep)] hover:-translate-x-px hover:-translate-y-px hover:shadow-[4px_4px_0_var(--sp-purple-deep)]"
           >
             <IconPlay size={16} />
             {continueLabel}
           </Link>
         </div>
-      </section>
-
-      {/* Lịch sử bài kiểm tra */}
-      <section className="sp-card p-5 sm:p-7">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Điểm số được lưu sau mỗi lần làm</p>
-            <h2 className="text-[22px] text-[var(--sp-ink)]">Lịch sử bài kiểm tra</h2>
-          </div>
-          <div className="flex rounded-xl bg-[var(--sp-surface-2)] p-1">
-            {(
-              [
-                ["all", `Tất cả (${rows.length})`],
-                ["improve", `Cần cải thiện (${rows.filter((row) => row.percent < MASTERY_SCORE).length})`],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={historyFilter === value}
-                onClick={() => setHistoryFilter(value)}
-                className={`rounded-lg px-3.5 py-1.5 text-sm font-bold transition ${
-                  historyFilter === value
-                    ? "bg-white text-[var(--sp-peri-dark)] shadow-sm"
-                    : "text-[var(--sp-muted)] hover:text-[var(--sp-ink)]"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {history.length === 0 ? (
-          <p className="rounded-2xl bg-[var(--sp-surface-2)] p-6 text-center text-sm text-[var(--sp-muted)]">
-            {rows.length === 0
-              ? "Chưa có bài kiểm tra nào cho môn này."
-              : "Không có bài nào dưới 80%. Tuyệt vời!"}
-          </p>
-        ) : (
-          <ul className="space-y-2.5">
-            {history.map((row) => (
-              <HistoryRow
-                key={row.attempt.attempt_id}
-                row={row}
-                chapter={chapters.find((item) => item.key === row.chapterKey)}
-              />
-            ))}
-          </ul>
-        )}
       </section>
     </div>
   );
@@ -971,96 +1144,117 @@ function SubjectSelect({
 function StatCard({
   icon,
   iconStyle,
+  shadow,
   label,
   children,
 }: {
   icon: React.ReactNode;
   iconStyle: string;
+  shadow: string;
   label: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="sp-card flex items-center gap-4 p-5">
-      <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${iconStyle}`}>
+    <div
+      className={`grid grid-cols-[56px_minmax(0,1fr)] items-start gap-4 rounded-[20px] border-2 border-[var(--sp-purple-deep)] bg-white px-[22px] py-5 transition duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 ${shadow}`}
+    >
+      <span
+        className={`flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-[var(--sp-purple-deep)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)] ${iconStyle}`}
+      >
         {icon}
       </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-[var(--sp-text-2)]">{label}</p>
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-[var(--sp-text-2)]">{label}</p>
         {children}
       </div>
     </div>
   );
 }
 
-function WeekCard({
-  week,
+/* Thanh điểm có vạch ngưỡng nắm vững 80% */
+function ScoreBar({ percent, small }: { percent: number | null; small?: boolean }) {
+  const level = getLevel(percent);
+  return (
+    <div
+      className={`relative rounded-full ${
+        small ? "mt-2 h-2 border border-[var(--sp-line)] bg-white" : "mt-2.5 h-2.5 bg-[var(--sp-surface-2)]"
+      }`}
+    >
+      {percent === null ? (
+        <div className="h-full rounded-full bg-[repeating-linear-gradient(135deg,#ece6ef_0_6px,#f7f5fa_6px_12px)]" />
+      ) : (
+        <div
+          className={`h-full rounded-full transition-all duration-700 ${level.bar}`}
+          style={{ width: `${Math.max(3, percent)}%` }}
+        />
+      )}
+      <span
+        className="absolute -top-1 h-[calc(100%+8px)] border-l-2 border-dashed border-[var(--sp-text-2)]/50"
+        style={{ left: `${MASTERY_SCORE}%` }}
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
+/*
+ * Thẻ một tuần hoặc một chương. Dòng đầu và các dòng bài học dùng chung cột
+ * (điểm 58px · nhãn 112px · nút 118px); dòng bài học bắt đầu thẳng tiêu đề.
+ */
+function GroupCard({
+  kind,
+  number,
+  title,
+  sub,
+  lessons,
   tint,
   defaultOpen,
 }: {
-  week: WeekScore;
+  kind: string;
+  number: string;
+  title: string;
+  sub: string;
+  lessons: LessonScore[];
   tint: "peri" | "pink";
   defaultOpen: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const level = getLevel(week.average);
+  const score = average(lessons.filter((lesson) => lesson.current !== null).map((lesson) => lesson.current as number));
+  const level = getLevel(score);
   const stripe = tint === "peri" ? "bg-[var(--sp-peri)]" : "bg-[var(--sp-pink)]";
   const badge =
     tint === "peri"
       ? "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
       : "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]";
-  const improved =
-    week.average !== null && week.firstAverage !== null && week.average > week.firstAverage;
 
   return (
-    <article className="relative overflow-hidden rounded-[20px] border-2 border-[var(--sp-line)] bg-white">
+    <article
+      className={`relative overflow-hidden rounded-[20px] border-2 bg-white transition duration-150 ${
+        open
+          ? "border-[var(--sp-purple-deep)] shadow-[5px_5px_0_var(--sp-lav-line)]"
+          : "border-[var(--sp-line)] hover:border-[var(--sp-lav-line)] hover:shadow-[4px_4px_0_var(--sp-lav-line)]"
+      }`}
+    >
       <span className={`absolute inset-y-0 left-0 w-1.5 ${stripe}`} aria-hidden="true" />
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 py-4 pl-5 pr-4 sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] sm:pl-6">
+      <div className="grid grid-cols-[56px_minmax(0,1fr)_58px] items-center gap-x-3.5 gap-y-3 py-4 pl-[26px] pr-[18px] sm:grid-cols-[56px_minmax(0,1fr)_58px_112px_118px]">
         <div className={`flex h-14 w-14 flex-col items-center justify-center rounded-2xl ${badge}`}>
-          <span className="text-[10px] font-bold uppercase tracking-wide">Tuần</span>
-          <span className="text-[22px] font-extrabold leading-none">{week.number}</span>
+          <span className="text-[10px] font-extrabold uppercase tracking-wide">{kind}</span>
+          <span className="text-[22px] font-extrabold leading-none">{number}</span>
         </div>
-
         <div className="min-w-0">
-          <p className="font-bold text-[var(--sp-ink)]">
-            {formatDayMonth(week.startKey)} – {formatDayMonth(week.endKey)}
-          </p>
-          <p className="text-[13px] text-[var(--sp-muted)]">
-            {week.tested}/{week.lessons.length} bài đã kiểm tra
-            {improved && (
-              <span className="ml-1.5 font-semibold text-emerald-700">
-                · tăng từ {week.firstAverage}% sau kiểm tra lại
-              </span>
-            )}
-          </p>
-          <div className="relative mt-2 h-2.5 rounded-full bg-[var(--sp-surface-2)]">
-            {week.average === null ? (
-              <div className="h-full rounded-full bg-[repeating-linear-gradient(135deg,#ece6ef_0_6px,#f7f5fa_6px_12px)]" />
-            ) : (
-              <div
-                className={`h-full rounded-full transition-all duration-700 ${level.bar}`}
-                style={{ width: `${Math.max(3, week.average)}%` }}
-              />
-            )}
-            <span
-              className="absolute -top-1 h-[18px] border-l-2 border-dashed border-[var(--sp-text-2)]/50"
-              style={{ left: `${MASTERY_SCORE}%` }}
-              aria-hidden="true"
-            />
-          </div>
+          <p className="font-extrabold leading-snug text-[var(--sp-ink)]">{title}</p>
+          <p className="text-[13px] text-[var(--sp-muted)]">{sub}</p>
+          <ScoreBar percent={score} />
         </div>
-
-        <div className="col-span-2 flex items-center gap-3 sm:col-span-1">
-          <p className={`text-[26px] font-extrabold leading-none ${week.average === null ? "text-[var(--sp-soft)]" : "text-[var(--sp-ink)]"}`}>
-            {week.average === null ? "–" : `${week.average}%`}
-          </p>
-          <span className={`sp-chip ${level.chip}`}>{level.label}</span>
-        </div>
-
+        <p className={`text-right text-[22px] font-extrabold leading-none ${score === null ? "text-[var(--sp-soft)]" : level.text}`}>
+          {score === null ? "–" : `${score}%`}
+        </p>
+        <span className={`sp-chip hidden w-full justify-center px-1.5 text-[12px] sm:inline-flex ${level.chip}`}>{level.label}</span>
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
-          className="col-span-2 flex items-center justify-center gap-1.5 rounded-xl border-2 border-[var(--sp-line)] px-3 py-2 text-sm font-bold text-[var(--sp-peri-dark)] transition hover:border-[var(--sp-lav-line)] sm:col-span-1"
+          className="sp-btn sp-btn-secondary col-span-3 h-10 w-full text-[13.5px] !text-[var(--sp-peri-dark)] sm:col-span-1"
         >
           {open ? "Thu gọn" : "Xem chi tiết"}
           <IconChevronDown size={16} className={`transition ${open ? "rotate-180" : ""}`} />
@@ -1068,57 +1262,55 @@ function WeekCard({
       </div>
 
       {open && (
-        <ul className="sp-task-expand divide-y divide-[var(--sp-line)] border-t-2 border-dashed border-[var(--sp-line)] bg-[var(--sp-surface-2)]/50 pl-5 sm:pl-6">
-          {week.lessons.map((lesson) => {
+        <ul className="sp-task-expand divide-y divide-[var(--sp-line)] border-t-2 border-dashed border-[var(--sp-line)] bg-[#fbfafd]">
+          {lessons.map((lesson) => {
             const lessonLevel = getLevel(lesson.current);
             return (
               <li
                 key={lesson.session.id}
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 py-3 pr-4 sm:grid-cols-[minmax(0,1fr)_200px_56px_auto]"
+                className="grid grid-cols-[minmax(0,1fr)_58px] items-center gap-x-3.5 py-3 pl-[26px] pr-[18px] sm:grid-cols-[minmax(0,1fr)_58px_112px_118px] sm:pl-[96px]"
               >
                 <div className="min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--sp-purple)]">
+                  <p className="text-[11.5px] font-extrabold uppercase tracking-wide text-[var(--sp-purple)]">
                     Ngày học {lesson.dayNumber} · {formatDayMonth(lesson.dateKey)}
                   </p>
-                  <p className="truncate font-semibold text-[var(--sp-ink)]">
+                  <p className="mt-0.5 text-[14.5px] font-semibold leading-snug text-[var(--sp-ink)]">
                     {lesson.topic ? getMainTopicTitle(lesson.topic.name) : "Bài học"}
                   </p>
-                  <p className="mt-0.5 flex flex-wrap gap-1.5 text-[12px]">
-                    {lesson.main && (
-                      <span className="rounded-full bg-white px-2 py-0.5 font-semibold text-[var(--sp-text-2)]">
-                        Lần đầu {lesson.main.percent}%
-                      </span>
-                    )}
-                    {lesson.retake && (
-                      <span className="rounded-full bg-[var(--sp-pink-bg)] px-2 py-0.5 font-semibold text-[var(--sp-pink-dark)]">
-                        Kiểm tra lại {lesson.retake.percent}%
-                      </span>
-                    )}
-                  </p>
-                </div>
-
-                <div className="order-3 col-span-2 h-2 overflow-hidden rounded-full bg-white sm:order-none sm:col-span-1">
-                  {lesson.current === null ? (
-                    <div className="h-full bg-[repeating-linear-gradient(135deg,#ece6ef_0_6px,#f7f5fa_6px_12px)]" />
-                  ) : (
-                    <div className={`h-full rounded-full ${lessonLevel.bar}`} style={{ width: `${Math.max(3, lesson.current)}%` }} />
+                  {(lesson.main || lesson.retake) && (
+                    <p className="mt-1.5 flex flex-wrap gap-1.5 text-[12px]">
+                      {lesson.main && (
+                        <span className="whitespace-nowrap rounded-full border border-[var(--sp-line)] bg-white px-2 py-0.5 font-semibold text-[var(--sp-text-2)]">
+                          Lần đầu {lesson.main.percent}%
+                        </span>
+                      )}
+                      {lesson.retake && (
+                        <span className="whitespace-nowrap rounded-full border border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-2 py-0.5 font-semibold text-[var(--sp-pink-dark)]">
+                          Kiểm tra lại {lesson.retake.percent}%
+                        </span>
+                      )}
+                    </p>
                   )}
+                  <ScoreBar percent={lesson.current} small />
                 </div>
-
                 <p className={`text-right text-lg font-extrabold ${lesson.current === null ? "text-[var(--sp-soft)]" : lessonLevel.text}`}>
                   {lesson.current === null ? "–" : `${lesson.current}%`}
                 </p>
-
+                <span className={`sp-chip hidden w-full justify-center px-1.5 text-[12px] sm:inline-flex ${lessonLevel.chip}`}>
+                  {lessonLevel.label}
+                </span>
                 {lesson.latest ? (
                   <Link
                     href={`/quiz-results/${lesson.latest.attempt.attempt_id}`}
-                    className="hidden items-center gap-1 text-sm font-bold text-[var(--sp-peri-dark)] hover:underline sm:flex"
+                    className="sp-btn sp-btn-secondary hidden h-[34px] w-full text-[13px] !text-[var(--sp-peri-dark)] sm:inline-flex"
                   >
                     Xem bài
                     <IconArrowRight size={14} />
                   </Link>
                 ) : (
-                  <span className="hidden text-xs font-semibold text-[var(--sp-muted)] sm:block">Chưa kiểm tra</span>
+                  <span className="sp-btn hidden h-[34px] w-full cursor-default border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-surface-2)] text-[13px] text-[var(--sp-soft)] sm:inline-flex">
+                    Chưa làm
+                  </span>
                 )}
               </li>
             );
@@ -1134,203 +1326,128 @@ function formatDayMonth(dateKey: string) {
   return `${day}/${month}`;
 }
 
-function MasteryRow({ chapter }: { chapter: ChapterStat }) {
-  const level = getLevel(chapter.current);
-  const diff =
-    chapter.current !== null && chapter.previous !== null
-      ? chapter.current - chapter.previous
-      : null;
-
-  return (
-    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 py-4 sm:grid-cols-[minmax(0,190px)_minmax(0,1fr)_52px_112px]">
-      <p className="min-w-0 truncate font-semibold text-[var(--sp-ink)]" title={chapter.title}>
-        <span className="mr-2 font-bold text-[var(--sp-muted)]">{chapter.code}</span>
-        {chapter.shortTitle}
-      </p>
-
-      <div className="order-3 col-span-2 sm:order-none sm:col-span-1">
-        <div className="relative h-3 rounded-full bg-[var(--sp-surface-2)]">
-          {chapter.current === null ? (
-            <div className="h-full rounded-full bg-[repeating-linear-gradient(135deg,#ece6ef_0_6px,#f7f5fa_6px_12px)]" />
-          ) : (
-            <div
-              className={`h-full rounded-full transition-all duration-700 ${level.bar}`}
-              style={{ width: `${Math.max(3, chapter.current)}%` }}
-            />
-          )}
-          <span
-            className="absolute -top-1.5 h-6 border-l-2 border-dashed border-[var(--sp-text-2)]/50"
-            style={{ left: `${MASTERY_SCORE}%` }}
-            aria-hidden="true"
-          />
-        </div>
-        {chapter.previous !== null && diff !== null && (
-          <p className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-[12.5px] text-[var(--sp-muted)]">
-            {diff >= 0 ? (
-              <IconTrendUp size={14} className="text-emerald-600" />
-            ) : (
-              <IconTrendDown size={14} className="text-[var(--sp-pink)]" />
-            )}
-            Lần trước {chapter.previous}%
-            <span className={diff >= 0 ? "text-emerald-700" : "text-[var(--sp-pink-dark)]"}>
-              ({diff >= 0 ? "+" : ""}
-              {diff}%)
-            </span>
-          </p>
-        )}
-      </div>
-
-      <p className={`text-right text-lg font-extrabold ${chapter.current === null ? "text-[var(--sp-soft)]" : "text-[var(--sp-ink)]"}`}>
-        {chapter.current === null ? "–" : `${chapter.current}%`}
-      </p>
-
-      <span className={`sp-chip hidden w-fit sm:inline-flex ${level.chip}`}>{level.label}</span>
-    </li>
-  );
-}
-
-function PriorityCard({ chapter, rank }: { chapter: ChapterStat; rank: number }) {
+/* Thẻ ưu tiên trong khung "Đang yếu phần nào?" (theo bài học hoặc theo chương) */
+function WeakCard({ item, rank }: { item: WeakItem; rank: number }) {
   const isFirst = rank === 1;
-  const level = getLevel(chapter.current);
-  const weakName = chapter.weakArea?.topic_name || chapter.weakArea?.description;
+  const level = getLevel(item.score);
+  const reviewTone = {
+    red: "text-[var(--sp-red-dark)]",
+    amber: "text-[var(--sp-amber-dark)]",
+    pink: "text-[var(--sp-pink-dark)]",
+    muted: "text-[var(--sp-muted)]",
+  };
 
   return (
     <article
-      className={`rounded-2xl border-2 p-4 ${
+      className={`flex flex-col rounded-[18px] border-2 border-[var(--sp-purple-deep)] p-4 transition duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 ${
         isFirst
-          ? "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)]"
-          : "border-[var(--sp-line)] bg-white"
+          ? "bg-[var(--sp-pink-bg)] shadow-[4px_4px_0_var(--sp-pink)] hover:shadow-[6px_6px_0_var(--sp-pink)]"
+          : "bg-white shadow-[4px_4px_0_var(--sp-pink-line)] hover:shadow-[6px_6px_0_var(--sp-pink-line)]"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <span
-            className={`sp-chip ${
-              isFirst
-                ? "bg-white text-[var(--sp-pink-dark)]"
-                : "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]"
-            }`}
-          >
-            Ưu tiên {rank}
-          </span>
-          <h3 className="mt-2 text-[17px] text-[var(--sp-ink)]">
-            {chapter.code}. {chapter.shortTitle}
-          </h3>
-        </div>
-        <p className={`text-[28px] font-extrabold leading-none ${level.text}`}>{chapter.current}%</p>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5">
+        <span
+          className={`sp-chip w-fit ${
+            isFirst ? "bg-white text-[var(--sp-pink-dark)]" : "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]"
+          }`}
+        >
+          Ưu tiên {rank}
+        </span>
+        <p className={`text-[28px] font-extrabold leading-none ${level.text}`}>{item.score}%</p>
       </div>
+      <p className="mt-2.5 text-[12px] font-extrabold uppercase tracking-wide text-[var(--sp-purple)]">{item.kicker}</p>
+      <h3 className="mt-0.5 text-[16px] leading-snug text-[var(--sp-ink)]">{item.title}</h3>
 
-      <ul className="mt-3 space-y-2 text-[14.5px] text-[var(--sp-text-2)]">
-        {weakName && (
-          <li className="flex gap-2">
-            <IconAlert size={16} className="mt-0.5 shrink-0 text-[var(--sp-pink)]" />
+      <ul className="mt-2.5 space-y-2 text-[13.5px] leading-snug text-[var(--sp-text-2)]">
+        {item.lines.map((line) => (
+          <li key={line.label} className="grid grid-cols-[18px_minmax(0,1fr)] gap-2">
+            <IconTarget size={16} className="mt-0.5 text-[var(--sp-pink)]" />
             <span>
-              Sai nhiều nhất ở phần{" "}
-              <strong className="text-[var(--sp-ink)]">{weakName}</strong>
+              {line.label}: <strong className="text-[var(--sp-ink)]">{line.value}</strong>
             </span>
           </li>
+        ))}
+        {item.review && (
+          <li className={`grid grid-cols-[18px_minmax(0,1fr)] gap-2 font-bold ${reviewTone[item.review.tone]}`}>
+            {item.review.tone === "red" ? (
+              <IconClock size={16} className="mt-0.5" />
+            ) : item.review.tone === "muted" ? (
+              <IconRepeat size={16} className="mt-0.5" />
+            ) : (
+              <IconCalendar size={16} className="mt-0.5" />
+            )}
+            <span>{item.review.text}</span>
+          </li>
         )}
-        <li className="flex gap-2">
-          {chapter.pendingReviewId ? (
-            <>
-              <IconRepeat size={16} className="mt-0.5 shrink-0 text-[var(--sp-pink)]" />
-              <span>
-                Có lộ trình ôn tập đang chờ ·{" "}
-                <Link
-                  href={`/review-plans/${chapter.pendingReviewId}`}
-                  className="font-bold text-[var(--sp-peri-dark)] hover:underline"
-                >
-                  Ôn ngay
-                </Link>
-              </span>
-            </>
-          ) : chapter.nextSession?.scheduled_start ? (
-            <>
-              <IconCalendar size={16} className="mt-0.5 shrink-0 text-[var(--sp-pink)]" />
-              <span>
-                Học tiếp vào{" "}
-                <strong className="text-[var(--sp-ink)]">
-                  {formatDayLabel(chapter.nextSession.scheduled_start)}
-                </strong>
-              </span>
-            </>
-          ) : (
-            <>
-              <IconRepeat size={16} className="mt-0.5 shrink-0 text-[var(--sp-pink)]" />
-              <span>
-                Làm lại bài kiểm tra trong mục{" "}
-                <Link href="/quizzes" className="font-bold text-[var(--sp-peri-dark)] hover:underline">
-                  Kiểm tra kiến thức
-                </Link>
-              </span>
-            </>
-          )}
-        </li>
       </ul>
+
+      {(item.review || item.resultsHref) && (
+        <div className="mt-auto grid grid-cols-2 gap-2.5 pt-3.5">
+          {item.review && (
+            <Link href={item.review.primary.href} className="sp-btn sp-btn-primary h-10 !bg-[var(--sp-pink)] text-[13px]">
+              <IconPlay size={14} />
+              {item.review.primary.label}
+            </Link>
+          )}
+          {item.resultsHref && (
+            <Link
+              href={item.resultsHref}
+              className={`sp-btn sp-btn-secondary h-10 text-[13px] !text-[var(--sp-peri-dark)] ${item.review ? "" : "col-span-2"}`}
+            >
+              <IconCheck size={14} />
+              Xem câu sai
+            </Link>
+          )}
+        </div>
+      )}
     </article>
   );
 }
 
-function HistoryRow({ row, chapter }: { row: AttemptRow; chapter: ChapterStat | undefined }) {
-  const level = getLevel(row.percent);
-  const diff = row.previousPercent !== null ? row.percent - row.previousPercent : null;
-  const title = row.topic ? getMainTopicTitle(row.topic.name) : row.attempt.quiz_title || "Bài kiểm tra";
-
+/* Một dòng trong "Tiếp theo nên ôn gì?": nhãn cố định 118px để chữ hai dòng thẳng nhau */
+function NextStep({
+  icon,
+  tone,
+  label,
+  step,
+}: {
+  icon: React.ReactNode;
+  tone: string;
+  label: string;
+  step: { label: string; text: string };
+}) {
   return (
-    <li className="group flex flex-col gap-3 rounded-2xl border-2 border-[var(--sp-line)] bg-white px-4 py-3.5 transition hover:border-[var(--sp-lav-line)] sm:flex-row sm:items-center">
-      <div className="w-[92px] shrink-0">
-        <p className="text-xs font-semibold text-[var(--sp-muted)]">
-          {row.attempt.submitted_at ? formatWeekday(row.attempt.submitted_at) : ""}
-        </p>
-        <p className="font-extrabold text-[var(--sp-purple)]">
-          {formatDate(row.attempt.submitted_at).slice(0, 5)}
-        </p>
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <p className="flex flex-wrap items-center gap-2 font-semibold text-[var(--sp-ink)]">
-          {title}
-          {row.isRetake && (
-            <span className="sp-chip bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
-              <IconRepeat size={12} />
-              Làm lại
-            </span>
-          )}
-        </p>
-        <p className="text-xs text-[var(--sp-muted)]">
-          {chapter ? `${chapter.code} · ${chapter.shortTitle}` : "—"} · đúng {row.attempt.correct_count ?? 0}/
-          {row.attempt.total_questions ?? 0} câu
-        </p>
-      </div>
-
-      <div className="flex items-center gap-3 sm:w-[260px]">
-        <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
-          <div className={`h-full rounded-full ${level.bar}`} style={{ width: `${Math.max(3, row.percent)}%` }} />
-        </div>
-        <span className="w-12 text-right text-lg font-extrabold text-[var(--sp-ink)]">{row.percent}%</span>
-        <span
-          className={`w-14 text-right text-xs font-bold ${
-            diff === null
-              ? "text-[var(--sp-soft)]"
-              : diff >= 0
-                ? "text-emerald-700"
-                : "text-[var(--sp-pink-dark)]"
-          }`}
-        >
-          {diff === null ? "Lần đầu" : `${diff >= 0 ? "+" : ""}${diff}%`}
-        </span>
-      </div>
-
-      <Link
-        href={`/quiz-results/${row.attempt.attempt_id}`}
-        className="sp-btn sp-btn-secondary shrink-0 px-4 py-2 text-sm"
-      >
-        Xem bài
-        <IconArrowRight size={15} className="transition group-hover:translate-x-0.5" />
-      </Link>
-    </li>
+    <div className="grid grid-cols-1 items-center gap-1 sm:grid-cols-[118px_minmax(0,1fr)] sm:gap-3.5">
+      <span className={`flex h-[30px] w-fit items-center justify-center gap-1.5 rounded-full px-3 text-[12.5px] font-extrabold text-white sm:w-full ${tone}`}>
+        {icon}
+        {label}
+      </span>
+      <p className="text-[16.5px] font-semibold leading-snug">
+        <b className="font-extrabold text-[#ffd76e]">{step.label}</b> · {step.text}
+      </p>
+    </div>
   );
 }
+
+type ReviewInfo = {
+  text: string;
+  tone: "red" | "amber" | "pink" | "muted";
+  /* thứ tự ưu tiên: đến hạn/quá hạn → chưa chọn ngày → đã hẹn → chưa có bài ôn */
+  rank: number;
+  primary: { label: string; href: string };
+};
+
+type WeakItem = {
+  key: string;
+  kicker: string;
+  title: string;
+  score: number;
+  lines: { label: string; value: string }[];
+  review: ReviewInfo | null;
+  resultsHref: string | null;
+  stepLabel: string;
+  stepText: string;
+};
 
 /* useSearchParams cần nằm trong Suspense để "next build" không báo lỗi */
 export default function WeakAreasPage() {

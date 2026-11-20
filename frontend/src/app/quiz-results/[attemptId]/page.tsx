@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { SmartLoading } from "@/components/loading-play";
 import Link from "next/link";
 import { getMainTopicTitle, stripOutlineNumbers } from "@/lib/content-titles";
 import WrongAnswerReview, { type Mistake } from "@/components/wrong-answer-review";
@@ -178,6 +179,7 @@ export default function QuizResultPage() {
 
   const [result, setResult] = useState<QuizResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [holdLoading, setHoldLoading] = useState(false);
   const [error, setError] = useState("");
   const [showWeak, setShowWeak] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -288,12 +290,16 @@ export default function QuizResultPage() {
       : Math.round(Number(result.score || 0));
   }, [result]);
 
-  if (loading && !result) {
+  if ((loading && !result) || holdLoading) {
     return (
-      <div className="sp-card mx-auto max-w-5xl p-10 text-center text-[var(--sp-muted)]">
-        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-        Đang chấm và tổng hợp kết quả...
-      </div>
+      <SmartLoading
+        text="Đang chấm và tổng hợp kết quả…"
+        sub="Pilot đang chấm từng câu và tìm phần bạn còn yếu."
+        stages={["Nhận bài làm", "Chấm từng câu", "AI nhận xét", "Tổng hợp"]}
+        continueLabel="Xem kết quả"
+        done={!(loading && !result)}
+        onHoldChange={setHoldLoading}
+      />
     );
   }
 
@@ -326,6 +332,10 @@ export default function QuizResultPage() {
     .map((item) => (typeof item === "string" ? { topic_name: item } : item))
     .filter((item) => item.topic_name || item.description);
   const retake = context?.retake || null;
+  const reviewDatePassed = Boolean(reviewDate && context?.today && reviewDate < context.today);
+  /* Chưa đạt 80% thì bắt buộc có ngày ôn sắp tới (quyết định 20/11/2026) */
+  const needsReviewDate =
+    levelKey !== "none" && Boolean(retake) && retake?.status !== "completed" && (!reviewDate || reviewDatePassed);
   const materialsHref = context?.subject_id
     ? `/study-materials?subject=${encodeURIComponent(context.subject_id)}&session=${encodeURIComponent(context.study_session_id)}`
     : "/study-materials";
@@ -417,6 +427,31 @@ export default function QuizResultPage() {
           )}
         </div>
       </section>
+
+      {/* Dưới 80%: bắt buộc chọn ngày ôn lại; không chặn việc học bài tiếp theo */}
+      {needsReviewDate && (
+        <section
+          role="alert"
+          className="rounded-[24px] border-2 border-[var(--sp-red)] bg-[var(--sp-red-bg)] px-5 py-4 shadow-[4px_4px_0_var(--sp-red-line)]"
+        >
+          <p className="flex items-center gap-2 font-bold text-[var(--sp-red-dark)]">
+            <IconAlert size={18} />
+            {reviewDatePassed
+              ? "Ngày ôn đã qua mà bài này vẫn chưa đạt 80%: hãy chọn ngày ôn mới"
+              : "Bạn chưa đạt 80% ở bài này: hãy chọn ngày ôn lại"}
+          </p>
+          <p className="mt-1 text-sm text-[var(--sp-text-2)]">
+            Bắt buộc chọn một ngày để ôn lại phần còn yếu. Ngày này sẽ hiện trên lịch học và StudyPilot nhắc bạn vào hôm đó.
+          </p>
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="sp-btn sp-btn-primary mt-3 px-4 py-2.5 text-sm"
+          >
+            Chọn ngày ôn lại
+          </button>
+        </section>
+      )}
 
       <WrongAnswerReview
         results={result.results}
@@ -626,11 +661,12 @@ export default function QuizResultPage() {
         </section>
       )}
 
-      {pickerOpen && context && retake && (
+      {(pickerOpen || needsReviewDate) && context && retake && (
         <ReviewDayPicker
           context={context}
           reviewPlanId={retake.review_plan_id}
-          initial={reviewDate}
+          initial={reviewDatePassed ? null : reviewDate}
+          required={needsReviewDate}
           onClose={() => setPickerOpen(false)}
           onSaved={(value) => {
             setReviewDate(value);
@@ -820,10 +856,13 @@ function ReviewDayPicker({
   initial,
   onClose,
   onSaved,
+  required = false,
 }: {
   context: ReviewContext;
   reviewPlanId: string;
   initial: string | null;
+  /* Bắt buộc chọn: không đóng được khi chưa lưu ngày */
+  required?: boolean;
   onClose: () => void;
   onSaved: (value: string) => void;
 }) {
@@ -831,13 +870,16 @@ function ReviewDayPicker({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const available = context.week.filter((day) => !day.has_study && !day.is_past && !day.after_exam);
+  const available = context.week.filter((day) => !day.is_past && !day.after_exam);
+  // Không còn ngày nào để chọn thì không khóa hộp thoại, tránh kẹt người học
+  required = required && available.length > 0;
 
   useEffect(() => {
+    if (required) return;
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, required]);
 
   const save = async () => {
     if (!selected) return;
@@ -859,8 +901,7 @@ function ReviewDayPicker({
     }
   };
 
-  const first = context.week[0]?.date;
-  const last = context.week[context.week.length - 1]?.date;
+  const lastChoosable = available[available.length - 1]?.date;
 
   return (
     <div
@@ -868,36 +909,41 @@ function ReviewDayPicker({
       aria-modal="true"
       aria-label="Chọn ngày ôn lại"
       className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--sp-purple-deep)]/45 p-3 sm:items-center"
-      onClick={onClose}
+      onClick={required ? undefined : onClose}
     >
       <div
-        className="sp-task-expand w-full max-w-[560px] rounded-[24px] border-2 border-[var(--sp-purple)] bg-white p-5 shadow-[6px_6px_0_var(--sp-lav-line)] sm:p-6"
+        className="sp-task-expand max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[24px] border-2 border-[var(--sp-purple)] bg-white p-5 shadow-[6px_6px_0_var(--sp-lav-line)] sm:p-6"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="sp-accent text-[16px] text-[var(--sp-pink)]">
-              Tuần {dayMonth(first)} – {dayMonth(last)}
+              {lastChoosable
+                ? `Từ hôm nay đến ${dayMonth(lastChoosable)} (trước ngày thi)`
+                : "Trước ngày thi"}
             </p>
             <h2 className="text-[22px] text-[var(--sp-ink)]">Chọn ngày ôn lại</h2>
             <p className="mt-1 text-sm text-[var(--sp-muted)]">
-              Chỉ ôn trong tuần của bài học, vào ngày không trùng lịch học chính.
+              {required ? "Bắt buộc chọn để tiếp tục. " : ""}
+              Được chọn cả ngày đã có lịch học: hãy xem ngày nào còn trống để chọn cho phù hợp.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Đóng"
-            className="rounded-xl p-2 text-[var(--sp-muted)] hover:bg-[var(--sp-surface-2)]"
-          >
-            <IconX size={18} />
-          </button>
+          {!required && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Đóng"
+              className="rounded-xl p-2 text-[var(--sp-muted)] hover:bg-[var(--sp-surface-2)]"
+            >
+              <IconX size={18} />
+            </button>
+          )}
         </div>
 
         <div className="mt-5 grid grid-cols-7 gap-1.5 sm:gap-2">
           {context.week.map((day) => {
             const isLesson = day.date === context.scheduled_date;
-            const disabled = day.has_study || day.is_past || day.after_exam;
+            const disabled = day.is_past || day.after_exam;
             const isSelected = selected === day.date;
             const isToday = day.date === context.today;
             return (
@@ -908,21 +954,21 @@ function ReviewDayPicker({
                 onClick={() => setSelected(day.date)}
                 aria-pressed={isSelected}
                 title={
-                  day.has_study
-                    ? "Ngày học chính"
-                    : day.is_past
-                      ? "Ngày đã qua"
-                      : day.after_exam
-                        ? "Từ ngày thi trở đi"
-                        : "Có thể chọn"
+                  day.is_past
+                    ? "Ngày đã qua"
+                    : day.after_exam
+                      ? "Từ ngày thi trở đi"
+                      : day.has_study
+                        ? "Có lịch học: vẫn chọn được, ôn thêm sau buổi học"
+                        : "Trống lịch"
                 }
                 className={`relative flex flex-col items-center rounded-2xl border-2 px-1 py-2.5 transition ${
                   isSelected
                     ? "border-[var(--sp-purple)] bg-[var(--sp-pink)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)]"
-                    : day.has_study
-                      ? "cursor-not-allowed border-[var(--sp-lav-line)] bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
-                      : disabled
-                        ? "cursor-not-allowed border-transparent bg-[var(--sp-surface-2)] text-[var(--sp-soft)]"
+                    : disabled
+                      ? "cursor-not-allowed border-transparent bg-[var(--sp-surface-2)] text-[var(--sp-soft)]"
+                      : day.has_study
+                        ? "border-[var(--sp-lav-line)] bg-[var(--sp-lav)] text-[var(--sp-peri-dark)] hover:border-[var(--sp-pink)]"
                         : "border-[var(--sp-line)] bg-white text-[var(--sp-ink)] hover:border-[var(--sp-pink)]"
                 }`}
               >
@@ -940,6 +986,11 @@ function ReviewDayPicker({
                     <span className="block h-1.5 w-1.5 rounded-full bg-[var(--sp-peri)]" />
                   ) : null}
                 </span>
+                {!disabled && (
+                  <span className="mt-1 text-[9.5px] font-semibold leading-none">
+                    {day.has_study ? "Có lịch" : "Trống"}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -948,7 +999,7 @@ function ReviewDayPicker({
         <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-[12.5px] text-[var(--sp-text-2)]">
           <li className="flex items-center gap-1.5">
             <span className="h-3 w-3 rounded border-2 border-[var(--sp-lav-line)] bg-[var(--sp-lav)]" />
-            Ngày học chính (đã chọn khi tạo kế hoạch)
+            Có lịch học (vẫn chọn được)
           </li>
           <li className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-[var(--sp-pink)]" />
@@ -960,13 +1011,13 @@ function ReviewDayPicker({
           </li>
           <li className="flex items-center gap-1.5">
             <span className="h-3 w-3 rounded border-2 border-[var(--sp-line)] bg-white" />
-            Có thể chọn
+            Trống lịch
           </li>
         </ul>
 
         {available.length === 0 && (
           <p className="mt-4 rounded-2xl bg-[var(--sp-amber-bg)] px-4 py-3 text-sm text-[var(--sp-amber-dark)]">
-            Tuần này không còn ngày trống. Hãy ôn ngay hôm nay hoặc tranh thủ sau giờ học chính.
+            Không còn ngày nào trước ngày thi để chọn. Hãy ôn ngay hôm nay bằng nút Học lại & tự kiểm tra.
           </p>
         )}
         {error && <p className="mt-3 text-sm font-medium text-[var(--sp-pink-dark)]">{error}</p>}

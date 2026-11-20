@@ -8,6 +8,7 @@ import {
   IconArrowRight,
   IconBook,
   IconBulb,
+  IconLock,
   IconCalendar,
   IconChevronLeft,
   IconChevronRight,
@@ -27,6 +28,20 @@ import PracticeQuizPanel, {
 } from "@/components/practice-quiz-panel";
 import StudyTimer from "@/components/study-timer";
 import ChapterMindmap from "@/components/chapter-mindmap";
+import { LoadingPlay } from "@/components/loading-play";
+
+/* Các bước hiện ở màn chờ tải tài liệu (tiến độ ước lượng theo thời gian) */
+const MATERIAL_STAGES = ["Tải tài liệu", "Đọc nội dung", "Chia bài học", "Soạn tóm tắt"];
+import {
+  SessionModeBanner,
+  parseSessionMode,
+  useSessionQuizResult,
+  type SessionMode,
+} from "@/components/session-mode";
+
+const REVIEW_KEY = "tong-on";
+// shortcut: bản demo mở sẵn buổi Tổng ôn dù chưa học xong mọi ngày; đặt false khi chạy thật
+const DEMO_PREVIEW_REVIEW = true;
 
 /* Bộ sinh số ngẫu nhiên có hạt giống: cùng hạt giống → cùng bộ câu hỏi trong một lần mở trang */
 function seededRandom(seed: number) {
@@ -353,6 +368,8 @@ function StudyMaterialsPageContent() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [plans, setPlans] = useState<ExamPlan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Người dùng đang chơi game ở màn chờ: giữ màn chờ tới khi họ bấm "Vào học ngay"
+  const [holdLoading, setHoldLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -409,12 +426,16 @@ function StudyMaterialsPageContent() {
     router.push(id ? `${pathname}?subject=${encodeURIComponent(id)}` : pathname);
   };
 
-  if (isLoading) {
+  if (isLoading || holdLoading) {
     return (
-      <div className="sp-card mx-auto max-w-5xl p-10 text-center text-[var(--sp-muted)]">
-        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-        Đang tải tài liệu học tập...
-      </div>
+      <LoadingPlay
+        title="Đang tải tài liệu học tập…"
+        stages={MATERIAL_STAGES}
+        expectedSeconds={20}
+        done={!isLoading}
+        onPlayingChange={setHoldLoading}
+        onContinue={() => setHoldLoading(false)}
+      />
     );
   }
 
@@ -438,6 +459,7 @@ function StudyMaterialsPageContent() {
         subject={subject}
         plan={plan}
         focusSessionId={searchParams.get("session")}
+        focusMode={parseSessionMode(searchParams.get("mode"))}
         onBack={() => openSubject(null)}
       />
     );
@@ -601,11 +623,14 @@ function MaterialReader({
   subject,
   plan,
   focusSessionId,
+  focusMode = null,
   onBack,
 }: {
   subject: Subject;
   plan: ExamPlan | undefined;
   focusSessionId?: string | null;
+  /* Chế độ mở từ lịch: học mới, ôn lại hoặc xem lại */
+  focusMode?: SessionMode | null;
   onBack: () => void;
 }) {
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -617,6 +642,7 @@ function MaterialReader({
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [mode, setMode] = useState<"summary" | "source">("summary");
   const [isLoading, setIsLoading] = useState(true);
+  const [holdLoading, setHoldLoading] = useState(false);
   const [error, setError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   /* Câu hỏi ôn nhanh theo chủ đề (không liên quan bài kiểm tra kiến thức) */
@@ -630,6 +656,11 @@ function MaterialReader({
   const [practiceSeed, setPracticeSeed] = useState(() => Math.floor(Math.random() * 1e9));
   const [unlockByDay, setUnlockByDay] = useState<Record<string, UnlockState>>({});
   const tabsRef = useRef<HTMLDivElement>(null);
+  const quizReview = useSessionQuizResult(
+    plan?.id,
+    focusSessionId,
+    focusMode === "review" || focusMode === "revisit"
+  );
 
   useEffect(() => {
     if (!plan) {
@@ -695,6 +726,14 @@ function MaterialReader({
     days.findIndex((day) => day.dateKey === (activeKey || defaultKey))
   );
   const day = days[activeIndex];
+  /* Buổi Tổng ôn (mindmap cả chương): không có trong lịch, mở khi học xong mọi ngày */
+  const showReview = activeKey === REVIEW_KEY;
+  const doneDays = days.filter((item) => item.status === "done").length;
+  const allDone = days.length > 0 && doneDays === days.length;
+  const reviewOpen = allDone || DEMO_PREVIEW_REVIEW;
+  const focusPart = focusSessionId
+    ? day?.parts.find((part) => part.session.id === focusSessionId)
+    : undefined;
 
   /* Cuộn thanh ngày để ngày đang chọn luôn nằm trong tầm nhìn */
   useEffect(() => {
@@ -794,22 +833,17 @@ function MaterialReader({
     );
   }, [mode, day, chunksByMaterial]);
 
-  /* Chương kết thúc ở ngày đang xem → hiện mindmap tổng hợp chương ở cuối ngày */
-  const chapterLastSession = useMemo(() => {
-    const last = new Map<string, string>();
+  /* Các chương của môn, theo thứ tự học → mỗi chương một mindmap ở buổi Tổng ôn */
+  const chapters = useMemo(() => {
+    const list: string[] = [];
     for (const item of days) {
       for (const part of item.parts) {
         const chapter = getChapterRoot(part.topic);
-        if (chapter) last.set(chapter, part.session.id);
+        if (chapter && !list.includes(chapter)) list.push(chapter);
       }
     }
-    return last;
+    return list;
   }, [days]);
-  const endingChapters = day
-    ? Array.from(chapterLastSession.entries())
-        .filter(([, sessionId]) => day.parts.some((part) => part.session.id === sessionId))
-        .map(([chapter]) => chapter)
-    : [];
 
   const openTopicDay = (topicId: string) => {
     const index = days.findIndex((item) => item.parts.some((part) => part.topic?.id === topicId));
@@ -836,14 +870,18 @@ function MaterialReader({
     </nav>
   );
 
-  if (isLoading) {
+  if (isLoading || holdLoading) {
     return (
       <div className="mx-auto max-w-[1240px]">
         {header}
-        <div className="sp-card p-10 text-center text-[var(--sp-muted)]">
-          <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-          Đang mở tài liệu {subject.name}...
-        </div>
+        <LoadingPlay
+          title={`Đang mở tài liệu ${subject.name}…`}
+          stages={MATERIAL_STAGES}
+          expectedSeconds={20}
+          done={!isLoading}
+          onPlayingChange={setHoldLoading}
+          onContinue={() => setHoldLoading(false)}
+        />
       </div>
     );
   }
@@ -974,15 +1012,32 @@ function MaterialReader({
     setReviewingKey("");
   };
 
-  /* Trả lời xong phần tự kiểm tra → hoàn thành các buổi của ngày, mở bài kiểm tra */
+  /* Trả lời xong phần tự kiểm tra → bắt đầu các buổi của ngày, mở bài kiểm tra.
+     Buổi chỉ "completed" khi đã nộp bài kiểm tra. */
   const unlock = unlockByDay[day.dateKey] ||
-    (day.parts.length > 0 && day.parts.every((part) => part.session.status === "completed")
+    // Mở từ lịch: nút tính theo chế độ khi trả lời xong, không dùng nút mặc định
+    (!focusMode && day.parts.length > 0 &&
+    day.parts.every((part) => part.session.status === "completed" || part.session.status === "in_progress")
       ? { state: "done" as const }
       : { state: "idle" as const });
 
   const completeDay = async (answered: number, correct: number) => {
     const dateKey = day.dateKey;
     const sessionIds = day.parts.map((part) => part.session.id);
+    /* Xem lại: chỉ dẫn tới kết quả + câu sai của bài kiểm tra gốc, không đổi trạng thái gì */
+    if (focusMode === "revisit") {
+      const attemptId = quizReview.result?.attempt_id;
+      setUnlockByDay((state) => ({
+        ...state,
+        [dateKey]: {
+          state: "done",
+          title: attemptId ? "Xem lại bài kiểm tra của buổi này" : "Buổi này chưa có kết quả bài kiểm tra",
+          quizHref: attemptId ? `/quiz-results/${attemptId}` : undefined,
+          quizLabel: attemptId ? "Xem kết quả và câu sai" : undefined,
+        },
+      }));
+      return;
+    }
     setUnlockByDay((state) => ({ ...state, [dateKey]: { state: "saving" } }));
     try {
       const retakeIds: string[] = [];
@@ -992,7 +1047,7 @@ function MaterialReader({
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ answered, correct }),
+            body: JSON.stringify({ answered, correct, open_retake: focusMode !== "learn" }),
           }
         );
         const result = await response.json().catch(() => ({}));
@@ -1003,7 +1058,9 @@ function MaterialReader({
       }
       setSessions((current) =>
         current.map((session) =>
-          sessionIds.includes(session.id) ? { ...session, status: "completed" } : session
+          sessionIds.includes(session.id) && session.status === "scheduled"
+            ? { ...session, status: "in_progress" }
+            : session
         )
       );
 
@@ -1037,7 +1094,8 @@ function MaterialReader({
           state: "done",
           quizHref,
           quizLabel,
-          retakeHref: retakeIds[0] ? `/quizzes/${retakeIds[0]}` : undefined,
+          // Vào học → bài kiểm tra gốc; Vào ôn (hoặc mở thường) → bài kiểm tra lại nếu có
+          retakeHref: focusMode !== "learn" && retakeIds[0] ? `/quizzes/${retakeIds[0]}` : undefined,
         },
       }));
     } catch (unlockError) {
@@ -1068,12 +1126,15 @@ function MaterialReader({
       <section>
         {header}
         <p className="sp-accent text-lg text-[var(--sp-pink)]">
-          Ngày {day.number}/{days.length} · {weekdayLong(day.dateKey)}, {dayMonth(day.dateKey)}
+          {showReview
+            ? `Tổng ôn · sau ${days.length} ngày học`
+            : `Ngày ${day.number}/${days.length} · ${weekdayLong(day.dateKey)}, ${dayMonth(day.dateKey)}`}
         </p>
         <h1 className="text-[36px] sm:text-[50px]">
           {titleHead && <>{titleHead} </>}
           <span className="sp-squiggle">{titleTail}</span>
         </h1>
+        {!showReview && (
         <p className="mt-2 flex flex-wrap items-center gap-2 text-[15px] text-[var(--sp-muted)]">
           <span>
             {day.parts.length} phần học · {day.minutes} phút
@@ -1095,7 +1156,16 @@ function MaterialReader({
             </span>
           )}
         </p>
+        )}
       </section>
+
+      {focusPart && focusMode && (
+        <SessionModeBanner
+          mode={focusMode}
+          topicTitle={focusPart.topic ? getMainTopicTitle(focusPart.topic.name) : "Buổi học"}
+          result={quizReview.result}
+        />
+      )}
 
       {/* Thanh ngày học */}
       <div ref={tabsRef} className="-mx-1 flex items-center gap-2.5 overflow-x-auto px-1 pb-2 pt-3">
@@ -1108,7 +1178,7 @@ function MaterialReader({
         </span>
 
         {days.map((item, index) => {
-          const active = item.dateKey === day.dateKey;
+          const active = !showReview && item.dateKey === day.dateKey;
           const itemIsToday = item.dateKey === todayKey;
           return (
             <button
@@ -1149,6 +1219,22 @@ function MaterialReader({
           );
         })}
 
+        <button
+          type="button"
+          disabled={!reviewOpen}
+          onClick={() => setActiveKey(REVIEW_KEY)}
+          aria-current={showReview ? "true" : undefined}
+          title={reviewOpen ? "Mindmap tổng hợp cả chương" : `Mở sau khi học xong ${days.length} ngày`}
+          className={`flex shrink-0 items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+            showReview
+              ? "border-[var(--sp-purple)] bg-[var(--sp-purple)] text-[var(--sp-yellow)] shadow-[3px_3px_0_var(--sp-lav-line)]"
+              : "border-[var(--sp-pink)] bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)] enabled:hover:-translate-y-0.5"
+          }`}
+        >
+          {reviewOpen ? <Sparkle size={14} /> : <IconLock size={14} />}
+          Tổng ôn
+        </button>
+
         {examKey && (
           <span className="flex shrink-0 items-center gap-2 rounded-full border-2 border-[var(--sp-purple)] bg-white px-4 py-2 text-sm font-bold text-[var(--sp-purple)]">
             <IconFlag size={15} className="text-[var(--sp-pink)]" />
@@ -1157,7 +1243,21 @@ function MaterialReader({
         )}
       </div>
 
-      {/* Khung học: nội dung (trái) + câu hỏi ôn nhanh (phải) */}
+      {showReview ? (
+        <div className="space-y-5">
+          {!allDone && (
+            <p className="flex items-center gap-2 rounded-2xl border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-lav)] px-4 py-3 text-[14px] text-[var(--sp-text-2)]">
+              <IconLock size={15} className="shrink-0 text-[var(--sp-peri-dark)]" />
+              Buổi Tổng ôn mở khi bạn học xong {days.length} ngày (đã xong {doneDays}/{days.length}). Đang mở sẵn để xem thử.
+            </p>
+          )}
+          {plan &&
+            chapters.map((chapter) => (
+              <ChapterMindmap key={`${plan.id}-${chapter}`} planId={plan.id} chapter={chapter} onOpenTopic={openTopicDay} />
+            ))}
+        </div>
+      ) : (
+      /* Khung học: nội dung (trái) + câu hỏi ôn nhanh (phải) */
       <section className="sp-card-pop grid grid-cols-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex min-h-0 min-w-0 flex-col">
           <div className="grid grid-cols-1 items-center gap-3 border-b border-[var(--sp-line)] px-5 pb-4 pt-5 sm:grid-cols-[1fr_auto_1fr] sm:px-7 sm:pt-6">
@@ -1226,7 +1326,7 @@ function MaterialReader({
 
           <div
             ref={scrollRef}
-            className="max-h-[68vh] min-h-[360px] overflow-y-auto px-5 py-6 sm:px-7"
+            className="max-h-[68vh] min-h-[360px] overflow-y-auto px-5 py-6 text-justify sm:px-7"
           >
             {mode === "summary" ? (
               <div className="space-y-2">
@@ -1279,25 +1379,6 @@ function MaterialReader({
                   </div>
                 ))}
 
-                {plan &&
-                  endingChapters.map((chapter) => (
-                    <button
-                      key={`jump-${chapter}`}
-                      type="button"
-                      onClick={() =>
-                        document
-                          .getElementById(`mindmap-${plan.id}-${encodeURIComponent(chapter)}`)
-                          ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                      }
-                      className="mt-8 flex w-full items-center gap-3 rounded-2xl border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-lav)] px-4 py-3 text-left transition hover:border-[var(--sp-peri)]"
-                    >
-                      <Sparkle size={16} className="shrink-0 text-[var(--sp-pink)]" />
-                      <span className="min-w-0 flex-1 text-[14px] text-[var(--sp-text-2)]">
-                        Bạn đã học hết <b className="text-[var(--sp-purple)]">{chapter}</b>. Xem mindmap tổng hợp chương ở bên dưới.
-                      </span>
-                      <IconArrowRight size={16} className="shrink-0 rotate-90 text-[var(--sp-peri-dark)]" />
-                    </button>
-                  ))}
               </div>
             ) : (
               <SourceView day={day} chunksByMaterial={chunksByMaterial} />
@@ -1359,18 +1440,8 @@ function MaterialReader({
           />
         </aside>
       </section>
+      )}
 
-      {/* Mindmap tổng hợp của chương kết thúc trong ngày này (gói Pro) */}
-      {plan &&
-        mode === "summary" &&
-        endingChapters.map((chapter) => (
-          <ChapterMindmap
-            key={`${plan.id}-${chapter}`}
-            planId={plan.id}
-            chapter={chapter}
-            onOpenTopic={openTopicDay}
-          />
-        ))}
     </div>
   );
 }
@@ -1475,7 +1546,7 @@ function SectionBody({ section, nested = false }: { section: ContentSection; nes
       ))}
 
       {(section.key_points || []).length > 0 && (
-        <KeyPoints points={section.key_points || []} />
+        <KeyPoints points={section.key_points || []} summary={!nested} />
       )}
     </div>
   );
@@ -1514,6 +1585,17 @@ function FormulaCard({ formula }: { formula: Formula }) {
   );
 }
 
+/* Tiêu đề thẻ: căn giữa, phần trong ngoặc xuống dòng riêng, vd "Technique (Kỹ thuật)" */
+function CardTitle({ text, small }: { text: string; small: boolean }) {
+  const match = text.match(/^(.+?)\s*(\([^()]*\))\s*$/);
+  return (
+    <p className={`text-center font-extrabold text-[var(--sp-purple)] ${small ? "text-[15px] leading-6" : "text-lg leading-7"}`}>
+      {renderMath(match ? match[1] : text)}
+      {match && <span className="block">{renderMath(match[2])}</span>}
+    </p>
+  );
+}
+
 function TableBlock({ table }: { table: SectionTable }) {
   const headers = table.headers || [];
   const rows = (table.rows || []).filter((row) => row.some(Boolean));
@@ -1521,6 +1603,9 @@ function TableBlock({ table }: { table: SectionTable }) {
 
   /* Bảng nhỏ (phân loại, so sánh ngắn) → thẻ so sánh */
   if (rows.length <= 4 && headers.length <= 3) {
+    // Đồng bộ cả nhóm thẻ: một tiêu đề dài → mọi tiêu đề cùng cỡ nhỏ; nội dung đều ngắn → cùng căn giữa
+    const smallTitles = rows.some((row) => (row[0] || "").length > 18);
+    const centerBody = rows.every((row) => row.slice(1).every((cell) => !cell || cell.length <= 100));
     return (
       <div
         className={`grid grid-cols-1 gap-3 ${
@@ -1532,10 +1617,13 @@ function TableBlock({ table }: { table: SectionTable }) {
             key={index}
             className="rounded-2xl border-2 border-[var(--sp-line)] bg-white p-4 transition hover:border-[var(--sp-lav-line)]"
           >
-            <p className="text-lg font-extrabold text-[var(--sp-purple)]">{renderMath(row[0])}</p>
+            <CardTitle text={row[0]} small={smallTitles} />
             {row.slice(1).map((cell, cellIndex) =>
               cell ? (
-                <p key={cellIndex} className="mt-1 text-sm leading-6 text-[var(--sp-text-2)]">
+                <p
+                  key={cellIndex}
+                  className={`mt-1.5 text-sm leading-6 text-[var(--sp-text-2)] ${centerBody ? "text-center" : ""}`}
+                >
                   <Highlightable text={`${row[0]} ${cell}`}>{renderRich(cell)}</Highlightable>
                 </p>
               ) : null
@@ -1579,7 +1667,36 @@ function TableBlock({ table }: { table: SectionTable }) {
   );
 }
 
-function KeyPoints({ points }: { points: string[] }) {
+/* summary: ý chính của cả mục (cuối mục) — khác hẳn ô hồng của từng phần nhỏ */
+function KeyPoints({ points, summary = false }: { points: string[]; summary?: boolean }) {
+  if (summary) {
+    return (
+      <div className="relative overflow-hidden rounded-[20px] border-2 border-[var(--sp-purple-deep)] bg-white shadow-[5px_5px_0_var(--sp-yellow)]">
+        <div className="flex items-center gap-3 bg-[var(--sp-purple)] px-5 py-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] text-[var(--sp-purple-deep)]">
+            <IconBulb size={18} />
+          </span>
+          <div className="min-w-0 flex-1 text-left">
+            <p className="sp-accent text-[14px] leading-5 text-[var(--sp-yellow)]">Chốt lại cả mục</p>
+            <p className="font-display text-[22px] uppercase leading-7 tracking-wide text-white">Tổng kết cần nhớ</p>
+          </div>
+          <Sparkle size={20} className="sp-twinkle shrink-0 text-[var(--sp-yellow)]" />
+        </div>
+        <ol className="space-y-3 px-5 py-4">
+          {points.map((point, index) => (
+            <li key={index} className="flex items-center gap-3">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] text-[13px] font-extrabold text-[var(--sp-purple-deep)]">
+                {index + 1}
+              </span>
+              <span className="min-w-0 flex-1 text-[15.5px] font-semibold leading-7 text-[var(--sp-ink)]">
+                <Highlightable text={point}>{renderRich(point)}</Highlightable>
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
   return (
     <div className="relative rounded-2xl border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-5 py-4">
       <Sparkle size={18} className="sp-twinkle absolute -top-2.5 right-6 text-[var(--sp-yellow)]" />

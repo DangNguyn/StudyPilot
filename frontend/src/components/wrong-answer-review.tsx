@@ -389,7 +389,7 @@ function QuestionDetail({
   const materialId = question.source_location?.material_id;
 
   return (
-    <div className="sp-task-expand">
+    <div className="sp-task-expand text-justify">
       <div className="flex flex-wrap items-center gap-2.5">
         <h2 className="mr-1 text-[34px] font-black leading-none text-[var(--sp-pink)]">Câu {number}</h2>
         {(chapterLabel || page) && (
@@ -483,25 +483,27 @@ function QuestionDetail({
                 >
                   {option.key}
                 </span>
-                <span
-                  className={`min-w-0 flex-1 text-[15px] leading-6 ${
-                    state === "idle" ? "text-[var(--sp-muted)]" : "font-semibold text-[var(--sp-ink)]"
-                  }`}
-                >
-                  {option.text}
-                </span>
-                {state === "correct" && (
-                  <span className="flex shrink-0 items-center gap-1 text-[12px] font-bold text-emerald-700">
-                    <IconCheck size={13} />
-                    {isChosen ? "Bạn chọn đúng" : "Đáp án đúng"}
-                  </span>
-                )}
-                {state === "wrong" && (
-                  <span className="flex shrink-0 items-center gap-1 text-[12px] font-bold text-[var(--sp-pink-dark)]">
-                    <IconX size={13} />
-                    Bạn chọn
-                  </span>
-                )}
+                <div className="min-w-0 flex-1">
+                  <p
+                    className={`text-[15px] leading-6 ${
+                      state === "idle" ? "text-[var(--sp-muted)]" : "font-semibold text-[var(--sp-ink)]"
+                    }`}
+                  >
+                    {option.text}
+                  </p>
+                  {state === "correct" && (
+                    <p className="mt-1.5 flex items-center gap-1 text-[12px] font-bold text-emerald-700">
+                      <IconCheck size={13} />
+                      {isChosen ? "Bạn chọn đúng" : "Đáp án đúng"}
+                    </p>
+                  )}
+                  {state === "wrong" && (
+                    <p className="mt-1.5 flex items-center gap-1 text-[12px] font-bold text-[var(--sp-pink-dark)]">
+                      <IconX size={13} />
+                      Bạn chọn
+                    </p>
+                  )}
+                </div>
               </div>
             );
           })}

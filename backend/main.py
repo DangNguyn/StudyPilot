@@ -1846,13 +1846,20 @@ def _session_day_context(study_session_id):
     week = []
 
     if session_date:
-        monday = session_date - timedelta(days=session_date.weekday())
+        # Ngày ôn được chọn từ hôm nay đến trước ngày thi (20/11/2026: nới từ
+        # "trong tuần của buổi học" vì người học bắt buộc phải chọn ngày ôn).
+        # Trả đủ các tuần trọn vẹn để giao diện xếp theo cột thứ.
+        start = min(session_date, today)
+        monday = start - timedelta(days=start.weekday())
+        last_day = (exam_date - timedelta(days=1)) if exam_date else monday + timedelta(days=6)
+        last_day = max(last_day, monday + timedelta(days=6))
+        total_days = min(((last_day - monday).days // 7 + 1) * 7, 8 * 7)
 
-        for offset in range(7):
+        for offset in range(total_days):
             current = monday + timedelta(days=offset)
             week.append({
                 "date": current.isoformat(),
-                "weekday": WEEKDAY_LABELS[offset],
+                "weekday": WEEKDAY_LABELS[current.weekday()],
                 "has_study": current in plan_dates,
                 "is_past": current < today,
                 "after_exam": bool(exam_date and current >= exam_date),
@@ -1939,14 +1946,20 @@ def _plan_review_date(review_plan):
 
 
 PRACTICE_LOCK_REASON = (
-    "Trả lời phần Tự kiểm tra nhanh của bài này trong "
-    "Tài liệu học tập để mở bài kiểm tra."
+    "Mở bài học này trong Tài liệu học tập (hoặc bấm Bắt đầu học) "
+    "để làm bài kiểm tra."
 )
+
+# Bài kiểm tra cuối buổi mở khi buổi học đã bắt đầu (đã vào đọc nội dung).
+# "completed" nghĩa là đã nộp bài kiểm tra gốc.
+QUIZ_OPEN_SESSION_STATUSES = ("in_progress", "completed")
 
 
 class PracticeCompleteRequest(BaseModel):
     answered: int = Field(default=0, ge=0)
     correct: int = Field(default=0, ge=0)
+    # False khi vào từ nút "Vào học": không mở bài kiểm tra lại
+    open_retake: bool = True
 
 
 @app.post("/api/study-sessions/{session_id}/practice-complete")
@@ -1956,7 +1969,8 @@ def complete_session_practice(
 ):
     """
     Người học đã trả lời xong phần Tự kiểm tra nhanh của ngày học:
-    đánh dấu buổi học hoàn thành để mở bài kiểm tra kiến thức của buổi đó.
+    chuyển buổi học sang "đang học" để mở bài kiểm tra của buổi đó.
+    Không đánh dấu hoàn thành: buổi chỉ hoàn thành khi nộp bài kiểm tra.
     """
     if not DEMO_USER_ID:
         raise HTTPException(
@@ -1967,7 +1981,7 @@ def complete_session_practice(
     try:
         response = (
             supabase.table("study_sessions")
-            .select("id, status, started_at")
+            .select("id, topic_id, scheduled_start, status, started_at")
             .eq("id", str(session_id))
             .eq("user_id", DEMO_USER_ID)
             .limit(1)
@@ -1993,6 +2007,9 @@ def complete_session_practice(
             .execute()
         ).data or []
 
+        if request is not None and not request.open_retake:
+            session_quizzes = []
+
         for session_quiz in session_quizzes:
             try:
                 retake_plan = _find_retake_plan_for_quiz(session_quiz["id"])
@@ -2013,17 +2030,26 @@ def complete_session_practice(
             except Exception as retake_error:
                 print("Không mở được bài kiểm tra lại:", str(retake_error))
 
-        if session.get("status") == "completed":
+        if session.get("status") in QUIZ_OPEN_SESSION_STATUSES:
             return {
-                "message": "Buổi học đã hoàn thành trước đó.",
+                "message": "Bài kiểm tra của buổi học đã được mở.",
                 "unlocked_retake_quiz_ids": unlocked_retake_quiz_ids,
                 "data": session
             }
 
+        if not _is_study_session_unlocked(
+            session,
+            _load_plan_sessions(session)
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail=SESSION_LOCK_REASON
+            )
+
         now = datetime.now(timezone.utc).isoformat()
         update = {
-            "status": "completed",
-            "completed_at": now,
+            "status": "in_progress",
+            "last_activity_at": now,
             "updated_at": now
         }
 
@@ -2035,6 +2061,7 @@ def complete_session_practice(
             .update(update)
             .eq("id", str(session_id))
             .eq("user_id", DEMO_USER_ID)
+            .eq("status", "scheduled")
             .execute()
         )
 
@@ -2061,7 +2088,7 @@ class ReviewDateRequest(BaseModel):
 
 @app.post("/api/review-plans/{review_plan_id}/review-date")
 def set_review_date(review_plan_id: UUID, request: ReviewDateRequest):
-    """Người học chọn ngày ôn lại: chỉ trong tuần của buổi học, không trùng ngày học chính."""
+    """Người học chọn ngày ôn lại từ hôm nay đến trước ngày thi (được trùng ngày có buổi học)."""
     try:
         plan_response = (
             supabase.table("review_plans")
@@ -2104,11 +2131,9 @@ def set_review_date(review_plan_id: UUID, request: ReviewDateRequest):
         day = next((item for item in context["week"] if item["date"] == chosen), None)
 
         if not day:
-            raise HTTPException(status_code=400, detail="Chỉ được chọn ngày ôn trong tuần của buổi học.")
+            raise HTTPException(status_code=400, detail="Ngày ôn phải từ hôm nay đến trước ngày thi.")
         if day["is_past"]:
             raise HTTPException(status_code=400, detail="Không thể chọn ngày đã qua.")
-        if day["has_study"]:
-            raise HTTPException(status_code=400, detail="Ngày này đã có lịch học chính, hãy chọn ngày khác.")
         if day["after_exam"]:
             raise HTTPException(status_code=400, detail="Ngày ôn phải trước ngày thi.")
 
@@ -2951,94 +2976,114 @@ def generate_exam_schedule(
 
 def _has_passed_session_quiz(previous_session):
     """
-    Kiểm tra người học đã vượt qua Quiz của một buổi học hay chưa.
-
-    Điều kiện:
-    - Buổi học đã hoàn thành.
-    - Quiz gốc đạt từ 50%; hoặc
-    - Quiz gốc dưới 50% nhưng đã hoàn thành Review Plan.
+    Cổng sang buổi kế tiếp: chỉ cần đã nộp bài kiểm tra của buổi trước,
+    không xét điểm (quyết định 20/11/2026). Trạng thái "completed" chỉ được
+    đặt khi nộp bài kiểm tra gốc của buổi (submit_quiz_attempt).
     """
-    if previous_session.get("status") != "completed":
-        return False
+    return previous_session.get("status") == "completed"
 
-    previous_session_id = str(previous_session["id"])
 
-    quiz_response = (
+def _mark_session_completed_by_quiz(quiz_id, submitted_at):
+    """Đánh dấu buổi học hoàn thành khi bài kiểm tra gốc của buổi được nộp."""
+    quiz_rows = (
         supabase.table("quizzes")
-        .select("id")
-        .eq("user_id", DEMO_USER_ID)
-        .eq("study_session_id", previous_session_id)
-        .eq("status", "active")
-        .limit(1)
-        .execute()
-    )
-
-    if not quiz_response.data:
-        return False
-
-    original_quiz_id = str(quiz_response.data[0]["id"])
-
-    attempt_response = (
-        supabase.table("quiz_attempts")
-        .select("id, score, status, submitted_at")
-        .eq("user_id", DEMO_USER_ID)
-        .eq("quiz_id", original_quiz_id)
-        .eq("status", "submitted")
-        .order("submitted_at", desc=True)
-        .limit(1)
-        .execute()
-    )
-
-    if not attempt_response.data:
-        return False
-
-    original_attempt = attempt_response.data[0]
-
-    if float(original_attempt.get("score") or 0) >= 50:
-        return True
-
-    assessment_response = (
-        supabase.table("quiz_assessments")
-        .select("id")
-        .eq(
-            "quiz_attempt_id",
-            str(original_attempt["id"])
-        )
+        .select("study_session_id")
+        .eq("id", str(quiz_id))
         .eq("user_id", DEMO_USER_ID)
         .limit(1)
         .execute()
-    )
+    ).data or []
+    # Bài làm lại không gắn study_session_id nên không đổi trạng thái buổi.
+    session_id = quiz_rows[0].get("study_session_id") if quiz_rows else None
 
-    if not assessment_response.data:
-        return False
+    if not session_id:
+        return None
 
-    assessment_id = str(assessment_response.data[0]["id"])
-
-    review_response = (
-        supabase.table("review_plans")
-        .select("id, status")
-        .eq("assessment_id", assessment_id)
+    session_rows = (
+        supabase.table("study_sessions")
+        .select("id, status, started_at")
+        .eq("id", str(session_id))
         .eq("user_id", DEMO_USER_ID)
         .limit(1)
         .execute()
+    ).data or []
+
+    if not session_rows or session_rows[0].get("status") == "completed":
+        return None
+
+    update = {
+        "status": "completed",
+        "completed_at": submitted_at,
+        "updated_at": submitted_at
+    }
+
+    if not session_rows[0].get("started_at"):
+        update["started_at"] = submitted_at
+
+    (
+        supabase.table("study_sessions")
+        .update(update)
+        .eq("id", str(session_id))
+        .eq("user_id", DEMO_USER_ID)
+        .execute()
     )
+    return str(session_id)
 
-    if not review_response.data:
-        return False
 
-    return review_response.data[0].get("status") == "completed"
+SESSION_LOCK_REASON = (
+    "Bài học đang bị khóa. Bạn cần nộp bài kiểm tra cuối buổi "
+    "của những ngày học trước đó."
+)
+
+
+def _load_plan_sessions(study_session):
+    """Lấy mọi buổi học cùng kế hoạch với buổi học đã cho."""
+    topic_id = study_session.get("topic_id")
+
+    if not topic_id:
+        return [study_session]
+
+    topic_rows = (
+        supabase.table("topics")
+        .select("id, exam_plan_id")
+        .eq("id", str(topic_id))
+        .eq("user_id", DEMO_USER_ID)
+        .limit(1)
+        .execute()
+    ).data or []
+    exam_plan_id = topic_rows[0].get("exam_plan_id") if topic_rows else None
+    topic_ids = [str(topic_id)]
+
+    if exam_plan_id:
+        topic_ids = list({
+            str(topic["id"])
+            for topic in (
+                supabase.table("topics")
+                .select("id")
+                .eq("exam_plan_id", str(exam_plan_id))
+                .eq("user_id", DEMO_USER_ID)
+                .eq("is_active", True)
+                .execute()
+            ).data or []
+        } | {str(topic_id)})
+
+    return (
+        supabase.table("study_sessions")
+        .select("id, topic_id, scheduled_start, status")
+        .eq("user_id", DEMO_USER_ID)
+        .in_("topic_id", topic_ids)
+        .order("scheduled_start")
+        .execute()
+    ).data or []
 
 
 def _is_study_session_unlocked(current_session, all_sessions):
     """
     Chỉ mở buổi học khi tất cả buổi học thuộc những ngày trước
-    trong cùng kế hoạch đã vượt qua Quiz.
+    trong cùng kế hoạch đã nộp bài kiểm tra.
     Các buổi học cùng ngày không khóa lẫn nhau.
 
-    ĐÃ TẮT: theo yêu cầu mới, mọi buổi học luôn mở. Người học chỉ cần trả lời
-    phần Tự kiểm tra nhanh để mở bài kiểm tra của buổi đó.
     """
-    return True
     current_scheduled_start = current_session.get("scheduled_start")
 
     if not current_scheduled_start:
@@ -3200,123 +3245,13 @@ def start_study_session(session_id: UUID):
 
         all_sessions = sessions_response.data or []
 
-        # 5. Kiểm tra Quiz của từng buổi học trước đó
-        def has_passed_session_quiz(previous_session):
-            if previous_session.get("status") != "completed":
-                return False
-
-            previous_session_id = str(previous_session["id"])
-
-            # Tìm Quiz gốc của buổi học
-            previous_quiz_response = (
-                supabase.table("quizzes")
-                .select("id")
-                .eq("user_id", DEMO_USER_ID)
-                .eq("study_session_id", previous_session_id)
-                .eq("status", "active")
-                .limit(1)
-                .execute()
-            )
-
-            if not previous_quiz_response.data:
-                return False
-
-            original_quiz_id = str(
-                previous_quiz_response.data[0]["id"]
-            )
-
-            # Lấy lượt làm Quiz gốc gần nhất đã nộp
-            attempt_response = (
-                supabase.table("quiz_attempts")
-                .select("id, score, status, submitted_at")
-                .eq("user_id", DEMO_USER_ID)
-                .eq("quiz_id", original_quiz_id)
-                .eq("status", "submitted")
-                .order("submitted_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-
-            if not attempt_response.data:
-                return False
-
-            original_attempt = attempt_response.data[0]
-            original_score = float(
-                original_attempt.get("score") or 0
-            )
-
-            # Quiz gốc đạt từ 50% trở lên
-            if original_score >= 50:
-                return True
-
-            # Quiz gốc dưới 50%: tìm AI Assessment
-            assessment_response = (
-                supabase.table("quiz_assessments")
-                .select("id")
-                .eq(
-                    "quiz_attempt_id",
-                    str(original_attempt["id"])
-                )
-                .eq("user_id", DEMO_USER_ID)
-                .limit(1)
-                .execute()
-            )
-
-            if not assessment_response.data:
-                return False
-
-            assessment_id = str(
-                assessment_response.data[0]["id"]
-            )
-
-            # Tìm kế hoạch ôn tập liên kết với Assessment
-            review_response = (
-                supabase.table("review_plans")
-                .select("id, status")
-                .eq("assessment_id", assessment_id)
-                .eq("user_id", DEMO_USER_ID)
-                .limit(1)
-                .execute()
-            )
-
-            if not review_response.data:
-                return False
-
-            review_plan = review_response.data[0]
-
-            # Review Plan chỉ hoàn thành khi Retake Quiz đạt yêu cầu
-            return review_plan.get("status") == "completed"
-
-        # Chỉ kiểm tra các ngày trước ngày của buổi học hiện tại.
+        # 5. Các ngày học trước phải đã nộp bài kiểm tra (không xét điểm).
         # Các buổi học cùng ngày không khóa lẫn nhau.
-        for previous_session in all_sessions:
-            if str(previous_session["id"]) == str(session_id):
-                continue
-
-            previous_scheduled_value = previous_session.get(
-                "scheduled_start"
+        if not _is_study_session_unlocked(study_session, all_sessions):
+            raise HTTPException(
+                status_code=403,
+                detail=SESSION_LOCK_REASON
             )
-
-            if not previous_scheduled_value:
-                continue
-
-            try:
-                previous_study_day = datetime.fromisoformat(
-                    previous_scheduled_value.replace("Z", "+00:00")
-                ).date()
-            except (ValueError, TypeError):
-                continue
-
-            if previous_study_day < current_study_day:
-                if not has_passed_session_quiz(previous_session):
-                    raise HTTPException(
-                        status_code=403,
-                        detail=(
-                            "Bài học đang bị khóa. Bạn cần hoàn thành "
-                            "toàn bộ bài học và đạt ít nhất 50% Quiz "
-                            "của những ngày học trước đó."
-                        )
-                    )
 
         # 6. Kiểm tra trạng thái buổi học
         now = datetime.now(timezone.utc)
@@ -3541,135 +3476,17 @@ def record_study_activity(
 
 @app.post("/api/study-sessions/{session_id}/complete")
 def complete_study_session(session_id: UUID):
-    try:
-        # 1. Lấy thông tin buổi học
-        existing_response = (
-            supabase
-            .table("study_sessions")
-            .select(
-                "id, status, last_activity_at, actual_study_seconds"
-            )
-            .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
-            .limit(1)
-            .execute()
+    """
+    Không còn đánh dấu hoàn thành trực tiếp: buổi học chỉ hoàn thành khi
+    người học nộp bài kiểm tra cuối buổi (xem submit_quiz_attempt).
+    """
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "Hãy làm bài kiểm tra cuối buổi. Buổi học chỉ được tính "
+            "hoàn thành sau khi bạn nộp bài kiểm tra."
         )
-
-        if not existing_response.data:
-            raise HTTPException(
-                status_code=404,
-                detail="Không tìm thấy buổi học."
-            )
-
-        study_session = existing_response.data[0]
-
-        # 2. Kiểm tra trạng thái
-        if study_session["status"] != "in_progress":
-            raise HTTPException(
-                status_code=400,
-                detail="Buổi học chưa được bắt đầu hoặc đã hoàn thành."
-            )
-
-        last_activity = study_session.get("last_activity_at")
-
-        if not last_activity:
-            raise HTTPException(
-                status_code=400,
-                detail="Không tìm thấy thời gian hoạt động gần nhất."
-            )
-
-        # 3. Tính thời gian hoạt động cuối cùng
-        last_activity_time = datetime.fromisoformat(
-            last_activity.replace("Z", "+00:00")
-        )
-
-        if last_activity_time.tzinfo is None:
-            last_activity_time = last_activity_time.replace(
-                tzinfo=timezone.utc
-            )
-
-        now = datetime.now(timezone.utc)
-
-        elapsed_seconds = int(
-            (now - last_activity_time).total_seconds()
-        )
-
-        if 0 <= elapsed_seconds <= 60:
-            credited_seconds = elapsed_seconds
-        else:
-            credited_seconds = 0
-
-        current_seconds = int(
-            study_session.get("actual_study_seconds") or 0
-        )
-
-        total_seconds = current_seconds + credited_seconds
-
-        # 4. Lưu thời gian và đối chiếu hoạt động gần nhất
-        time_response = (
-            supabase
-            .table("study_sessions")
-            .update({
-                "actual_study_seconds": total_seconds,
-                "last_activity_at": now.isoformat(),
-                "updated_at": now.isoformat()
-            })
-            .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
-            .eq("status", "in_progress")
-            .eq("last_activity_at", last_activity)
-            .execute()
-        )
-
-        if not time_response.data:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "Buổi học vừa được cập nhật ở một yêu cầu khác. "
-                    "Vui lòng tải lại."
-                )
-            )
-
-
-        # 5. Không còn yêu cầu thời gian học tối thiểu
-        required_seconds = 0
-
-        # 6. Đánh dấu hoàn thành
-        response = (
-            supabase
-            .table("study_sessions")
-            .update({
-                "status": "completed",
-                "completed_at": now.isoformat(),
-                "updated_at": now.isoformat()
-            })
-            .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
-            .eq("status", "in_progress")
-            .execute()
-        )
-
-        if not response.data:
-            raise HTTPException(
-                status_code=409,
-                detail="Buổi học đã được cập nhật. Vui lòng tải lại."
-            )
-
-        return {
-            "message": "Bạn đã hoàn thành buổi học!",
-            "actual_study_seconds": total_seconds,
-            "required_study_seconds": required_seconds,
-            "data": response.data
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as error:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Không thể hoàn thành buổi học: {str(error)}"
-        )
+    )
 
 
 @app.get("/api/study-sessions")
@@ -3881,10 +3698,13 @@ def get_study_sessions(
                 else []
             )
 
-            # Không còn khóa theo kết quả Quiz của ngày trước:
-            # mọi buổi học đều mở để người học tự do ôn tập.
-            session["is_unlocked"] = True
-            session["lock_reason"] = None
+            # Cùng cổng với /start: ngày trước phải đã nộp bài kiểm tra.
+            unlocked = _is_study_session_unlocked(
+                session,
+                current_plan_sessions or [session]
+            )
+            session["is_unlocked"] = unlocked
+            session["lock_reason"] = None if unlocked else SESSION_LOCK_REASON
 
         # 5. Tổng hợp tiến độ
         total_sessions = len(sessions)
@@ -4031,11 +3851,7 @@ def get_study_session_detail(session_id: UUID):
             ):
                 raise HTTPException(
                     status_code=403,
-                    detail=(
-                        "Bài học đang bị khóa. Bạn cần hoàn thành "
-                        "toàn bộ bài học và đạt ít nhất 50% Quiz "
-                        "của những ngày học trước đó."
-                    )
+                    detail=SESSION_LOCK_REASON
                 )
 
         # 4. Lấy các đoạn tài liệu được phân bổ cho buổi học
@@ -5117,9 +4933,8 @@ def start_quiz(quiz_id: UUID):
 
             session = session_response.data[0]
 
-            # Quiz của buổi học chỉ mở sau khi người học trả lời phần
-            # "Tự kiểm tra nhanh" của bài (buổi học được đánh dấu hoàn thành).
-            if session.get("status") != "completed":
+            # Quiz của buổi học mở khi buổi học đã bắt đầu.
+            if session.get("status") not in QUIZ_OPEN_SESSION_STATUSES:
                 raise HTTPException(
                     status_code=403,
                     detail=PRACTICE_LOCK_REASON
@@ -7006,7 +6821,7 @@ def get_quizzes(exam_plan_id: UUID | None = None):
             supabase.table("review_plans")
             .select(
                 "id, retake_quiz_id, assessment_id, status, "
-                "review_study_seconds"
+                "review_study_seconds, review_items"
             )
             .eq("user_id", DEMO_USER_ID)
             .in_("retake_quiz_id", quiz_ids)
@@ -7182,6 +6997,12 @@ def get_quizzes(exam_plan_id: UUID | None = None):
             )
             quiz["review_status"] = (
                 review_plan.get("status")
+                if review_plan
+                else None
+            )
+            # Ngày ôn lại người học đã chọn: trang Kế hoạch xếp buổi ôn vào ngày này.
+            quiz["review_date"] = (
+                _plan_review_date(review_plan)
                 if review_plan
                 else None
             )
@@ -7457,7 +7278,7 @@ def get_quizzes(exam_plan_id: UUID | None = None):
                 if not session:
                     lock_reason = "Không tìm thấy buổi học tương ứng."
 
-                elif session.get("status") == "completed":
+                elif session.get("status") in QUIZ_OPEN_SESSION_STATUSES:
                     is_unlocked = True
 
                 else:
@@ -8500,6 +8321,16 @@ def submit_quiz_attempt(attempt_id: UUID):
             .eq("status", "in_progress")
             .execute()
         )
+
+        # 9.1. Nộp bài kiểm tra gốc của buổi (không phải bài làm lại)
+        # là cách duy nhất để buổi học được tính hoàn thành, mọi mức điểm.
+        try:
+            _mark_session_completed_by_quiz(attempt["quiz_id"], submitted_at)
+        except Exception as session_error:
+            print(
+                "Không cập nhật được trạng thái buổi học:",
+                str(session_error)
+            )
 
         # 10. Phân loại kết quả
         if score > 80:

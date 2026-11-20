@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { SmartLoading } from "@/components/loading-play";
 import Link from "next/link";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import {
@@ -133,6 +134,7 @@ export default function QuizTakingPage() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [holdLoading, setHoldLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -298,12 +300,16 @@ export default function QuizTakingPage() {
   );
 
   // 5. Trạng thái tải
-  if (loading) {
+  if (loading || holdLoading) {
     return (
-      <div className="sp-card mx-auto max-w-4xl p-10 text-center text-[var(--sp-muted)]">
-        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-        Đang chuẩn bị bài kiểm tra...
-      </div>
+      <SmartLoading
+        text="Đang chuẩn bị bài kiểm tra…"
+        sub="Pilot đang xáo câu hỏi, chuẩn bị bút nhé!"
+        stages={["Tải đề", "Xếp câu hỏi", "Hẹn giờ", "Sẵn sàng"]}
+        continueLabel="Vào làm bài"
+        done={!loading}
+        onHoldChange={setHoldLoading}
+      />
     );
   }
 
@@ -508,12 +514,12 @@ export default function QuizTakingPage() {
           </div>
 
           {stem && (
-            <p className="mt-5 rounded-2xl border-l-4 border-[var(--sp-peri)] bg-[var(--sp-lav)] px-5 py-4 text-[15px] leading-7 text-[var(--sp-text-2)]">
+            <p className="mt-5 rounded-2xl border-l-4 border-[var(--sp-peri)] bg-[var(--sp-lav)] px-5 py-4 text-justify text-[15px] leading-7 text-[var(--sp-text-2)]">
               {emphasizeNumbers(stem)}
             </p>
           )}
 
-          <p className="mt-5 text-[19px] font-bold leading-8 text-[var(--sp-ink)] sm:text-[21px]">{ask}</p>
+          <p className="mt-5 text-justify text-[19px] font-bold leading-8 text-[var(--sp-ink)] sm:text-[21px]">{ask}</p>
 
           {currentQuestion.question_type === "fill_blank" ? (
             <div className="mt-5">
@@ -587,7 +593,7 @@ export default function QuizTakingPage() {
                     >
                       {letter}
                     </span>
-                    <span className="flex-1 text-[16px] font-semibold leading-6 text-[var(--sp-ink)]">{optionText}</span>
+                    <span className="flex-1 text-justify text-[16px] font-semibold leading-6 text-[var(--sp-ink)]">{optionText}</span>
                     <span
                       className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
                         selected ? "border-[var(--sp-peri)]" : "border-[var(--sp-soft)]"

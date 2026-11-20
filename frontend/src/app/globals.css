@@ -33,6 +33,11 @@
   --sp-yellow: #f6c343;
   --sp-amber-dark: #9a6400;
   --sp-amber-bg: #fff5d6;
+  /* Ôn lại mức khẩn (trễ lịch ôn, để quá lâu, sát ngày thi) */
+  --sp-red: #d93a3a;
+  --sp-red-dark: #a82424;
+  --sp-red-bg: #fdecec;
+  --sp-red-line: #f3b8b8;
 
   --sp-radius: 20px;
   --sp-shadow-card: 0 1px 2px rgba(36, 18, 58, 0.04),
@@ -285,8 +290,24 @@ h3 {
     animation: sp-evidence-pulse 1.1s ease-out 2;
   }
 
+  /* Chấm báo động của buổi ôn mức khẩn */
+  @keyframes sp-urgent-ping {
+    0% {
+      box-shadow: 0 0 0 0 rgba(217, 58, 58, 0.55);
+    }
+    70%,
+    100% {
+      box-shadow: 0 0 0 7px rgba(217, 58, 58, 0);
+    }
+  }
+
+  .sp-urgent-dot {
+    animation: sp-urgent-ping 1.6s ease-out infinite;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .sp-evidence,
+    .sp-urgent-dot,
     .sp-twinkle,
     .sp-fill-bar,
     .sp-task-expand {
@@ -319,4 +340,190 @@ main a[class*="bg-[#5B7FE3]"]:hover {
 main button[class*="bg-[#5B7FE3]"]:disabled {
   border-color: #ddd8e3;
   box-shadow: none;
+}
+
+/*
+ * Lộ trình nhỏ trong khung "Tiếp theo nên ôn gì?" (Đánh giá năng lực):
+ * 4 bước chia đều cột, ô bật lên lần lượt, thanh vàng chạy tới bước hiện tại.
+ */
+.sp-route-rail::before {
+  content: "";
+  position: absolute;
+  left: 12.5%;
+  right: 12.5%;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 999px;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.35) 0 6px, transparent 6px 12px);
+  background-size: 24px 4px;
+  animation: sp-route-slide 1s linear infinite;
+}
+.sp-route-fill {
+  position: absolute;
+  left: 12.5%;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 999px;
+  background: var(--sp-yellow);
+  width: 0;
+  animation: sp-route-grow 1.4s 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.sp-route-node {
+  opacity: 0;
+  transform: translateY(8px) scale(0.8);
+  animation: sp-route-pop 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.sp-route-now::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 17px;
+  border: 2px solid var(--sp-pink);
+  opacity: 0;
+  animation: sp-route-ping 1.6s 1s ease-out infinite;
+}
+.sp-route-here {
+  animation: sp-route-bob 1.6s ease-in-out infinite;
+}
+@keyframes sp-route-slide { to { background-position: 24px 0; } }
+@keyframes sp-route-grow { to { width: var(--sp-route-fill, 25%); } }
+@keyframes sp-route-pop { to { opacity: 1; transform: none; } }
+@keyframes sp-route-ping {
+  from { opacity: 0.9; transform: scale(0.85); }
+  to { opacity: 0; transform: scale(1.35); }
+}
+@keyframes sp-route-bob { 50% { transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .sp-route-rail::before, .sp-route-now::after, .sp-route-here { animation: none; }
+  .sp-route-node { animation: none; opacity: 1; transform: none; }
+  .sp-route-fill { animation: none; width: var(--sp-route-fill, 25%); }
+}
+
+/* Linh vật Pilot và màn chờ có game (components/loading-play.tsx) */
+.sp-pilot .sp-pilot-body { transform-origin: 100px 170px; animation: sp-pilot-breathe 2.4s ease-in-out infinite; }
+.sp-pilot.sp-pilot-jump .sp-pilot-body { animation: sp-pilot-hop 0.6s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.sp-pilot .sp-pilot-page { transform-origin: 100px 128px; animation: sp-pilot-flip 2.2s ease-in-out infinite; }
+.sp-pilot .sp-pilot-blink { transform-origin: 105px 86px; animation: sp-pilot-blink 4s infinite; }
+.sp-pilot[role="button"] { transition: transform 0.2s; }
+.sp-pilot[role="button"]:hover { transform: scale(1.04) rotate(-2deg); }
+@keyframes sp-pilot-breathe { 50% { transform: scaleY(1.03) translateY(-2px); } }
+@keyframes sp-pilot-hop { 40% { transform: translateY(-34px) rotate(-6deg); } 70% { transform: translateY(0) scaleY(0.92); } }
+@keyframes sp-pilot-flip { 0%, 40% { transform: scaleX(1); } 55%, 100% { transform: scaleX(-1); } }
+@keyframes sp-pilot-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(0.1); } }
+.sp-loading-stripes {
+  background: repeating-linear-gradient(135deg, var(--sp-peri) 0 10px, #7b98ec 10px 20px);
+  background-size: 28px 28px;
+  animation: sp-loading-stripes 1s linear infinite;
+}
+@keyframes sp-loading-stripes { to { background-position: 28px 0; } }
+.sp-loading-box { background: var(--sp-paper) radial-gradient(#e9e2d3 1px, transparent 1px) 0 0 / 22px 22px; }
+@media (min-width: 640px) {
+  .sp-loading-bubble::before {
+    content: "";
+    position: absolute;
+    left: -11px;
+    top: 28px;
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    border-left: 2px solid var(--sp-purple-deep);
+    border-bottom: 2px solid var(--sp-purple-deep);
+    transform: rotate(45deg);
+  }
+}
+.sp-spark { animation: sp-spark 0.9s ease-out forwards; }
+@keyframes sp-spark { to { transform: translate(var(--dx), var(--dy)) rotate(90deg) scale(0.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .sp-pilot .sp-pilot-body, .sp-pilot .sp-pilot-page, .sp-pilot .sp-pilot-blink, .sp-loading-stripes { animation: none; }
+}
+
+/* ===== Pilot ở trang chủ: bay giữa các chỗ đậu, đổi biểu cảm khi chạm ===== */
+.sp-buddy { position: absolute; left: 0; top: 0; width: 110px; height: 121px; z-index: 9; pointer-events: none; transition: opacity 0.4s; }
+.sp-buddy.is-gone { opacity: 0; }
+.sp-buddy .sp-buddy-move { width: 100%; height: 100%; transition: transform 0.35s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.sp-buddy svg { width: 100%; height: 100%; overflow: visible; pointer-events: auto; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.sp-buddy.is-gone svg { pointer-events: none; }
+.sp-buddy .mv { display: none; }
+.sp-buddy[data-mood="idle"] .m-idle, .sp-buddy[data-mood="shy"] .m-shy, .sp-buddy[data-mood="pout"] .m-pout,
+.sp-buddy[data-mood="happy"] .m-happy, .sp-buddy[data-mood="tease"] .m-tease, .sp-buddy[data-mood="dizzy"] .m-dizzy,
+.sp-buddy[data-mood="sleep"] .m-sleep, .sp-buddy[data-mood="worried"] .m-worried { display: inline; }
+.sp-buddy .b-legs, .sp-buddy .b-sign, .sp-buddy .b-arm { display: none; }
+.sp-buddy:not([data-pose="fly"]) .b-legs { display: inline; }
+.sp-buddy[data-pose="sign"] .b-sign, .sp-buddy[data-pose="point"] .b-arm { display: inline; }
+.sp-buddy[data-pose="sign"] .b-page { display: none; }
+.sp-buddy .b-leg { transform-origin: top center; animation: sp-buddy-swing 1.6s ease-in-out infinite; }
+.sp-buddy .b-leg + .b-leg { animation-delay: -0.8s; }
+.sp-buddy .b-wing-l { transform-origin: 52px 92px; animation: sp-buddy-flap-l 1.8s ease-in-out infinite; }
+.sp-buddy .b-wing-r { transform-origin: 148px 92px; animation: sp-buddy-flap-r 1.8s ease-in-out infinite; }
+.sp-buddy[data-pose="fly"] .b-wing-l, .sp-buddy[data-pose="fly"] .b-wing-r { animation-duration: 0.22s; }
+.sp-buddy[data-mood="sleep"] .b-wing-l, .sp-buddy[data-mood="sleep"] .b-wing-r { animation: none; }
+.sp-buddy .b-body { transform-origin: 100px 175px; animation: sp-pilot-breathe 2.4s ease-in-out infinite; }
+.sp-buddy[data-mood="sleep"] .b-body { animation-duration: 4s; }
+.sp-buddy[data-mood="pout"] .b-body { animation: sp-buddy-wiggle 0.5s ease-in-out 4; }
+.sp-buddy[data-mood="happy"] .b-body { animation: sp-buddy-hop 0.7s cubic-bezier(0.3, 1.6, 0.5, 1) 2; }
+.sp-buddy[data-mood="dizzy"] .b-body { animation: sp-buddy-wobble 0.9s ease-in-out infinite; }
+.sp-buddy[data-mood="shy"] .b-body { animation: sp-buddy-shy 1.4s ease-in-out infinite; }
+.sp-buddy .b-page { transform-origin: 100px 150px; transition: transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.sp-buddy[data-mood="shy"] .b-page { transform: translateY(-58px) scale(1.55); }
+.sp-buddy[data-pose="read"] .b-page-flip { transform-origin: 100px 149px; animation: sp-pilot-flip 2.2s ease-in-out infinite; }
+.sp-buddy .b-cheek { transform-box: fill-box; transform-origin: center; transition: transform 0.3s, opacity 0.3s; }
+.sp-buddy[data-mood="shy"] .b-cheek, .sp-buddy[data-mood="pout"] .b-cheek { transform: scale(1.7); opacity: 1; }
+.sp-buddy .b-spiral { transform-box: fill-box; transform-origin: center; animation: sp-buddy-spin 1s linear infinite; }
+.sp-buddy .b-zz text { opacity: 0; animation: sp-buddy-zz 2.4s ease-in-out infinite; }
+.sp-buddy .b-zz text:nth-child(2) { animation-delay: 0.8s; }
+.sp-buddy .b-zz text:nth-child(3) { animation-delay: 1.6s; }
+.sp-buddy .b-heart { transform-box: fill-box; transform-origin: center; animation: sp-buddy-heart 1.6s ease-out infinite; }
+.sp-buddy .b-heart + .b-heart { animation-delay: 0.6s; }
+.sp-buddy .b-arm { transform-origin: 150px 120px; animation: sp-buddy-point 1s ease-in-out infinite; }
+.sp-buddy-bubble { position: absolute; right: 92%; bottom: 84%; width: max-content; max-width: 230px; border: 2px solid var(--sp-purple-deep); border-radius: 16px 16px 4px 16px; background: #fff; box-shadow: 3px 3px 0 var(--sp-pink); padding: 8px 12px; font-size: 13.5px; font-weight: 700; line-height: 1.35; color: var(--sp-ink); opacity: 0; transform: translateY(6px) scale(0.9); transform-origin: bottom right; transition: 0.25s; pointer-events: none; }
+.sp-buddy-bubble.is-on { opacity: 1; transform: none; }
+.sp-buddy-trail { position: absolute; z-index: 8; pointer-events: none; color: var(--sp-yellow); font-size: 14px; animation: sp-buddy-trail 0.9s ease-out forwards; }
+@keyframes sp-buddy-swing { 50% { transform: rotate(18deg); } }
+@keyframes sp-buddy-flap-l { 50% { transform: rotate(-26deg); } }
+@keyframes sp-buddy-flap-r { 50% { transform: rotate(26deg); } }
+@keyframes sp-buddy-wiggle { 25% { transform: rotate(-7deg); } 75% { transform: rotate(7deg); } }
+@keyframes sp-buddy-hop { 40% { transform: translateY(-30px) rotate(-8deg); } 70% { transform: translateY(0) scaleY(0.92); } }
+@keyframes sp-buddy-wobble { 25% { transform: rotate(-9deg) translateX(-4px); } 75% { transform: rotate(9deg) translateX(4px); } }
+@keyframes sp-buddy-shy { 50% { transform: rotate(-4deg) translateX(-3px) scale(0.97); } }
+@keyframes sp-buddy-spin { to { transform: rotate(360deg); } }
+@keyframes sp-buddy-zz { 0% { opacity: 0; transform: translate(0, 0); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(14px, -26px); } }
+@keyframes sp-buddy-heart { 0% { opacity: 0; transform: translateY(8px) scale(0.5); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-34px) scale(1.1); } }
+@keyframes sp-buddy-point { 50% { transform: rotate(-8deg) translateY(3px); } }
+@keyframes sp-buddy-trail { to { opacity: 0; transform: translateY(10px) scale(0.3) rotate(90deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .sp-buddy, .sp-buddy * { animation: none !important; transition: none !important; }
+}
+
+/* ===== Màn chờ hai chặng (SmartLoading) ===== */
+.sp-wait-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--sp-peri); animation: sp-wait-dot 1.2s infinite; }
+.sp-wait-dots i:nth-child(2) { animation-delay: 0.2s; }
+.sp-wait-dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes sp-wait-dot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+.sp-thin-fill { width: 0; animation: sp-thin-fill 3s cubic-bezier(0.2, 0.6, 0.3, 1) forwards; }
+@keyframes sp-thin-fill { to { width: var(--to); } }
+.sp-smart-long > section > * { animation: sp-rise-in 0.45s cubic-bezier(0.3, 1.2, 0.4, 1) both; }
+.sp-smart-long > section > *:nth-child(2) { animation-delay: 0.08s; }
+.sp-smart-long > section > *:nth-child(3) { animation-delay: 0.14s; }
+.sp-smart-long > section > *:nth-child(4) { animation-delay: 0.2s; }
+.sp-smart-long > section > *:nth-child(5) { animation-delay: 0.26s; }
+.sp-smart-long > section > *:nth-child(6) { animation-delay: 0.32s; }
+.sp-smart-long .sp-game-overlay { animation: sp-rise-in 0.35s ease-out 0.85s both; }
+@keyframes sp-rise-in { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) {
+  .sp-wait-dots i, .sp-smart-long > section > *, .sp-smart-long .sp-game-overlay { animation: none; }
+  .sp-thin-fill { animation: none; width: var(--to); }
+}
+
+/* ===== Trang tạo kế hoạch ===== */
+.sp-hero-bubble { animation: sp-hero-bubble 0.35s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+.sp-hero-bubble::before { content: ""; position: absolute; left: -9px; top: 11px; width: 14px; height: 14px; background: #fff; border-left: 2px solid var(--sp-purple-deep); border-bottom: 2px solid var(--sp-purple-deep); transform: rotate(45deg); }
+@keyframes sp-hero-bubble { from { opacity: 0; transform: translateY(6px) scale(0.96); } }
+.sp-dialog-veil { animation: sp-dialog-fade 0.2s ease-out both; }
+.sp-dialog-pop { animation: sp-dialog-pop 0.3s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+@keyframes sp-dialog-fade { from { opacity: 0; } }
+@keyframes sp-dialog-pop { from { opacity: 0; transform: translateY(16px) scale(0.97); } }
+@media (prefers-reduced-motion: reduce) {
+  .sp-hero-bubble, .sp-dialog-veil, .sp-dialog-pop { animation: none; }
 }

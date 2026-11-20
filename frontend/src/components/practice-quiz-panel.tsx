@@ -83,6 +83,7 @@ export type UnlockState = {
   quizHref?: string;
   retakeHref?: string;
   quizLabel?: string;
+  title?: string;
   message?: string;
 };
 
@@ -285,7 +286,7 @@ export default function PracticeQuizPanel({
             <p className="truncate text-[11px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">
               Mục {current.sectionNumber} · {current.sectionHeading}
             </p>
-            <p className="mt-1 text-[14.5px] font-bold leading-6 text-[var(--sp-ink)]">{renderText(current.question)}</p>
+            <p className="mt-1 text-justify text-[14.5px] font-bold leading-6 text-[var(--sp-ink)]">{renderText(current.question)}</p>
 
             <div className="mt-3 space-y-2" role="radiogroup" aria-label="Các lựa chọn">
               {current.options.map((option, optionIndex) => {
@@ -332,7 +333,7 @@ export default function PracticeQuizPanel({
                     >
                       {state === "correct" ? <IconCheck size={13} /> : state === "wrong" ? <IconX size={13} /> : LETTERS[optionIndex]}
                     </span>
-                    <span className="flex-1">{renderText(option)}</span>
+                    <span className="flex-1 text-justify">{renderText(option)}</span>
                   </button>
                 );
               })}
@@ -341,7 +342,7 @@ export default function PracticeQuizPanel({
             {/* Kết quả */}
             {answer && (
               <div
-                className={`sp-task-expand mt-3 rounded-xl border-2 px-3 py-2.5 ${
+                className={`sp-task-expand mt-3 rounded-xl border-2 px-3 py-2.5 text-justify ${
                   answer.correct
                     ? "border-emerald-200 bg-emerald-50"
                     : "border-[var(--sp-pink-line)] bg-white"
@@ -429,10 +430,10 @@ function UnlockBlock({
       <div className="sp-task-expand mt-4 w-full rounded-2xl border-2 border-emerald-200 bg-emerald-50 px-4 py-3 text-left">
         <p className="flex items-center gap-2 text-sm font-bold text-emerald-800">
           <IconCheck size={16} />
-          {unlock.retakeHref
+          {unlock.title ? unlock.title : unlock.retakeHref
             ? "Bài kiểm tra lại đã mở"
             : unlock.quizLabel
-              ? "Bạn đã làm bài kiểm tra hôm nay"
+              ? "Bạn đã làm bài kiểm tra của buổi này"
               : "Bài kiểm tra hôm nay đã mở"}
         </p>
         {unlock.retakeHref && (
@@ -444,7 +445,7 @@ function UnlockBlock({
             Làm bài kiểm tra lại
           </Link>
         )}
-        {!unlock.retakeHref && (
+        {!unlock.retakeHref && (!unlock.title || unlock.quizHref) && (
           <Link
             href={unlock.quizHref || "/quizzes"}
             className="sp-btn sp-btn-primary mt-2.5 w-full justify-center py-2 text-[13px]"

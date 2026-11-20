@@ -13,17 +13,60 @@ import { getMainTopicTitle } from "@/lib/content-titles";
 import StudyDayPicker from "@/components/study-day-picker";
 import PlanOverviewCards from "@/components/plan-overview-cards";
 import MaterialDropzone from "@/components/material-dropzone";
-import PlanHeroBanner from "@/components/plan-hero-banner";
 import {
-  CreateStepper,
+  CreatePlanHero,
   FocusChapterChips,
   PlanModeCards,
-  PlanPreviewCard,
+  PlanPreviewDialog,
   type OutlineChapter,
   type OutlineState,
   type PlanMode,
 } from "@/components/plan-create-panels";
 import { IconCheck, Sparkle } from "@/components/icons";
+import { LoadingPlay } from "@/components/loading-play";
+
+/* "2026-11-23" → "T2 23/11" */
+function shortStudyDay(key: string) {
+  const weekday = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][new Date(`${key}T00:00:00Z`).getUTCDay()];
+  return `${weekday} ${key.slice(8, 10)}/${key.slice(5, 7)}`;
+}
+
+/* Tiêu đề một bước trong biểu mẫu: số thứ tự (✓ khi xong) + tên + phần phụ bên phải */
+function StepHead({
+  number,
+  title,
+  done,
+  children,
+}: {
+  number: number;
+  title: string;
+  done: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-3 grid grid-cols-[30px_minmax(0,1fr)_auto] items-center gap-2.5">
+      <span
+        className={`flex h-[30px] w-[30px] items-center justify-center rounded-[10px] border-2 border-[var(--sp-purple-deep)] text-[13.5px] font-extrabold transition ${
+          done ? "bg-emerald-500 text-white" : "bg-[var(--sp-lav)] text-[var(--sp-purple)]"
+        }`}
+      >
+        {done ? <IconCheck size={15} /> : number}
+      </span>
+      <p className="text-[16.5px] font-bold text-[var(--sp-ink)]">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+/* Màn chờ khi tạo kế hoạch: 4 bước, suy ra từ dòng trạng thái đang chạy */
+const PLAN_STAGES = ["Tải tài liệu lên", "AI đọc & chia chương", "Xếp lịch học", "Tạo bài kiểm tra"];
+function planStage(step: string) {
+  const text = step.toLowerCase();
+  if (/môn học|chuẩn bị|tải tài liệu/.test(text)) return 0;
+  if (/đọc và chia|phân tích/.test(text)) return 1;
+  if (/lịch học|lưu các buổi/.test(text)) return 2;
+  return 3;
+}
 
 type ExamPlan = {
   id: string;
@@ -230,6 +273,13 @@ export default function StudyPlansPage() {
     useState<FeedbackType>("info");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionStep, setSubmissionStep] = useState("");
+  // Đang chơi game ở màn chờ thì tạo xong không tự chuyển trang, chờ người dùng bấm "Xem kế hoạch"
+  const playingWhileWaiting = useRef(false);
+  const [createdHref, setCreatedHref] = useState<string | null>(null);
+  // Kế hoạch dự kiến: chỉ bật lên khi đã điền đủ, xem xong mới tạo
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const closePreview = useCallback(() => setIsPreviewOpen(false), []);
 
   function setFeedback(
     nextMessage: string,
@@ -1042,7 +1092,8 @@ export default function StudyPlansPage() {
       void loadOutline(null);
 
       // Chuyển tới trang kế hoạch chi tiết với lịch từng ngày
-      router.push(`/study-plans/${planId}`);
+      if (playingWhileWaiting.current) setCreatedHref(`/study-plans/${planId}`);
+      else router.push(`/study-plans/${planId}`);
     } catch (error) {
       const errorMessage =
         error instanceof Error
@@ -1238,60 +1289,56 @@ export default function StudyPlansPage() {
     },
   ];
 
+  // Theo trọng tâm: phải chọn ít nhất 1 chương khi AI đã nhận diện được chương
+  const modeReady = planMode !== "focus" || outline.status !== "done" || focusChapters.size > 0;
+  const allReady = workflowSteps.slice(0, 3).every((step) => step.complete) && modeReady;
+
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
-      {/* Page heading */}
-      <section>
-        <p className="text-sm font-medium text-[#716A82]">
-          KHÔNG GIAN HỌC TẬP / KẾ HOẠCH
-        </p>
-
-        <h1 className="mt-2 text-3xl font-bold text-[#24123A]">
-          Kế hoạch ôn thi
-        </h1>
-
-        <p className="mt-2 text-sm text-[#716A82]">
-          Xây dựng lộ trình học tập cá nhân hóa cùng trợ lý AI
-          StudyPilot.
-        </p>
-      </section>
-
-      {/* Banner */}
-      <PlanHeroBanner steps={workflowSteps} showSteps={false} />
-
-      {/* ===== Tạo kế hoạch ôn thi ===== */}
-      <section id="create-plan" className="space-y-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-[var(--sp-muted)]">
-              Kế hoạch ôn thi <span className="mx-1 text-[var(--sp-soft)]">›</span>{" "}
-              <span className="text-[var(--sp-ink)]">Tạo mới</span>
-            </p>
-            <h2 className="mt-1.5 flex items-center gap-2 text-[28px] font-black text-[var(--sp-ink)]">
-              Tạo kế hoạch <span className="sp-squiggle">ôn thi</span>
-              <Sparkle size={20} className="sp-twinkle text-[var(--sp-yellow)]" />
-            </h2>
-            <p className="mt-1 text-sm text-[var(--sp-muted)]">
-              Cho AI biết mục tiêu và tài liệu, bạn sẽ có lộ trình từng ngày đến hôm thi.
-            </p>
-          </div>
-          <CreateStepper
-            steps={workflowSteps.map((step) => ({
-              title: step.title,
-              complete: step.complete,
-            }))}
+    <div className="mx-auto max-w-6xl space-y-7">
+      {(isSubmitting || createdHref) && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-[rgba(36,18,58,0.45)] px-4 py-10 backdrop-blur-[2px]">
+          <LoadingPlay
+            kicker="AI đang dựng kế hoạch ôn thi cho bạn"
+            title={submissionStep || "Đang tạo kế hoạch…"}
+            doneTitle="Kế hoạch đã sẵn sàng"
+            stages={PLAN_STAGES}
+            stage={planStage(submissionStep)}
+            expectedSeconds={90}
+            done={Boolean(createdHref)}
+            continueLabel="Xem kế hoạch"
+            onPlayingChange={(playing) => {
+              playingWhileWaiting.current = playing;
+              if (!playing && createdHref) router.push(createdHref);
+            }}
+            onContinue={() => createdHref && router.push(createdHref)}
           />
         </div>
+      )}
+      {/* Đầu trang: Pilot hướng dẫn từng bước */}
+      <CreatePlanHero
+        steps={workflowSteps.map((step) => ({ title: step.title, complete: step.complete }))}
+        ready={allReady}
+      />
 
-        <form
-          onSubmit={handleSubmit}
-          className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_380px]"
-        >
-          {/* --- Cột trái: biểu mẫu --- */}
-          <div className="sp-card space-y-6 p-5 sm:p-7">
-            {/* Tên môn */}
+      {/* ===== Biểu mẫu: 4 bước gói trong 2 cột ===== */}
+      <form
+        id="create-plan"
+        ref={formRef}
+        onSubmit={handleSubmit}
+        className="rounded-[26px] border-2 border-[var(--sp-purple-deep)] bg-white shadow-[6px_6px_0_var(--sp-lav-line)]"
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-2">
+          {/* --- Cột trái: mục tiêu + lịch học --- */}
+          <div className="space-y-6 p-5 sm:p-7">
             <div>
-              <label htmlFor="subject-name" className="mb-2 block text-sm font-bold text-[var(--sp-ink)]">
+              <StepHead number={1} title="Mục tiêu" done={workflowSteps[0].complete}>
+                {daysToExam !== null && daysToExam > 0 && (
+                  <span className="rounded-full bg-[var(--sp-pink-bg)] px-2.5 py-0.5 text-xs font-bold text-[var(--sp-pink-dark)]">
+                    còn {daysToExam} ngày
+                  </span>
+                )}
+              </StepHead>
+              <label htmlFor="subject-name" className="mb-1.5 block text-[13px] font-bold text-[var(--sp-text-2)]">
                 Tên môn học <span className="text-[var(--sp-pink)]">*</span>
               </label>
               <input
@@ -1301,64 +1348,107 @@ export default function StudyPlansPage() {
                 value={subjectName}
                 onChange={(e) => setSubjectName(e.target.value)}
                 placeholder="Ví dụ: Kinh tế vi mô"
-                className="w-full rounded-xl border-2 border-[var(--sp-line)] bg-white px-4 py-3 text-sm text-[var(--sp-ink)] outline-none transition placeholder:text-[var(--sp-soft)] focus:border-[var(--sp-peri)]"
+                className="h-[46px] w-full rounded-xl border-2 border-[var(--sp-line)] bg-white px-4 text-sm text-[var(--sp-ink)] outline-none transition placeholder:text-[var(--sp-soft)] focus:border-[var(--sp-peri)]"
               />
-            </div>
-
-            {/* Ngày thi + giờ học */}
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              <div>
-                <label htmlFor="exam-date" className="mb-2 flex items-center justify-between gap-2 text-sm font-bold text-[var(--sp-ink)]">
-                  <span>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="exam-date" className="mb-1.5 block text-[13px] font-bold text-[var(--sp-text-2)]">
                     Ngày thi <span className="text-[var(--sp-pink)]">*</span>
-                  </span>
-                  {daysToExam !== null && (
-                    <span className="rounded-full bg-[var(--sp-pink-bg)] px-2.5 py-0.5 text-xs font-bold text-[var(--sp-pink-dark)]">
-                      còn {daysToExam} ngày
-                    </span>
-                  )}
-                </label>
-                <input
-                  id="exam-date"
-                  type="date"
-                  required
-                  min={today || undefined}
-                  value={examDate}
-                  onChange={(e) => setExamDate(e.target.value)}
-                  className="w-full rounded-xl border-2 border-[var(--sp-line)] bg-white px-4 py-3 text-sm text-[var(--sp-ink)] outline-none focus:border-[var(--sp-peri)]"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="daily-hours" className="mb-2 block text-sm font-bold text-[var(--sp-ink)]">
-                  Thời gian học mỗi ngày
-                </label>
-                <select
-                  id="daily-hours"
-                  value={dailyHours}
-                  onChange={(e) => setDailyHours(e.target.value)}
-                  className="w-full rounded-xl border-2 border-[var(--sp-line)] bg-white px-4 py-3 text-sm text-[var(--sp-ink)] outline-none focus:border-[var(--sp-peri)]"
-                >
-                  {["1", "2", "3", "4", "5", "6"].map((hours) => (
-                    <option key={hours} value={hours}>
-                      {hours} giờ / ngày
-                    </option>
-                  ))}
-                </select>
+                  </label>
+                  <input
+                    id="exam-date"
+                    type="date"
+                    required
+                    min={today || undefined}
+                    value={examDate}
+                    onChange={(e) => setExamDate(e.target.value)}
+                    className="h-[46px] w-full rounded-xl border-2 border-[var(--sp-line)] bg-white px-3 text-sm text-[var(--sp-ink)] outline-none focus:border-[var(--sp-peri)]"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="daily-hours" className="mb-1.5 block text-[13px] font-bold text-[var(--sp-text-2)]">
+                    Học mỗi ngày
+                  </label>
+                  <select
+                    id="daily-hours"
+                    value={dailyHours}
+                    onChange={(e) => setDailyHours(e.target.value)}
+                    className="h-[46px] w-full rounded-xl border-2 border-[var(--sp-line)] bg-white px-3 text-sm text-[var(--sp-ink)] outline-none focus:border-[var(--sp-peri)]"
+                  >
+                    {["1", "2", "3", "4", "5", "6"].map((hours) => (
+                      <option key={hours} value={hours}>
+                        {hours} giờ / ngày
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
-            {/* Tài liệu */}
             <div>
-              <label htmlFor="study-material" className="mb-2 block text-sm font-bold text-[var(--sp-ink)]">
-                Tài liệu ôn tập <span className="text-[var(--sp-pink)]">*</span>
-              </label>
+              <StepHead number={2} title="Lịch học" done={workflowSteps[1].complete}>
+                <span className="text-[12.5px] font-semibold text-[var(--sp-muted)]">Bấm số ngày để chọn ngày cụ thể</span>
+              </StepHead>
+              <div className="grid grid-cols-7 gap-1.5">
+                {["1", "2", "3", "4", "5", "6", "7"].map((day) => (
+                  <button
+                    key={day}
+                    type="button"
+                    aria-pressed={studyDays === day && isScheduleConfirmed}
+                    onClick={() => {
+                      if (!examDate) {
+                        setFeedback("Chọn ngày thi trước rồi mới chọn ngày học nhé.", "error");
+                        return;
+                      }
+                      setStudyDays(day);
+                      setSelectedStudyDates([]);
+                      setIsScheduleTableExpanded(true);
+                      setIsScheduleConfirmed(false);
+                      setFeedback("");
+                      setIsScheduleDialogOpen(true);
+                    }}
+                    className={`h-[42px] rounded-xl border-2 text-[13px] font-bold transition ${
+                      studyDays === day && (isScheduleConfirmed || isScheduleDialogOpen)
+                        ? "border-[var(--sp-purple)] bg-[var(--sp-purple)] text-white shadow-[2px_2px_0_var(--sp-pink)]"
+                        : "border-[var(--sp-line)] bg-white text-[var(--sp-muted)] hover:border-[var(--sp-lav-line)]"
+                    }`}
+                  >
+                    {day} ngày
+                  </button>
+                ))}
+              </div>
+              {isScheduleConfirmed && (
+                <p className="mt-2.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border-2 border-[var(--sp-lav-line)] bg-[var(--sp-lav)] px-3 py-2 text-[13px] font-bold text-[var(--sp-text-2)]">
+                  <span className="truncate">
+                    ✓ {selectedStudyDates.length} ngày học: {[...selectedStudyDates].sort().slice(0, 4).map(shortStudyDay).join(", ")}
+                    {selectedStudyDates.length > 4 ? "…" : ""}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsScheduleTableExpanded(true);
+                      setIsScheduleDialogOpen(true);
+                    }}
+                    className="text-[var(--sp-peri-dark)] underline underline-offset-2"
+                  >
+                    Sửa
+                  </button>
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* --- Cột phải: tài liệu + cách chia --- */}
+          <div className="space-y-6 border-t-2 border-dashed border-[var(--sp-line)] p-5 sm:p-7 lg:border-l-2 lg:border-t-0">
+            <div>
+              <StepHead number={3} title="Tài liệu" done={workflowSteps[2].complete} />
               <MaterialDropzone
+                compact
                 file={selectedFile}
                 inputKey={fileInputKey}
                 validate={validateFile}
                 status={outlineStatus}
-                showTips={!selectedFile}
+                showTips={false}
                 onChange={(file) => {
                   setSelectedFile(file);
                   if (!file) setFileInputKey((current) => current + 1);
@@ -1369,93 +1459,9 @@ export default function StudyPlansPage() {
               />
             </div>
 
-            {/* Số ngày học mỗi tuần */}
             <div>
-              <p className="mb-2 flex items-center justify-between gap-2 text-sm font-bold text-[var(--sp-ink)]">
-                Số ngày học mỗi tuần
-                {isScheduleConfirmed && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsScheduleDialogOpen(true);
-                      setIsScheduleTableExpanded(true);
-                    }}
-                    className="text-xs font-bold text-[var(--sp-peri-dark)] underline underline-offset-2"
-                  >
-                    {selectedStudyDates.length} ngày đã chọn · Sửa
-                  </button>
-                )}
-              </p>
-              <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
-                {["1", "2", "3", "4", "5", "6", "7"].map((day) => (
-                  <button
-                    key={day}
-                    type="button"
-                    aria-pressed={studyDays === day}
-                    onClick={() => {
-                      setStudyDays(day);
-                      setSelectedStudyDates([]);
-                      setIsScheduleTableExpanded(true);
-                      setIsScheduleConfirmed(false);
-                      setFeedback("");
-                      setIsScheduleDialogOpen(true);
-                    }}
-                    className={`rounded-xl border-2 py-2.5 text-sm font-bold transition ${
-                      studyDays === day
-                        ? "border-[var(--sp-purple)] bg-[var(--sp-purple)] text-white shadow-[2px_2px_0_var(--sp-pink)]"
-                        : "border-[var(--sp-line)] bg-white text-[var(--sp-muted)] hover:border-[var(--sp-lav-line)]"
-                    }`}
-                  >
-                    {day} ngày
-                  </button>
-                ))}
-              </div>
-
-              {isScheduleDialogOpen && (
-                <div className="mt-3">
-                  <StudyDayPicker
-                    weeks={getStudyWeeks()}
-                    selectedDates={selectedStudyDates}
-                    studyDaysPerWeek={Number(studyDays)}
-                    today={today}
-                    examDate={examDate}
-                    confirmed={isScheduleConfirmed}
-                    expanded={isScheduleTableExpanded}
-                    onToggleDate={updateStudyDate}
-                    onToggleWeekday={toggleWeekdayForAllWeeks}
-                    onClear={() => {
-                      setSelectedStudyDates([]);
-                      setIsScheduleConfirmed(false);
-                      setIsScheduleTableExpanded(true);
-                      setFeedback("");
-                    }}
-                    onConfirm={() => {
-                      const error = validateSelectedStudyDates();
-                      setFeedback(
-                        error || "Đã lưu lựa chọn ngày học.",
-                        error ? "error" : "success"
-                      );
-                      if (!error) {
-                        setIsScheduleConfirmed(true);
-                        setIsScheduleTableExpanded(false);
-                      }
-                    }}
-                    onHeaderAction={() => {
-                      if (isScheduleConfirmed) {
-                        setIsScheduleTableExpanded((current) => !current);
-                      } else {
-                        setIsScheduleDialogOpen(false);
-                      }
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Cách chia kế hoạch */}
-            <div>
-              <p className="mb-2 text-sm font-bold text-[var(--sp-ink)]">Cách chia kế hoạch</p>
-              <PlanModeCards mode={planMode} onChange={setPlanMode} />
+              <StepHead number={4} title="Cách chia kế hoạch" done={modeReady && workflowSteps[2].complete} />
+              <PlanModeCards compact mode={planMode} onChange={setPlanMode} />
               {planMode === "focus" && (
                 <div className="mt-3">
                   <FocusChapterChips
@@ -1468,57 +1474,106 @@ export default function StudyPlansPage() {
                 </div>
               )}
             </div>
-
-            {/* Gửi */}
-            <div className="border-t border-[var(--sp-line)] pt-5">
-              {message && (
-                <p
-                  role={feedbackType === "error" ? "alert" : "status"}
-                  className={`mb-4 rounded-xl border p-4 text-sm leading-6 ${
-                    feedbackType === "error"
-                      ? "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
-                      : feedbackType === "success"
-                        ? "border-[var(--sp-lav-line)] bg-[var(--sp-lav)] text-[var(--sp-ink)]"
-                        : "border-[var(--sp-line)] bg-[var(--sp-surface-2)] text-[var(--sp-text-2)]"
-                  }`}
-                >
-                  {message}
-                </p>
-              )}
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="sp-btn sp-btn-primary justify-center px-6 py-3.5 text-[15px] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <Sparkle size={16} className={isSubmitting ? "sp-twinkle" : ""} />
-                  {isSubmitting
-                    ? submissionStep || "Đang tạo kế hoạch..."
-                    : "Tạo kế hoạch với AI"}
-                </button>
-                <p className="text-xs text-[var(--sp-muted)]">
-                  {isSubmitting
-                    ? "Bạn có thể chờ ở màn hình này; không cần bấm lại."
-                    : "Bạn có thể chỉnh lại kế hoạch bất cứ lúc nào."}
-                </p>
-              </div>
-            </div>
           </div>
+        </div>
 
-          {/* --- Cột phải: xem trước --- */}
-          <PlanPreviewCard
-            mode={planMode}
-            onModeChange={setPlanMode}
-            daysToExam={daysToExam}
-            studyDayCount={estimatedStudyDays}
-            reviewDayCount={reviewDayCount}
-            dailyHours={Number(dailyHours)}
-            outline={outline}
-            focus={focusChapters}
-          />
-        </form>
-      </section>
+        {/* Chân thẻ: việc còn thiếu + xem kế hoạch dự kiến */}
+        <div className="rounded-b-[24px] border-t-2 border-dashed border-[var(--sp-line)] bg-[#fdfcff] px-5 py-4 sm:px-7">
+          {message && (
+            <p
+              role={feedbackType === "error" ? "alert" : "status"}
+              className={`mb-3 rounded-xl border p-3 text-sm leading-6 ${
+                feedbackType === "error"
+                  ? "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
+                  : feedbackType === "success"
+                    ? "border-[var(--sp-lav-line)] bg-[var(--sp-lav)] text-[var(--sp-ink)]"
+                    : "border-[var(--sp-line)] bg-[var(--sp-surface-2)] text-[var(--sp-text-2)]"
+              }`}
+            >
+              {message}
+            </p>
+          )}
+          <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_260px]">
+            <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-[13px] font-bold">
+              {[
+                { label: "Môn học & ngày thi", done: workflowSteps[0].complete },
+                { label: "Ngày học", done: workflowSteps[1].complete },
+                { label: "Tài liệu", done: workflowSteps[2].complete },
+                { label: "Cách chia", done: modeReady },
+              ].map((item) => (
+                <li key={item.label} className={`flex items-center gap-1.5 ${item.done ? "text-emerald-700" : "text-[var(--sp-soft)]"}`}>
+                  {item.done ? <IconCheck size={14} /> : <span className="h-3 w-3 rounded-full border-2 border-current" />}
+                  {item.label}
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              disabled={!allReady || isSubmitting}
+              onClick={() => setIsPreviewOpen(true)}
+              className="sp-btn sp-btn-primary h-[46px] w-full justify-center text-[15px] disabled:cursor-not-allowed disabled:border-[#b8b2c8] disabled:bg-[#c9c4d6] disabled:shadow-none"
+            >
+              <Sparkle size={16} />
+              Xem kế hoạch dự kiến
+            </button>
+          </div>
+        </div>
+      </form>
+
+      {/* Chọn ngày học cụ thể: hộp nổi */}
+      {isScheduleDialogOpen && (
+        <div
+          className="sp-dialog-veil fixed inset-0 z-50 flex items-center justify-center bg-[rgba(36,18,58,0.45)] p-4 backdrop-blur-[2px]"
+          onClick={(event) => event.target === event.currentTarget && setIsScheduleDialogOpen(false)}
+        >
+          <div className="sp-dialog-pop max-h-[92vh] w-full max-w-[860px] overflow-y-auto rounded-[24px]">
+            <StudyDayPicker
+              weeks={getStudyWeeks()}
+              selectedDates={selectedStudyDates}
+              studyDaysPerWeek={Number(studyDays)}
+              today={today}
+              examDate={examDate}
+              confirmed={isScheduleConfirmed}
+              expanded
+              onToggleDate={updateStudyDate}
+              onToggleWeekday={toggleWeekdayForAllWeeks}
+              onClear={() => {
+                setSelectedStudyDates([]);
+                setIsScheduleConfirmed(false);
+                setFeedback("");
+              }}
+              onConfirm={() => {
+                const error = validateSelectedStudyDates();
+                setFeedback(error || "", error ? "error" : "info");
+                if (!error) {
+                  setIsScheduleConfirmed(true);
+                  setIsScheduleDialogOpen(false);
+                }
+              }}
+              onHeaderAction={() => setIsScheduleDialogOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      <PlanPreviewDialog
+        open={isPreviewOpen && !isSubmitting}
+        onClose={closePreview}
+        onConfirm={() => {
+          setIsPreviewOpen(false);
+          formRef.current?.requestSubmit();
+        }}
+        submitting={isSubmitting}
+        subjectName={subjectName.trim()}
+        mode={planMode}
+        daysToExam={daysToExam}
+        studyDates={selectedStudyDates}
+        studyDayCount={estimatedStudyDays}
+        reviewDayCount={reviewDayCount}
+        dailyHours={Number(dailyHours)}
+        outline={outline}
+        focus={focusChapters}
+      />
 
       {/* Môn học đang ôn → bấm "Xem chi tiết" để mở lộ trình */}
       <PlanOverviewCards
