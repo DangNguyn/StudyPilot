@@ -181,8 +181,6 @@ export default function QuizResultPage() {
   const [error, setError] = useState("");
   const [showWeak, setShowWeak] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  /* "Để sau": chỉ ẩn khối nhắc; ngày ôn chưa chọn vẫn được lưu là trống để nhắc lại sau */
-  const [reviewPromptDismissed, setReviewPromptDismissed] = useState(false);
   const [reviewDate, setReviewDate] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   /* Đánh giá của Claude theo mức điểm (tạo một lần rồi lưu lại) */
@@ -329,6 +327,9 @@ export default function QuizResultPage() {
     .filter((item) => item.topic_name || item.description);
   const retake = context?.retake || null;
   const reviewDatePassed = Boolean(reviewDate && context?.today && reviewDate < context.today);
+  /* Chưa đạt 80% thì bắt buộc có ngày ôn sắp tới (quyết định 20/11/2026) */
+  const needsReviewDate =
+    levelKey !== "none" && Boolean(retake) && retake?.status !== "completed" && (!reviewDate || reviewDatePassed);
   const materialsHref = context?.subject_id
     ? `/study-materials?subject=${encodeURIComponent(context.subject_id)}&session=${encodeURIComponent(context.study_session_id)}`
     : "/study-materials";
@@ -421,38 +422,28 @@ export default function QuizResultPage() {
         </div>
       </section>
 
-      {/* Dưới 80%: yêu cầu chọn một buổi ôn lại, cho phép để sau, không chặn bài tiếp theo */}
-      {levelKey !== "none" && retake && retake.status !== "completed" && (!reviewDate || reviewDatePassed) && !reviewPromptDismissed && (
+      {/* Dưới 80%: bắt buộc chọn ngày ôn lại; không chặn việc học bài tiếp theo */}
+      {needsReviewDate && (
         <section
           role="alert"
-          className="rounded-[24px] border-2 border-amber-300 bg-amber-50 px-5 py-4"
+          className="rounded-[24px] border-2 border-[var(--sp-red)] bg-[var(--sp-red-bg)] px-5 py-4 shadow-[4px_4px_0_var(--sp-red-line)]"
         >
-          <p className="flex items-center gap-2 font-bold text-amber-900">
+          <p className="flex items-center gap-2 font-bold text-[var(--sp-red-dark)]">
             <IconAlert size={18} />
             {reviewDatePassed
               ? "Ngày ôn đã qua mà bài này vẫn chưa đạt 80%: hãy chọn ngày ôn mới"
-              : "Bạn chưa đạt 80% ở bài này: hãy chọn một buổi để ôn lại"}
+              : "Bạn chưa đạt 80% ở bài này: hãy chọn ngày ôn lại"}
           </p>
-          <p className="mt-1 text-sm text-amber-900/80">
-            Chọn ngày bạn sẽ ôn lại phần kiến thức còn yếu. StudyPilot sẽ dựa vào ngày này để nhắc bạn.
-            Bạn vẫn có thể học bài tiếp theo ngay bây giờ.
+          <p className="mt-1 text-sm text-[var(--sp-text-2)]">
+            Bắt buộc chọn một ngày để ôn lại phần còn yếu. Ngày này sẽ hiện trên lịch học và StudyPilot nhắc bạn vào hôm đó.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setPickerOpen(true)}
-              className="sp-btn sp-btn-primary px-4 py-2.5 text-sm"
-            >
-              Chọn ngày ôn lại
-            </button>
-            <button
-              type="button"
-              onClick={() => setReviewPromptDismissed(true)}
-              className="sp-btn sp-btn-secondary px-4 py-2.5 text-sm"
-            >
-              Để sau
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="sp-btn sp-btn-primary mt-3 px-4 py-2.5 text-sm"
+          >
+            Chọn ngày ôn lại
+          </button>
         </section>
       )}
 
@@ -664,11 +655,12 @@ export default function QuizResultPage() {
         </section>
       )}
 
-      {pickerOpen && context && retake && (
+      {(pickerOpen || needsReviewDate) && context && retake && (
         <ReviewDayPicker
           context={context}
           reviewPlanId={retake.review_plan_id}
-          initial={reviewDate}
+          initial={reviewDatePassed ? null : reviewDate}
+          required={needsReviewDate}
           onClose={() => setPickerOpen(false)}
           onSaved={(value) => {
             setReviewDate(value);
@@ -858,10 +850,13 @@ function ReviewDayPicker({
   initial,
   onClose,
   onSaved,
+  required = false,
 }: {
   context: ReviewContext;
   reviewPlanId: string;
   initial: string | null;
+  /* Bắt buộc chọn: không đóng được khi chưa lưu ngày */
+  required?: boolean;
   onClose: () => void;
   onSaved: (value: string) => void;
 }) {
@@ -870,12 +865,15 @@ function ReviewDayPicker({
   const [error, setError] = useState("");
 
   const available = context.week.filter((day) => !day.is_past && !day.after_exam);
+  // Không còn ngày nào để chọn thì không khóa hộp thoại, tránh kẹt người học
+  required = required && available.length > 0;
 
   useEffect(() => {
+    if (required) return;
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, required]);
 
   const save = async () => {
     if (!selected) return;
@@ -897,8 +895,7 @@ function ReviewDayPicker({
     }
   };
 
-  const first = context.week[0]?.date;
-  const last = context.week[context.week.length - 1]?.date;
+  const lastChoosable = available[available.length - 1]?.date;
 
   return (
     <div
@@ -906,30 +903,35 @@ function ReviewDayPicker({
       aria-modal="true"
       aria-label="Chọn ngày ôn lại"
       className="fixed inset-0 z-50 flex items-end justify-center bg-[var(--sp-purple-deep)]/45 p-3 sm:items-center"
-      onClick={onClose}
+      onClick={required ? undefined : onClose}
     >
       <div
-        className="sp-task-expand w-full max-w-[560px] rounded-[24px] border-2 border-[var(--sp-purple)] bg-white p-5 shadow-[6px_6px_0_var(--sp-lav-line)] sm:p-6"
+        className="sp-task-expand max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-[24px] border-2 border-[var(--sp-purple)] bg-white p-5 shadow-[6px_6px_0_var(--sp-lav-line)] sm:p-6"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="sp-accent text-[16px] text-[var(--sp-pink)]">
-              Tuần {dayMonth(first)} – {dayMonth(last)}
+              {lastChoosable
+                ? `Từ hôm nay đến ${dayMonth(lastChoosable)} (trước ngày thi)`
+                : "Trước ngày thi"}
             </p>
             <h2 className="text-[22px] text-[var(--sp-ink)]">Chọn ngày ôn lại</h2>
             <p className="mt-1 text-sm text-[var(--sp-muted)]">
-              Chỉ ôn trong tuần của bài học. Được chọn cả ngày đã có lịch học: hãy xem ngày nào còn trống để chọn cho phù hợp.
+              {required ? "Bắt buộc chọn để tiếp tục. " : ""}
+              Được chọn cả ngày đã có lịch học: hãy xem ngày nào còn trống để chọn cho phù hợp.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Đóng"
-            className="rounded-xl p-2 text-[var(--sp-muted)] hover:bg-[var(--sp-surface-2)]"
-          >
-            <IconX size={18} />
-          </button>
+          {!required && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Đóng"
+              className="rounded-xl p-2 text-[var(--sp-muted)] hover:bg-[var(--sp-surface-2)]"
+            >
+              <IconX size={18} />
+            </button>
+          )}
         </div>
 
         <div className="mt-5 grid grid-cols-7 gap-1.5 sm:gap-2">
@@ -1009,7 +1011,7 @@ function ReviewDayPicker({
 
         {available.length === 0 && (
           <p className="mt-4 rounded-2xl bg-[var(--sp-amber-bg)] px-4 py-3 text-sm text-[var(--sp-amber-dark)]">
-            Tuần này không còn ngày nào chọn được. Hãy bấm Học lại & tự kiểm tra để ôn ngay hôm nay.
+            Không còn ngày nào trước ngày thi để chọn. Hãy ôn ngay hôm nay bằng nút Học lại & tự kiểm tra.
           </p>
         )}
         {error && <p className="mt-3 text-sm font-medium text-[var(--sp-pink-dark)]">{error}</p>}
