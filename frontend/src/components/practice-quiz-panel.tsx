@@ -286,7 +286,7 @@ export default function PracticeQuizPanel({
             <p className="truncate text-[11px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">
               Mục {current.sectionNumber} · {current.sectionHeading}
             </p>
-            <p className="mt-1 text-[14.5px] font-bold leading-6 text-[var(--sp-ink)]">{renderText(current.question)}</p>
+            <p className="mt-1 text-justify text-[14.5px] font-bold leading-6 text-[var(--sp-ink)]">{renderText(current.question)}</p>
 
             <div className="mt-3 space-y-2" role="radiogroup" aria-label="Các lựa chọn">
               {current.options.map((option, optionIndex) => {
@@ -310,7 +310,7 @@ export default function PracticeQuizPanel({
                     aria-checked={selected}
                     disabled={Boolean(answer)}
                     onClick={() => setChoice(optionIndex)}
-                    className={`flex w-full items-center gap-2.5 rounded-xl border-2 px-2.5 py-2 text-left text-[13.5px] font-medium leading-5 transition ${
+                    className={`flex w-full items-start gap-2.5 rounded-xl border-2 px-2.5 py-2 text-left text-[13.5px] font-medium leading-5 transition ${
                       state === "correct"
                         ? "border-emerald-500 bg-emerald-50 text-emerald-900"
                         : state === "wrong"
@@ -333,7 +333,7 @@ export default function PracticeQuizPanel({
                     >
                       {state === "correct" ? <IconCheck size={13} /> : state === "wrong" ? <IconX size={13} /> : LETTERS[optionIndex]}
                     </span>
-                    <span className="flex-1">{renderText(option)}</span>
+                    <span className="flex-1 pt-0.5 text-justify">{renderText(option)}</span>
                   </button>
                 );
               })}
@@ -342,7 +342,7 @@ export default function PracticeQuizPanel({
             {/* Kết quả */}
             {answer && (
               <div
-                className={`sp-task-expand mt-3 rounded-xl border-2 px-3 py-2.5 ${
+                className={`sp-task-expand mt-3 rounded-xl border-2 px-3 py-2.5 text-justify ${
                   answer.correct
                     ? "border-emerald-200 bg-emerald-50"
                     : "border-[var(--sp-pink-line)] bg-white"

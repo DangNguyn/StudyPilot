@@ -508,12 +508,12 @@ export default function QuizTakingPage() {
           </div>
 
           {stem && (
-            <p className="mt-5 rounded-2xl border-l-4 border-[var(--sp-peri)] bg-[var(--sp-lav)] px-5 py-4 text-[15px] leading-7 text-[var(--sp-text-2)]">
+            <p className="mt-5 rounded-2xl border-l-4 border-[var(--sp-peri)] bg-[var(--sp-lav)] px-5 py-4 text-justify text-[15px] leading-7 text-[var(--sp-text-2)]">
               {emphasizeNumbers(stem)}
             </p>
           )}
 
-          <p className="mt-5 text-[19px] font-bold leading-8 text-[var(--sp-ink)] sm:text-[21px]">{ask}</p>
+          <p className="mt-5 text-justify text-[19px] font-bold leading-8 text-[var(--sp-ink)] sm:text-[21px]">{ask}</p>
 
           {currentQuestion.question_type === "fill_blank" ? (
             <div className="mt-5">
@@ -574,7 +574,7 @@ export default function QuizTakingPage() {
                         void handleSelectAnswer(key);
                       }
                     }}
-                    className={`flex w-full items-center gap-4 rounded-2xl border-2 px-4 py-3.5 text-left transition sm:px-5 ${
+                    className={`flex w-full items-start gap-4 rounded-2xl border-2 px-4 py-3.5 text-left transition sm:px-5 ${
                       selected
                         ? "border-[var(--sp-purple)] bg-[var(--sp-lav)] shadow-[4px_4px_0_var(--sp-peri)]"
                         : "border-[var(--sp-line)] bg-white hover:border-[var(--sp-lav-line)] hover:bg-[var(--sp-surface-2)]"
@@ -587,9 +587,9 @@ export default function QuizTakingPage() {
                     >
                       {letter}
                     </span>
-                    <span className="flex-1 text-[16px] font-semibold leading-6 text-[var(--sp-ink)]">{optionText}</span>
+                    <span className="flex-1 pt-1.5 text-justify text-[16px] font-semibold leading-6 text-[var(--sp-ink)]">{optionText}</span>
                     <span
-                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
+                      className={`mt-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
                         selected ? "border-[var(--sp-peri)]" : "border-[var(--sp-soft)]"
                       }`}
                     >

@@ -1272,7 +1272,7 @@ function MaterialReader({
 
           <div
             ref={scrollRef}
-            className="max-h-[68vh] min-h-[360px] overflow-y-auto px-5 py-6 sm:px-7"
+            className="max-h-[68vh] min-h-[360px] overflow-y-auto px-5 py-6 text-justify sm:px-7"
           >
             {mode === "summary" ? (
               <div className="space-y-2">
