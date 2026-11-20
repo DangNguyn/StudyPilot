@@ -438,3 +438,60 @@ main button[class*="bg-[#5B7FE3]"]:disabled {
 @media (prefers-reduced-motion: reduce) {
   .sp-pilot .sp-pilot-body, .sp-pilot .sp-pilot-page, .sp-pilot .sp-pilot-blink, .sp-loading-stripes { animation: none; }
 }
+
+/* ===== Pilot ở trang chủ: bay giữa các chỗ đậu, đổi biểu cảm khi chạm ===== */
+.sp-buddy { position: absolute; left: 0; top: 0; width: 110px; height: 121px; z-index: 9; pointer-events: none; transition: opacity 0.4s; }
+.sp-buddy.is-gone { opacity: 0; }
+.sp-buddy .sp-buddy-move { width: 100%; height: 100%; transition: transform 0.35s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.sp-buddy svg { width: 100%; height: 100%; overflow: visible; pointer-events: auto; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.sp-buddy.is-gone svg { pointer-events: none; }
+.sp-buddy .mv { display: none; }
+.sp-buddy[data-mood="idle"] .m-idle, .sp-buddy[data-mood="shy"] .m-shy, .sp-buddy[data-mood="pout"] .m-pout,
+.sp-buddy[data-mood="happy"] .m-happy, .sp-buddy[data-mood="tease"] .m-tease, .sp-buddy[data-mood="dizzy"] .m-dizzy,
+.sp-buddy[data-mood="sleep"] .m-sleep, .sp-buddy[data-mood="worried"] .m-worried { display: inline; }
+.sp-buddy .b-legs, .sp-buddy .b-sign, .sp-buddy .b-arm { display: none; }
+.sp-buddy:not([data-pose="fly"]) .b-legs { display: inline; }
+.sp-buddy[data-pose="sign"] .b-sign, .sp-buddy[data-pose="point"] .b-arm { display: inline; }
+.sp-buddy[data-pose="sign"] .b-page { display: none; }
+.sp-buddy .b-leg { transform-origin: top center; animation: sp-buddy-swing 1.6s ease-in-out infinite; }
+.sp-buddy .b-leg + .b-leg { animation-delay: -0.8s; }
+.sp-buddy .b-wing-l { transform-origin: 52px 92px; animation: sp-buddy-flap-l 1.8s ease-in-out infinite; }
+.sp-buddy .b-wing-r { transform-origin: 148px 92px; animation: sp-buddy-flap-r 1.8s ease-in-out infinite; }
+.sp-buddy[data-pose="fly"] .b-wing-l, .sp-buddy[data-pose="fly"] .b-wing-r { animation-duration: 0.22s; }
+.sp-buddy[data-mood="sleep"] .b-wing-l, .sp-buddy[data-mood="sleep"] .b-wing-r { animation: none; }
+.sp-buddy .b-body { transform-origin: 100px 175px; animation: sp-pilot-breathe 2.4s ease-in-out infinite; }
+.sp-buddy[data-mood="sleep"] .b-body { animation-duration: 4s; }
+.sp-buddy[data-mood="pout"] .b-body { animation: sp-buddy-wiggle 0.5s ease-in-out 4; }
+.sp-buddy[data-mood="happy"] .b-body { animation: sp-buddy-hop 0.7s cubic-bezier(0.3, 1.6, 0.5, 1) 2; }
+.sp-buddy[data-mood="dizzy"] .b-body { animation: sp-buddy-wobble 0.9s ease-in-out infinite; }
+.sp-buddy[data-mood="shy"] .b-body { animation: sp-buddy-shy 1.4s ease-in-out infinite; }
+.sp-buddy .b-page { transform-origin: 100px 150px; transition: transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.sp-buddy[data-mood="shy"] .b-page { transform: translateY(-58px) scale(1.55); }
+.sp-buddy[data-pose="read"] .b-page-flip { transform-origin: 100px 149px; animation: sp-pilot-flip 2.2s ease-in-out infinite; }
+.sp-buddy .b-cheek { transform-box: fill-box; transform-origin: center; transition: transform 0.3s, opacity 0.3s; }
+.sp-buddy[data-mood="shy"] .b-cheek, .sp-buddy[data-mood="pout"] .b-cheek { transform: scale(1.7); opacity: 1; }
+.sp-buddy .b-spiral { transform-box: fill-box; transform-origin: center; animation: sp-buddy-spin 1s linear infinite; }
+.sp-buddy .b-zz text { opacity: 0; animation: sp-buddy-zz 2.4s ease-in-out infinite; }
+.sp-buddy .b-zz text:nth-child(2) { animation-delay: 0.8s; }
+.sp-buddy .b-zz text:nth-child(3) { animation-delay: 1.6s; }
+.sp-buddy .b-heart { transform-box: fill-box; transform-origin: center; animation: sp-buddy-heart 1.6s ease-out infinite; }
+.sp-buddy .b-heart + .b-heart { animation-delay: 0.6s; }
+.sp-buddy .b-arm { transform-origin: 150px 120px; animation: sp-buddy-point 1s ease-in-out infinite; }
+.sp-buddy-bubble { position: absolute; right: 92%; bottom: 84%; width: max-content; max-width: 230px; border: 2px solid var(--sp-purple-deep); border-radius: 16px 16px 4px 16px; background: #fff; box-shadow: 3px 3px 0 var(--sp-pink); padding: 8px 12px; font-size: 13.5px; font-weight: 700; line-height: 1.35; color: var(--sp-ink); opacity: 0; transform: translateY(6px) scale(0.9); transform-origin: bottom right; transition: 0.25s; pointer-events: none; }
+.sp-buddy-bubble.is-on { opacity: 1; transform: none; }
+.sp-buddy-trail { position: absolute; z-index: 8; pointer-events: none; color: var(--sp-yellow); font-size: 14px; animation: sp-buddy-trail 0.9s ease-out forwards; }
+@keyframes sp-buddy-swing { 50% { transform: rotate(18deg); } }
+@keyframes sp-buddy-flap-l { 50% { transform: rotate(-26deg); } }
+@keyframes sp-buddy-flap-r { 50% { transform: rotate(26deg); } }
+@keyframes sp-buddy-wiggle { 25% { transform: rotate(-7deg); } 75% { transform: rotate(7deg); } }
+@keyframes sp-buddy-hop { 40% { transform: translateY(-30px) rotate(-8deg); } 70% { transform: translateY(0) scaleY(0.92); } }
+@keyframes sp-buddy-wobble { 25% { transform: rotate(-9deg) translateX(-4px); } 75% { transform: rotate(9deg) translateX(4px); } }
+@keyframes sp-buddy-shy { 50% { transform: rotate(-4deg) translateX(-3px) scale(0.97); } }
+@keyframes sp-buddy-spin { to { transform: rotate(360deg); } }
+@keyframes sp-buddy-zz { 0% { opacity: 0; transform: translate(0, 0); } 30% { opacity: 1; } 100% { opacity: 0; transform: translate(14px, -26px); } }
+@keyframes sp-buddy-heart { 0% { opacity: 0; transform: translateY(8px) scale(0.5); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-34px) scale(1.1); } }
+@keyframes sp-buddy-point { 50% { transform: rotate(-8deg) translateY(3px); } }
+@keyframes sp-buddy-trail { to { opacity: 0; transform: translateY(10px) scale(0.3) rotate(90deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .sp-buddy, .sp-buddy * { animation: none !important; transition: none !important; }
+}
