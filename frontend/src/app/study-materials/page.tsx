@@ -8,6 +8,7 @@ import {
   IconArrowRight,
   IconBook,
   IconBulb,
+  IconLock,
   IconCalendar,
   IconChevronLeft,
   IconChevronRight,
@@ -33,6 +34,10 @@ import {
   useSessionQuizResult,
   type SessionMode,
 } from "@/components/session-mode";
+
+const REVIEW_KEY = "tong-on";
+// shortcut: bản demo mở sẵn buổi Tổng ôn dù chưa học xong mọi ngày; đặt false khi chạy thật
+const DEMO_PREVIEW_REVIEW = true;
 
 /* Bộ sinh số ngẫu nhiên có hạt giống: cùng hạt giống → cùng bộ câu hỏi trong một lần mở trang */
 function seededRandom(seed: number) {
@@ -710,6 +715,11 @@ function MaterialReader({
     days.findIndex((day) => day.dateKey === (activeKey || defaultKey))
   );
   const day = days[activeIndex];
+  /* Buổi Tổng ôn (mindmap cả chương): không có trong lịch, mở khi học xong mọi ngày */
+  const showReview = activeKey === REVIEW_KEY;
+  const doneDays = days.filter((item) => item.status === "done").length;
+  const allDone = days.length > 0 && doneDays === days.length;
+  const reviewOpen = allDone || DEMO_PREVIEW_REVIEW;
   const focusPart = focusSessionId
     ? day?.parts.find((part) => part.session.id === focusSessionId)
     : undefined;
@@ -812,22 +822,17 @@ function MaterialReader({
     );
   }, [mode, day, chunksByMaterial]);
 
-  /* Chương kết thúc ở ngày đang xem → hiện mindmap tổng hợp chương ở cuối ngày */
-  const chapterLastSession = useMemo(() => {
-    const last = new Map<string, string>();
+  /* Các chương của môn, theo thứ tự học → mỗi chương một mindmap ở buổi Tổng ôn */
+  const chapters = useMemo(() => {
+    const list: string[] = [];
     for (const item of days) {
       for (const part of item.parts) {
         const chapter = getChapterRoot(part.topic);
-        if (chapter) last.set(chapter, part.session.id);
+        if (chapter && !list.includes(chapter)) list.push(chapter);
       }
     }
-    return last;
+    return list;
   }, [days]);
-  const endingChapters = day
-    ? Array.from(chapterLastSession.entries())
-        .filter(([, sessionId]) => day.parts.some((part) => part.session.id === sessionId))
-        .map(([chapter]) => chapter)
-    : [];
 
   const openTopicDay = (topicId: string) => {
     const index = days.findIndex((item) => item.parts.some((part) => part.topic?.id === topicId));
@@ -1106,12 +1111,15 @@ function MaterialReader({
       <section>
         {header}
         <p className="sp-accent text-lg text-[var(--sp-pink)]">
-          Ngày {day.number}/{days.length} · {weekdayLong(day.dateKey)}, {dayMonth(day.dateKey)}
+          {showReview
+            ? `Tổng ôn · sau ${days.length} ngày học`
+            : `Ngày ${day.number}/${days.length} · ${weekdayLong(day.dateKey)}, ${dayMonth(day.dateKey)}`}
         </p>
         <h1 className="text-[36px] sm:text-[50px]">
           {titleHead && <>{titleHead} </>}
           <span className="sp-squiggle">{titleTail}</span>
         </h1>
+        {!showReview && (
         <p className="mt-2 flex flex-wrap items-center gap-2 text-[15px] text-[var(--sp-muted)]">
           <span>
             {day.parts.length} phần học · {day.minutes} phút
@@ -1133,6 +1141,7 @@ function MaterialReader({
             </span>
           )}
         </p>
+        )}
       </section>
 
       {focusPart && focusMode && (
@@ -1154,7 +1163,7 @@ function MaterialReader({
         </span>
 
         {days.map((item, index) => {
-          const active = item.dateKey === day.dateKey;
+          const active = !showReview && item.dateKey === day.dateKey;
           const itemIsToday = item.dateKey === todayKey;
           return (
             <button
@@ -1195,6 +1204,22 @@ function MaterialReader({
           );
         })}
 
+        <button
+          type="button"
+          disabled={!reviewOpen}
+          onClick={() => setActiveKey(REVIEW_KEY)}
+          aria-current={showReview ? "true" : undefined}
+          title={reviewOpen ? "Mindmap tổng hợp cả chương" : `Mở sau khi học xong ${days.length} ngày`}
+          className={`flex shrink-0 items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+            showReview
+              ? "border-[var(--sp-purple)] bg-[var(--sp-purple)] text-[var(--sp-yellow)] shadow-[3px_3px_0_var(--sp-lav-line)]"
+              : "border-[var(--sp-pink)] bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)] enabled:hover:-translate-y-0.5"
+          }`}
+        >
+          {reviewOpen ? <Sparkle size={14} /> : <IconLock size={14} />}
+          Tổng ôn
+        </button>
+
         {examKey && (
           <span className="flex shrink-0 items-center gap-2 rounded-full border-2 border-[var(--sp-purple)] bg-white px-4 py-2 text-sm font-bold text-[var(--sp-purple)]">
             <IconFlag size={15} className="text-[var(--sp-pink)]" />
@@ -1203,7 +1228,21 @@ function MaterialReader({
         )}
       </div>
 
-      {/* Khung học: nội dung (trái) + câu hỏi ôn nhanh (phải) */}
+      {showReview ? (
+        <div className="space-y-5">
+          {!allDone && (
+            <p className="flex items-center gap-2 rounded-2xl border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-lav)] px-4 py-3 text-[14px] text-[var(--sp-text-2)]">
+              <IconLock size={15} className="shrink-0 text-[var(--sp-peri-dark)]" />
+              Buổi Tổng ôn mở khi bạn học xong {days.length} ngày (đã xong {doneDays}/{days.length}). Đang mở sẵn để xem thử.
+            </p>
+          )}
+          {plan &&
+            chapters.map((chapter) => (
+              <ChapterMindmap key={`${plan.id}-${chapter}`} planId={plan.id} chapter={chapter} onOpenTopic={openTopicDay} />
+            ))}
+        </div>
+      ) : (
+      /* Khung học: nội dung (trái) + câu hỏi ôn nhanh (phải) */
       <section className="sp-card-pop grid grid-cols-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex min-h-0 min-w-0 flex-col">
           <div className="grid grid-cols-1 items-center gap-3 border-b border-[var(--sp-line)] px-5 pb-4 pt-5 sm:grid-cols-[1fr_auto_1fr] sm:px-7 sm:pt-6">
@@ -1325,25 +1364,6 @@ function MaterialReader({
                   </div>
                 ))}
 
-                {plan &&
-                  endingChapters.map((chapter) => (
-                    <button
-                      key={`jump-${chapter}`}
-                      type="button"
-                      onClick={() =>
-                        document
-                          .getElementById(`mindmap-${plan.id}-${encodeURIComponent(chapter)}`)
-                          ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                      }
-                      className="mt-8 flex w-full items-center gap-3 rounded-2xl border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-lav)] px-4 py-3 text-left transition hover:border-[var(--sp-peri)]"
-                    >
-                      <Sparkle size={16} className="shrink-0 text-[var(--sp-pink)]" />
-                      <span className="min-w-0 flex-1 text-[14px] text-[var(--sp-text-2)]">
-                        Bạn đã học hết <b className="text-[var(--sp-purple)]">{chapter}</b>. Xem mindmap tổng hợp chương ở bên dưới.
-                      </span>
-                      <IconArrowRight size={16} className="shrink-0 rotate-90 text-[var(--sp-peri-dark)]" />
-                    </button>
-                  ))}
               </div>
             ) : (
               <SourceView day={day} chunksByMaterial={chunksByMaterial} />
@@ -1405,18 +1425,8 @@ function MaterialReader({
           />
         </aside>
       </section>
+      )}
 
-      {/* Mindmap tổng hợp của chương kết thúc trong ngày này (gói Pro) */}
-      {plan &&
-        mode === "summary" &&
-        endingChapters.map((chapter) => (
-          <ChapterMindmap
-            key={`${plan.id}-${chapter}`}
-            planId={plan.id}
-            chapter={chapter}
-            onOpenTopic={openTopicDay}
-          />
-        ))}
     </div>
   );
 }
