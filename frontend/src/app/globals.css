@@ -33,6 +33,11 @@
   --sp-yellow: #f6c343;
   --sp-amber-dark: #9a6400;
   --sp-amber-bg: #fff5d6;
+  /* Ôn lại mức khẩn (trễ lịch ôn, để quá lâu, sát ngày thi) */
+  --sp-red: #d93a3a;
+  --sp-red-dark: #a82424;
+  --sp-red-bg: #fdecec;
+  --sp-red-line: #f3b8b8;
 
   --sp-radius: 20px;
   --sp-shadow-card: 0 1px 2px rgba(36, 18, 58, 0.04),
@@ -285,8 +290,24 @@ h3 {
     animation: sp-evidence-pulse 1.1s ease-out 2;
   }
 
+  /* Chấm báo động của buổi ôn mức khẩn */
+  @keyframes sp-urgent-ping {
+    0% {
+      box-shadow: 0 0 0 0 rgba(217, 58, 58, 0.55);
+    }
+    70%,
+    100% {
+      box-shadow: 0 0 0 7px rgba(217, 58, 58, 0);
+    }
+  }
+
+  .sp-urgent-dot {
+    animation: sp-urgent-ping 1.6s ease-out infinite;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .sp-evidence,
+    .sp-urgent-dot,
     .sp-twinkle,
     .sp-fill-bar,
     .sp-task-expand {
