@@ -464,7 +464,7 @@ function QuestionDetail({
             return (
               <div
                 key={option.key}
-                className={`flex items-start gap-3 rounded-2xl border-2 px-4 py-3 ${
+                className={`flex items-center gap-3 rounded-2xl border-2 px-4 py-3 ${
                   state === "correct"
                     ? "border-emerald-400 bg-emerald-50 shadow-[3px_3px_0_#a7e3c4]"
                     : state === "wrong"
@@ -483,7 +483,7 @@ function QuestionDetail({
                 >
                   {option.key}
                 </span>
-                <div className="min-w-0 flex-1 pt-1">
+                <div className="min-w-0 flex-1">
                   <p
                     className={`text-[15px] leading-6 ${
                       state === "idle" ? "text-[var(--sp-muted)]" : "font-semibold text-[var(--sp-ink)]"

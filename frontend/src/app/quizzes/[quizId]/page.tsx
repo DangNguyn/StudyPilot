@@ -574,7 +574,7 @@ export default function QuizTakingPage() {
                         void handleSelectAnswer(key);
                       }
                     }}
-                    className={`flex w-full items-start gap-4 rounded-2xl border-2 px-4 py-3.5 text-left transition sm:px-5 ${
+                    className={`flex w-full items-center gap-4 rounded-2xl border-2 px-4 py-3.5 text-left transition sm:px-5 ${
                       selected
                         ? "border-[var(--sp-purple)] bg-[var(--sp-lav)] shadow-[4px_4px_0_var(--sp-peri)]"
                         : "border-[var(--sp-line)] bg-white hover:border-[var(--sp-lav-line)] hover:bg-[var(--sp-surface-2)]"
@@ -587,9 +587,9 @@ export default function QuizTakingPage() {
                     >
                       {letter}
                     </span>
-                    <span className="flex-1 pt-1.5 text-justify text-[16px] font-semibold leading-6 text-[var(--sp-ink)]">{optionText}</span>
+                    <span className="flex-1 text-justify text-[16px] font-semibold leading-6 text-[var(--sp-ink)]">{optionText}</span>
                     <span
-                      className={`mt-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 ${
                         selected ? "border-[var(--sp-peri)]" : "border-[var(--sp-soft)]"
                       }`}
                     >

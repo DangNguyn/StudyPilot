@@ -310,7 +310,7 @@ export default function PracticeQuizPanel({
                     aria-checked={selected}
                     disabled={Boolean(answer)}
                     onClick={() => setChoice(optionIndex)}
-                    className={`flex w-full items-start gap-2.5 rounded-xl border-2 px-2.5 py-2 text-left text-[13.5px] font-medium leading-5 transition ${
+                    className={`flex w-full items-center gap-2.5 rounded-xl border-2 px-2.5 py-2 text-left text-[13.5px] font-medium leading-5 transition ${
                       state === "correct"
                         ? "border-emerald-500 bg-emerald-50 text-emerald-900"
                         : state === "wrong"
@@ -333,7 +333,7 @@ export default function PracticeQuizPanel({
                     >
                       {state === "correct" ? <IconCheck size={13} /> : state === "wrong" ? <IconX size={13} /> : LETTERS[optionIndex]}
                     </span>
-                    <span className="flex-1 pt-0.5 text-justify">{renderText(option)}</span>
+                    <span className="flex-1 text-justify">{renderText(option)}</span>
                   </button>
                 );
               })}

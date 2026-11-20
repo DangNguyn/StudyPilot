@@ -1521,7 +1521,7 @@ function SectionBody({ section, nested = false }: { section: ContentSection; nes
       ))}
 
       {(section.key_points || []).length > 0 && (
-        <KeyPoints points={section.key_points || []} />
+        <KeyPoints points={section.key_points || []} summary={!nested} />
       )}
     </div>
   );
@@ -1563,8 +1563,10 @@ function FormulaCard({ formula }: { formula: Formula }) {
 /* Tiêu đề thẻ: căn giữa, phần trong ngoặc xuống dòng riêng, vd "Technique (Kỹ thuật)" */
 function CardTitle({ text }: { text: string }) {
   const match = text.match(/^(.+?)\s*(\([^()]*\))\s*$/);
+  // Tiêu đề dài (nhiều chữ) → chữ nhỏ hơn để thẻ cân đối
+  const long = (match ? match[1] : text).length > 18;
   return (
-    <p className="text-center text-lg font-extrabold leading-7 text-[var(--sp-purple)]">
+    <p className={`text-center font-extrabold text-[var(--sp-purple)] ${long ? "text-[15px] leading-6" : "text-lg leading-7"}`}>
       {renderMath(match ? match[1] : text)}
       {match && <span className="block">{renderMath(match[2])}</span>}
     </p>
@@ -1592,7 +1594,11 @@ function TableBlock({ table }: { table: SectionTable }) {
             <CardTitle text={row[0]} />
             {row.slice(1).map((cell, cellIndex) =>
               cell ? (
-                <p key={cellIndex} className="mt-1 text-sm leading-6 text-[var(--sp-text-2)]">
+                <p
+                  key={cellIndex}
+                  // Nội dung ngắn: căn giữa (căn đều sẽ giãn chữ thưa); dài: giữ căn đều
+                  className={`mt-1.5 text-sm leading-6 text-[var(--sp-text-2)] ${cell.length <= 60 ? "text-center" : ""}`}
+                >
                   <Highlightable text={`${row[0]} ${cell}`}>{renderRich(cell)}</Highlightable>
                 </p>
               ) : null
@@ -1636,7 +1642,36 @@ function TableBlock({ table }: { table: SectionTable }) {
   );
 }
 
-function KeyPoints({ points }: { points: string[] }) {
+/* summary: ý chính của cả mục (cuối mục) — khác hẳn ô hồng của từng phần nhỏ */
+function KeyPoints({ points, summary = false }: { points: string[]; summary?: boolean }) {
+  if (summary) {
+    return (
+      <div className="relative overflow-hidden rounded-[20px] border-2 border-[var(--sp-purple-deep)] bg-white shadow-[5px_5px_0_var(--sp-yellow)]">
+        <div className="flex items-center gap-3 bg-[var(--sp-purple)] px-5 py-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] text-[var(--sp-purple-deep)]">
+            <IconBulb size={18} />
+          </span>
+          <div className="min-w-0 flex-1 text-left">
+            <p className="sp-accent text-[14px] leading-5 text-[var(--sp-yellow)]">Chốt lại cả mục</p>
+            <p className="font-display text-[22px] uppercase leading-7 tracking-wide text-white">Tổng kết cần nhớ</p>
+          </div>
+          <Sparkle size={20} className="sp-twinkle shrink-0 text-[var(--sp-yellow)]" />
+        </div>
+        <ol className="space-y-3 px-5 py-4">
+          {points.map((point, index) => (
+            <li key={index} className="flex items-center gap-3">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] text-[13px] font-extrabold text-[var(--sp-purple-deep)]">
+                {index + 1}
+              </span>
+              <span className="min-w-0 flex-1 text-[15.5px] font-semibold leading-7 text-[var(--sp-ink)]">
+                <Highlightable text={point}>{renderRich(point)}</Highlightable>
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
   return (
     <div className="relative rounded-2xl border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-5 py-4">
       <Sparkle size={18} className="sp-twinkle absolute -top-2.5 right-6 text-[var(--sp-yellow)]" />
