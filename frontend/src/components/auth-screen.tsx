@@ -15,7 +15,11 @@ import {
   Sparkle,
 } from "@/components/icons";
 import { startLoginSplash } from "@/components/login-splash";
+
 import { authErrorMessage, getAuthClient, holdAuthRedirect } from "@/lib/auth";
+
+// Thời gian màn chào hiện dần phủ kín trang đăng nhập, trước khi chuyển sang trang học
+const SPLASH_COVER_MS = 320;
 
 export type AuthMode = "login" | "register" | "forgot" | "verify";
 
@@ -731,7 +735,6 @@ export default function AuthScreen({ initialMode }: { initialMode: "login" | "re
   const [shut, setShut] = useState(true); // vào trang: sách đang gập, rồi mở ra
   const [motion, setMotion] = useState<"closing" | "opening">("opening");
   const [thud, setThud] = useState(false);
-  const [leaving, setLeaving] = useState(false); // sách thu nhỏ lại trước màn hình chào
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -794,7 +797,7 @@ export default function AuthScreen({ initialMode }: { initialMode: "login" | "re
       const next = searchParams.get("next");
       const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
       startLoginSplash();
-      router.replace(target);
+      window.setTimeout(() => router.replace(target), SPLASH_COVER_MS);
     };
 
     if (!client) {
@@ -1102,13 +1105,15 @@ export default function AuthScreen({ initialMode }: { initialMode: "login" | "re
       setThud(true);
       await wait(140);
       setThud(false);
-      await wait(1000);
-      setLeaving(true);
-      await wait(320);
+      // sách nằm yên 1,5 giây rồi hiện lời chào
+      await wait(1500);
     } else {
       await wait(400);
     }
+    // Màn chào phủ kín trang đăng nhập trước, xong mới chuyển trang bên dưới,
+    // nên không bao giờ thấy trang học "nháy" ra trước lời chào.
     startLoginSplash();
+    await wait(SPLASH_COVER_MS);
     router.replace(target);
   }
 
@@ -1170,7 +1175,6 @@ export default function AuthScreen({ initialMode }: { initialMode: "login" | "re
     <div className="flex min-h-screen items-center justify-center overflow-hidden px-6 py-6">
       <div
         className="sp-book-stage transition-[transform,opacity] duration-300 ease-in"
-        style={leaving ? { transform: "scale(0.35)", opacity: 0 } : undefined}
       >
         <div className={`sp-book ${shut ? "is-shut" : ""} ${thud ? "is-thud" : ""}`}>
           <BookSide side="left" className={sideMotion}>

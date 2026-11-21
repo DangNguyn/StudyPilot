@@ -28,6 +28,9 @@ import os
 import re
 import secrets
 import smtplib
+import urllib.error
+import urllib.request
+import ssl
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -85,8 +88,64 @@ def _user_id() -> str:
     return os.getenv("DEMO_USER_ID") or "demo"
 
 
+_ENV_FILE = Path(__file__).resolve().parent / ".env"
+_MAIL_ENV_KEYS = (
+    "GMAIL_ADDRESS", "GMAIL_APP_PASSWORD", "BREVO_API_KEY", "MAIL_SENDER",
+    "APPS_SCRIPT_URL", "APPS_SCRIPT_SECRET",
+)
+_env_mtime = 0.0
+
+
+def _refresh_env() -> None:
+    """Đọc lại backend/.env khi file vừa được sửa, để thêm Gmail không cần khởi động lại backend."""
+    global _env_mtime
+    try:
+        mtime = _ENV_FILE.stat().st_mtime
+    except OSError:
+        return  # trên hosting không có file .env: dùng biến môi trường của hosting
+    if mtime == _env_mtime:
+        return
+    _env_mtime = mtime
+    try:
+        from dotenv import dotenv_values
+
+        for key, value in dotenv_values(_ENV_FILE).items():
+            if key in _MAIL_ENV_KEYS and value:
+                os.environ[key] = value.strip().strip('"').strip("'")
+    except Exception as error:
+        print("Không đọc lại được file .env:", str(error))
+
+
+def _gmail_credentials() -> tuple[str, str]:
+    _refresh_env()
+    sender = (os.getenv("GMAIL_ADDRESS") or "").strip()
+    password = (os.getenv("GMAIL_APP_PASSWORD") or "").replace(" ", "").strip()
+    return sender, password
+
+
+def _brevo_settings() -> tuple[str, str]:
+    """Gửi qua API Brevo (HTTPS, cổng 443): dùng khi mạng / hosting chặn cổng gửi thư SMTP."""
+    _refresh_env()
+    key = (os.getenv("BREVO_API_KEY") or "").strip()
+    sender = (os.getenv("MAIL_SENDER") or os.getenv("GMAIL_ADDRESS") or "").strip()
+    return key, sender
+
+
+def _apps_script_settings() -> tuple[str, str]:
+    """Gửi qua Google Apps Script (chạy trong Gmail của bạn, gọi bằng HTTPS): không cần cổng SMTP."""
+    _refresh_env()
+    return (os.getenv("APPS_SCRIPT_URL") or "").strip(), (os.getenv("APPS_SCRIPT_SECRET") or "").strip()
+
+
 def gmail_configured() -> bool:
-    return bool(os.getenv("GMAIL_ADDRESS") and os.getenv("GMAIL_APP_PASSWORD"))
+    script_url, script_secret = _apps_script_settings()
+    if script_url and script_secret:
+        return True
+    key, brevo_sender = _brevo_settings()
+    if key and brevo_sender:
+        return True
+    sender, password = _gmail_credentials()
+    return bool(sender and password)
 
 
 def _app_url() -> str:
@@ -163,11 +222,20 @@ def _hash_code(code: str) -> str:
 def send_email(to: str, subject: str, html_body: str, text_body: str) -> None:
     if not gmail_configured():
         raise RuntimeError(
-            "Chưa cấu hình GMAIL_ADDRESS và GMAIL_APP_PASSWORD trong file .env của backend."
+            "Chưa cấu hình gửi thư: thêm BREVO_API_KEY (hoặc GMAIL_ADDRESS + GMAIL_APP_PASSWORD) vào file .env của backend."
         )
 
-    sender = os.getenv("GMAIL_ADDRESS")
-    password = (os.getenv("GMAIL_APP_PASSWORD") or "").replace(" ", "")
+    script_url, script_secret = _apps_script_settings()
+    if script_url and script_secret:
+        _send_apps_script(script_url, script_secret, to, subject, html_body, text_body)
+        return
+
+    brevo_key, brevo_sender = _brevo_settings()
+    if brevo_key and brevo_sender:
+        _send_brevo(brevo_key, brevo_sender, to, subject, html_body, text_body)
+        return
+
+    sender, password = _gmail_credentials()
 
     message = EmailMessage()
     message["Subject"] = subject
@@ -176,15 +244,120 @@ def send_email(to: str, subject: str, html_body: str, text_body: str) -> None:
     message.set_content(text_body)
     message.add_alternative(html_body, subtype="html")
 
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
-            server.login(sender, password)
-            server.send_message(message)
-    except smtplib.SMTPAuthenticationError as error:
-        raise RuntimeError(
-            "Gmail từ chối đăng nhập. Kiểm tra lại GMAIL_ADDRESS và Mật khẩu ứng dụng "
-            "(16 ký tự, tạo ở myaccount.google.com/apppasswords)."
-        ) from error
+    # Thử cổng 465 (SSL) trước; nếu mạng / phần mềm diệt virus cắt kết nối thì thử cổng 587 (STARTTLS).
+    # Mỗi cách thử tối đa 2 lần vì Gmail đôi khi đóng kết nối giữa chừng.
+    last_error: Exception | None = None
+    for method in _SMTP_METHODS:
+        for _attempt in range(2):
+            try:
+                method(sender, password, message)
+                return
+            except smtplib.SMTPAuthenticationError as error:
+                raise RuntimeError(
+                    "Gmail từ chối đăng nhập. Kiểm tra lại GMAIL_ADDRESS và Mật khẩu ứng dụng "
+                    "(16 ký tự, tạo ở myaccount.google.com/apppasswords)."
+                ) from error
+            except smtplib.SMTPRecipientsRefused as error:
+                raise RuntimeError("Gmail không nhận địa chỉ người nhận này.") from error
+            except (smtplib.SMTPException, OSError) as error:
+                last_error = error
+                time.sleep(1)
+    raise RuntimeError(
+        "Không kết nối được tới máy chủ Gmail (cả cổng 465 và 587). Thường do phần mềm diệt virus, "
+        "tường lửa hoặc mạng Wi-Fi chặn gửi thư. Hãy tắt tính năng quét thư của phần mềm diệt virus "
+        f"hoặc thử mạng khác (ví dụ 4G). Chi tiết: {last_error}"
+    )
+
+
+def _send_apps_script(url: str, secret: str, to: str, subject: str, html_body: str, text_body: str) -> None:
+    payload = json.dumps({
+        "secret": secret, "to": to, "subject": subject, "html": html_body, "text": text_body,
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        url, data=payload, method="POST", headers={"Content-Type": "application/json"}
+    )
+    last_error: Exception | None = None
+    for _attempt in range(2):
+        try:
+            # Apps Script chạy lệnh rồi chuyển hướng (302) sang trang chứa kết quả; urllib tự đi theo
+            with urllib.request.urlopen(request, timeout=40) as response:
+                body = response.read().decode("utf-8", errors="ignore")
+            try:
+                result = json.loads(body)
+            except json.JSONDecodeError:
+                raise RuntimeError(
+                    "Apps Script không trả về kết quả. Kiểm tra lại APPS_SCRIPT_URL (phải là link /exec) "
+                    "và phần 'Ai có quyền truy cập' phải là 'Bất kỳ ai'."
+                )
+            if result.get("ok"):
+                return
+            error = str(result.get("error") or "")
+            if error == "unauthorized":
+                raise RuntimeError("APPS_SCRIPT_SECRET không khớp với SECRET trong Apps Script.")
+            raise RuntimeError(f"Apps Script không gửi được thư: {error}")
+        except RuntimeError:
+            raise
+        except (urllib.error.URLError, OSError) as error:
+            last_error = error
+            time.sleep(1)
+    raise RuntimeError(f"Không kết nối được tới Apps Script: {last_error}")
+
+
+def _send_brevo(api_key: str, sender: str, to: str, subject: str, html_body: str, text_body: str) -> None:
+    payload = json.dumps({
+        "sender": {"name": "StudyPilot", "email": sender},
+        "to": [{"email": to}],
+        "subject": subject,
+        "htmlContent": html_body,
+        "textContent": text_body,
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=payload,
+        method="POST",
+        headers={"api-key": api_key, "Content-Type": "application/json", "Accept": "application/json"},
+    )
+    last_error: Exception | None = None
+    for _attempt in range(2):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                if 200 <= response.status < 300:
+                    return
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", errors="ignore")[:300]
+            if error.code == 401:
+                raise RuntimeError("Brevo từ chối API key. Kiểm tra lại BREVO_API_KEY trong file .env.") from error
+            if error.code == 400 and "sender" in detail.lower():
+                raise RuntimeError(
+                    f"Brevo chưa cho phép gửi từ {sender}. Vào Brevo → Senders, thêm và xác minh địa chỉ này."
+                ) from error
+            if error.code < 500:
+                raise RuntimeError(f"Brevo không gửi được thư ({error.code}): {detail}") from error
+            last_error = error
+        except (urllib.error.URLError, OSError) as error:
+            last_error = error
+        time.sleep(1)
+    raise RuntimeError(f"Không kết nối được tới Brevo: {last_error}")
+
+
+def _send_ssl_465(sender: str, password: str, message: EmailMessage) -> None:
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30, context=context) as server:
+        server.login(sender, password)
+        server.send_message(message)
+
+
+def _send_starttls_587(sender: str, password: str, message: EmailMessage) -> None:
+    context = ssl.create_default_context()
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+        server.ehlo()
+        server.starttls(context=context)
+        server.ehlo()
+        server.login(sender, password)
+        server.send_message(message)
+
+
+_SMTP_METHODS = (_send_ssl_465, _send_starttls_587)
 
 
 # ============================================================
@@ -583,7 +756,7 @@ def check_bounces() -> None:
 
     try:
         mailbox = imaplib.IMAP4_SSL("imap.gmail.com", 993)
-        mailbox.login(os.getenv("GMAIL_ADDRESS"), (os.getenv("GMAIL_APP_PASSWORD") or "").replace(" ", ""))
+        mailbox.login(*_gmail_credentials())
         mailbox.select("INBOX")
         since = (datetime.now(VIETNAM_TZ) - timedelta(days=2)).strftime("%d-%b-%Y")
         status, found = mailbox.search(None, f'(FROM "mailer-daemon" SINCE {since})')
@@ -609,8 +782,7 @@ def check_bounces() -> None:
     if bounced:
         settings.update({
             "enabled": False,
-            "verified": False,
-            "disabled_reason": "Gmail báo không gửi được tới địa chỉ này. Hãy kiểm tra và xác minh lại email.",
+            "disabled_reason": "Gmail báo không gửi được tới địa chỉ này nên thông báo đã tạm tắt. Bật lại để thử tiếp.",
         })
         save_settings(settings)
         print("Đã tắt thông báo vì email bị báo lỗi:", address)
@@ -621,6 +793,25 @@ def check_bounces() -> None:
 # ============================================================
 
 _scheduler_started = False
+_retry_after: dict[str, float] = {}
+
+
+def _send_scheduled(settings: dict, kind: str, builder) -> bool:
+    """Gửi 1 loại thư. True = xong cho hôm nay (đã gửi hoặc không có gì để nhắc).
+    Lỗi thì thử lại sau 10 phút, không làm hỏng loại thư còn lại."""
+    if time.time() < _retry_after.get(kind, 0):
+        return False
+    try:
+        content = builder(_user_id())
+        if content:
+            send_email(settings["email"], *content)
+            print(f"Đã gửi thư nhắc ({kind}) tới {settings['email']}")
+        _retry_after.pop(kind, None)
+        return True
+    except Exception as error:
+        _retry_after[kind] = time.time() + 10 * 60
+        print(f"Lỗi khi gửi thư nhắc ({kind}), sẽ thử lại sau 10 phút:", str(error))
+        return False
 
 
 def _scheduler_loop() -> None:
@@ -642,11 +833,9 @@ def _scheduler_loop() -> None:
                     and hour <= now.hour < hour + 4
                     and last_sent.get("daily") != today
                 ):
-                    digest = build_daily_digest(_user_id())
-                    if digest:
-                        send_email(settings["email"], *digest)
-                    last_sent["daily"] = today
-                    save_settings(settings)
+                    if _send_scheduled(settings, "daily", build_daily_digest):
+                        last_sent["daily"] = today
+                        save_settings(settings)
 
                 # Ôn phần còn yếu: gần ngày thi (còn 7/5/3/2/1 ngày) nếu có bài dưới 80%
                 if (
@@ -654,20 +843,17 @@ def _scheduler_loop() -> None:
                     and hour <= now.hour < hour + 4
                     and last_sent.get("weak") != today
                 ):
-                    reminder = build_weak_review(_user_id())
-                    if reminder:
-                        send_email(settings["email"], *reminder)
-                    last_sent["weak"] = today
-                    save_settings(settings)
+                    if _send_scheduled(settings, "weak", build_weak_review):
+                        last_sent["weak"] = today
+                        save_settings(settings)
 
                 if time.time() - last_bounce_check > 30 * 60:
                     last_bounce_check = time.time()
                     check_bounces()
 
         except Exception as error:
-            # Lỗi tạm thời (mạng, Gmail...): thử lại ở vòng sau
-            print("Lỗi khi gửi thông báo học tập:", str(error))
-            time.sleep(10 * 60)
+            # Lỗi bất ngờ (đọc dữ liệu...): ghi lại rồi chạy tiếp ở vòng sau
+            print("Lỗi bộ hẹn giờ thông báo:", str(error))
 
         time.sleep(60)
 
@@ -694,6 +880,8 @@ class VerifyConfirmRequest(BaseModel):
 
 
 class SettingsUpdateRequest(BaseModel):
+    # Gmail của tài khoản đang đăng nhập (đã xác thực lúc đăng ký bằng mã 6 số / Google)
+    email: str | None = None
     enabled: bool | None = None
     daily_enabled: bool | None = None
     daily_hour: int | None = Field(default=None, ge=5, le=21)
@@ -714,8 +902,15 @@ def update_notification_settings(request: SettingsUpdateRequest):
     settings = load_settings()
     changes = request.model_dump(exclude_none=True)
 
+    # Thư luôn gửi tới Gmail của tài khoản, không cần xác minh thêm lần nữa
+    account_email = changes.pop("email", None)
+    if account_email:
+        address = validate_email(account_email)
+        if address != settings.get("email") or not settings.get("verified"):
+            settings.update({"email": address, "verified": True, "pending": None, "disabled_reason": None})
+
     if changes.get("enabled") and not settings.get("verified"):
-        raise HTTPException(status_code=400, detail="Hãy xác minh email bằng mã 6 số trước khi bật thông báo.")
+        raise HTTPException(status_code=400, detail="Chưa có Gmail nhận thư. Hãy đăng nhập lại rồi thử lại.")
 
     settings.update(changes)
     if changes.get("enabled"):
@@ -807,7 +1002,7 @@ def confirm_email_verification(request: VerifyConfirmRequest):
 def send_test_notification(request: TestSendRequest):
     settings = load_settings()
     if not settings.get("verified") or not settings.get("email"):
-        raise HTTPException(status_code=400, detail="Hãy xác minh email trước khi gửi thử.")
+        raise HTTPException(status_code=400, detail="Chưa có Gmail nhận thư. Hãy đăng nhập lại rồi thử lại.")
 
     try:
         content = (

@@ -10,6 +10,7 @@ import "./globals.css";
 import AppShell from "@/components/app-shell";
 import { AuthProvider } from "@/components/auth-provider";
 import { Suspense } from "react";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 // Chữ tiêu đề lớn (cô đặc, đậm)
 const anton = Anton({
@@ -51,11 +52,16 @@ export default function RootLayout({
   return (
     <html
       lang="vi"
+      suppressHydrationWarning
       className={`${anton.variable} ${beVietnamPro.variable} ${playfair.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* Bật chế độ tối trước khi trang hiện ra */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-full">
         <AuthProvider>
-          <Suspense fallback={<div className="min-h-screen bg-[#F7F5FA]" />}>
+          <Suspense fallback={<div className="min-h-screen bg-[var(--sp-paper)]" />}>
             <AppShell>{children}</AppShell>
           </Suspense>
         </AuthProvider>

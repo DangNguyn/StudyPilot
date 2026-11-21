@@ -486,7 +486,7 @@ main button[class*="bg-[#5B7FE3]"]:disabled {
   background-image: radial-gradient(var(--sp-paper-dot) 1px, transparent 1.2px);
   background-size: 22px 22px;
 }
-.sp-splash-bg { animation: sp-splash-in 0.25s ease-out; }
+.sp-splash-bg { animation: sp-splash-in 0.3s ease-out both; }
 @keyframes sp-splash-in { from { opacity: 0; } }
 /*
  * Lộ trình nhỏ trong khung "Tiếp theo nên ôn gì?" (Đánh giá năng lực):
@@ -672,4 +672,116 @@ main button[class*="bg-[#5B7FE3]"]:disabled {
 @keyframes sp-dialog-pop { from { opacity: 0; transform: translateY(16px) scale(0.97); } }
 @media (prefers-reduced-motion: reduce) {
   .sp-hero-bubble, .sp-dialog-veil, .sp-dialog-pop { animation: none; }
+}
+
+/* ================= Chế độ tối =================
+ * Bật bằng class "dark" trên <html> (Cài đặt → Giao diện → Chế độ tối).
+ * Đổi các token màu, rồi chỉnh thêm những chỗ còn ghi cứng màu trắng / xanh lá trong code.
+ */
+html.dark {
+  color-scheme: dark;
+  --sp-paper: #15101f;
+  --sp-paper-dot: #2b2339;
+  --sp-sidebar: #1b1527;
+  --sp-surface: #221a30;
+  --sp-surface-2: #2a2140;
+
+  --sp-ink: #efe9f7;
+  --sp-text-2: #cfc5df;
+  --sp-muted: #a89fbc;
+  --sp-soft: #7f7794;
+  --sp-line: #3a3050;
+
+  --sp-purple-deep: #8a6cc0;
+  --sp-peri-dark: #9db4ff;
+  --sp-lav: #2c2a4f;
+  --sp-lav-line: #4b4a85;
+
+  --sp-pink-dark: #ff8fb4;
+  --sp-pink-bg: #3a1a2b;
+  --sp-pink-line: #6b2c47;
+
+  --sp-amber-dark: #f3c460;
+  --sp-amber-bg: #3a2e12;
+  --sp-red-dark: #ff8a8a;
+  --sp-red-bg: #3d1717;
+  --sp-red-line: #6e2a2a;
+
+  --sp-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+/* Chữ tím trên nền tối: sáng hơn cho dễ đọc (nền tím đậm vẫn giữ nguyên) */
+html.dark .text-\[var\(--sp-purple\)\] { color: #d6c2ff; }
+html.dark .border-\[var\(--sp-purple\)\] { border-color: #7d5aa8; }
+html.dark .bg-\[var\(--sp-purple-deep\)\],
+html.dark .hover\:bg-\[var\(--sp-purple-deep\)\]:hover { background-color: #2a0a3d; }
+html.dark .text-\[var\(--sp-purple-deep\)\] { color: #e6dcff; }
+html.dark .bg-\[var\(--sp-yellow\)\].text-\[var\(--sp-purple-deep\)\],
+html.dark .bg-\[var\(--sp-yellow\)\] .text-\[var\(--sp-purple-deep\)\] { color: #2a0a3d; }
+html.dark .bg-\[var\(--sp-peri-dark\)\],
+html.dark .hover\:bg-\[var\(--sp-peri-dark\)\]:hover { background-color: #4566d1; }
+html.dark .bg-\[var\(--sp-pink-dark\)\] { background-color: #c42a63; }
+
+/* Nền trắng và các nền sáng ghi cứng */
+html.dark .bg-white,
+html.dark .bg-\[\#FFFFFF\],
+html.dark .bg-\[\#ffffff\] { background-color: var(--sp-surface); }
+html.dark .hover\:bg-white:hover { background-color: var(--sp-surface-2); }
+html.dark .bg-white\/70,
+html.dark .bg-white\/80,
+html.dark .bg-white\/90 { background-color: rgb(34 26 48 / 0.85); }
+html.dark .border-white { border-color: var(--sp-surface); }
+html.dark .bg-\[\#EEF1FD\],
+html.dark .bg-\[\#eef1fd\] { background-color: var(--sp-lav); }
+html.dark .bg-\[\#F7F5FA\],
+html.dark .bg-\[\#faf6fc\],
+html.dark .bg-\[\#faf6fd\],
+html.dark .bg-\[\#fdfcff\],
+html.dark .bg-\[\#fdfcfe\],
+html.dark .bg-\[\#fbfafd\],
+html.dark .bg-\[\#fff8fb\],
+html.dark .bg-\[\#fffaf0\],
+html.dark .hover\:bg-\[\#faf6fc\]:hover { background-color: var(--sp-surface-2); }
+html.dark .bg-\[\#fbf3f9\],
+html.dark .bg-\[\#f1e6f7\] { background-color: #261b35; }
+html.dark .bg-\[\#FDEDF3\] { background-color: var(--sp-pink-bg); }
+html.dark .bg-\[\#fff1b8\],
+html.dark .bg-\[\#ffe68a\] { background-color: var(--sp-amber-bg); }
+html.dark .bg-gray-100 { background-color: var(--sp-surface-2); }
+
+/* Xanh lá (đã nhớ, đạt, thành công) */
+html.dark .bg-emerald-50 { background-color: #10301f; }
+html.dark .text-emerald-600,
+html.dark .text-emerald-700,
+html.dark .text-emerald-800,
+html.dark .text-emerald-900 { color: #6ee7a8; }
+html.dark .border-emerald-200 { border-color: #1f5c3c; }
+
+/* Lớp dùng chung trong file này */
+html.dark .sp-btn-secondary { background: var(--sp-surface); }
+html.dark .sp-btn:disabled { background: #2f2742; border-color: #3a3050; }
+html.dark .sp-buddy-bubble,
+html.dark .sp-hero-bubble,
+html.dark .sp-hero-bubble::before { background: var(--sp-surface); }
+html.dark input::placeholder,
+html.dark textarea::placeholder { color: var(--sp-soft); }
+html.dark img { filter: brightness(0.92); }
+html.dark main h1 { color: #d6c2ff; }
+html.dark .text-\[\#24123A\] { color: var(--sp-ink); }
+html.dark .text-\[\#4566D1\] { color: var(--sp-peri-dark); }
+html.dark .text-\[\#C42A63\] { color: var(--sp-pink-dark); }
+html.dark .border-\[\#ECE6EF\] { border-color: var(--sp-line); }
+html.dark .bg-\[radial-gradient\(\#d5ddf8_1\.2px\2c transparent_1\.2px\)\] { background-image: radial-gradient(#3d3c70 1.2px, transparent 1.2px); }
+
+/* Đổi sáng / tối mượt (xem lib/theme.ts) */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.45s;
+  animation-timing-function: ease-in-out;
+}
+html.sp-theme-fade,
+html.sp-theme-fade *,
+html.sp-theme-fade *::before,
+html.sp-theme-fade *::after {
+  transition: background-color 0.45s ease, color 0.45s ease, border-color 0.45s ease, fill 0.45s ease !important;
 }

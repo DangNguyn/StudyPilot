@@ -1,6 +1,7 @@
 "use client";
 
 import { applyLanguage, currentLang, tx } from "@/lib/i18n";
+import { applyTheme, currentTheme } from "@/lib/theme";
 import Link from "next/link";
 import { useCurrentUserName } from "@/lib/current-user";
 import UserAvatar from "@/components/user-avatar";
@@ -141,6 +142,14 @@ function AppShellContent({
       applyLanguage(savedLanguage);
     }
   }, [savedLanguage]);
+
+  // Chế độ tối cũng đi theo tài khoản
+  const savedTheme = user?.user_metadata?.sp_theme;
+  useEffect(() => {
+    if ((savedTheme === "dark" || savedTheme === "light") && savedTheme !== currentTheme()) {
+      applyTheme(savedTheme, false);
+    }
+  }, [savedTheme]);
 
   // Trong lúc React "hydrate" chỉ vẽ logo (không có chữ) để bản máy chủ và trình duyệt luôn giống nhau,
   // kể cả khi người dùng chọn tiếng Anh (máy chủ luôn vẽ tiếng Việt).

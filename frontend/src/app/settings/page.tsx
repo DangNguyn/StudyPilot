@@ -25,6 +25,7 @@ import {
 } from "@/components/icons";
 import { authErrorMessage, getAuthClient } from "@/lib/auth";
 import { useCurrentUserAvatar, useCurrentUserName } from "@/lib/current-user";
+import { applyTheme, currentTheme, type Theme } from "@/lib/theme";
 
 /*
  * Trang Cài đặt: tài khoản (tên, ảnh đại diện, mật khẩu), giao diện, nhắc nhở học tập, ngôn ngữ.
@@ -37,6 +38,21 @@ const PRESET_AVATARS = [
   { src: "/avatars/girl.png", label: tx("Bạn nữ đeo tai nghe") },
   { src: "/avatars/boy.png", label: tx("Bạn nam tóc đen") },
 ];
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+// Lưu giờ nhắc + bật/tắt sang backend gửi thông báo (cùng dữ liệu với nút chuông)
+async function syncReminder(reminder: { enabled: boolean; hour: number }, email: string) {
+  try {
+    await fetch(`${API_URL}/api/notifications/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email || undefined, enabled: reminder.enabled, daily_hour: reminder.hour }),
+    });
+  } catch {
+    /* backend chưa chạy: vẫn giữ lựa chọn trong tài khoản */
+  }
+}
+
 const REMINDER_HOURS = Array.from({ length: 17 }, (_, index) => index + 5); // 05:00 → 21:00
 
 type Reminder = { enabled: boolean; hour: number };
@@ -68,6 +84,13 @@ export default function SettingsPage() {
   const [name, setName] = useState(savedName);
   const [reminder, setReminder] = useState<Reminder>(savedReminder);
   const [language, setLanguage] = useState(savedLanguage);
+  const savedTheme: Theme = meta.sp_theme === "dark" ? "dark" : "light";
+  const [theme, setThemeState] = useState<Theme>(() => (typeof document === "undefined" ? savedTheme : currentTheme()));
+  // Xem trước ngay khi gạt công tắc; bấm Lưu để giữ cho các lần đăng nhập sau
+  const setTheme = (next: Theme) => {
+    setThemeState(next);
+    applyTheme(next);
+  };
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
   const toastTimer = useRef<number | null>(null);
@@ -76,6 +99,7 @@ export default function SettingsPage() {
     name.trim() !== savedName ||
     reminder.enabled !== savedReminder.enabled ||
     reminder.hour !== savedReminder.hour ||
+    theme !== savedTheme ||
     language !== savedLanguage;
 
   function showToast(next: Toast) {
@@ -94,8 +118,10 @@ export default function SettingsPage() {
     }
     setSaving(true);
     const { error } = await client.auth.updateUser({
-      data: { sp_name: cleanName, sp_reminder: reminder, sp_language: language },
+      data: { sp_name: cleanName, sp_reminder: reminder, sp_language: language, sp_theme: theme },
     });
+    // Đồng bộ nhắc nhở với bảng thông báo (nút chuông) để cả hai luôn khớp nhau
+    if (!error) await syncReminder(reminder, user?.email || "");
     setSaving(false);
     if (error) showToast({ tone: "error", text: authErrorMessage(error) });
     else {
@@ -169,10 +195,8 @@ export default function SettingsPage() {
             <ToggleRow
               title={tx("Chế độ tối")}
               description={tx("Chuyển sang nền tối, đỡ mỏi mắt khi học ban đêm.")}
-              checked={false}
-              disabled
-              badge={tx("Sắp có")}
-              onChange={() => undefined}
+              checked={theme === "dark"}
+              onChange={(dark) => setTheme(dark ? "dark" : "light")}
             />
           </SettingsCard>
 
@@ -180,7 +204,7 @@ export default function SettingsPage() {
           <SettingsCard icon={<IconBell size={22} />} title={tx("Nhắc nhở học tập")}>
             <ToggleRow
               title={tx("Bật nhắc nhở")}
-              description={tx("Nhận mail nhắc học theo kế hoạch tại {0}.", [user?.email || tx("Gmail của bạn")])}
+              description={tx("Nhắc bạn học bài và ôn lại phần còn yếu đúng lịch mỗi ngày.")}
               checked={reminder.enabled}
               onChange={(enabled) => setReminder((current) => ({ ...current, enabled }))}
             />

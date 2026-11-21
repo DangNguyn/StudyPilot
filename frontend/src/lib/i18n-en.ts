@@ -1593,4 +1593,9 @@ export const EN: Record<string, string> = {
   "AI đang đọc tài liệu và soạn thẻ...": "AI is reading your document and writing cards...",
   "Tạo bộ thẻ với AI": "Create deck with AI",
   "Thường mất khoảng 20–60 giây, tuỳ độ dài tài liệu.": "Usually takes about 20–60 seconds, depending on the document length.",
+  "Cài đặt thông báo": "Notification settings",
+  "Máy chủ chưa cấu hình Gmail gửi thư nên thông báo tạm thời chưa gửi được.": "The server hasn't set up its sending Gmail yet, so notifications can't be sent for now.",
+  "Tắt để tạm dừng mọi thông báo": "Turn off to pause all notifications",
+  "Thông báo gửi tới Gmail bạn dùng để đăng nhập. Nếu không thấy, hãy xem mục Spam.": "Notifications go to the Gmail you sign in with. If you don't see them, check Spam.",
+  "Nhắc bạn học bài và ôn lại phần còn yếu đúng lịch mỗi ngày.": "Reminds you to study and review weak spots on schedule every day.",
 };
