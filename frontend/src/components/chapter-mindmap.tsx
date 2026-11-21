@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { IconArrowRight, IconBook, IconLock, Sparkle } from "@/components/icons";
 import { getMainTopicTitle } from "@/lib/content-titles";
@@ -40,7 +41,7 @@ const CHAPTER_PREFIX = /^\s*(?:chương|chapter|unit|phần|part)\s*([0-9]+|[ivx
 function chapterParts(chapter: string) {
   const match = chapter.match(CHAPTER_PREFIX);
   return {
-    label: match ? `Chương ${match[1].toUpperCase()}` : "Chương",
+    label: match ? tx("Chương {0}", [match[1].toUpperCase()]) : tx("Chương"),
     title: chapter.replace(CHAPTER_PREFIX, "").trim() || chapter,
   };
 }
@@ -87,12 +88,12 @@ export default function ChapterMindmap({
     })
       .then(async (response) => {
         const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result?.detail || "Chưa tải được mindmap.");
+        if (!response.ok) throw new Error(result?.detail || tx("Chưa tải được mindmap."));
         if (!cancelled) setState({ status: "ready", response: result });
       })
       .catch((error) => {
         if (!cancelled) {
-          setState({ status: "error", message: error instanceof Error ? error.message : "Chưa tải được mindmap." });
+          setState({ status: "error", message: error instanceof Error ? error.message : tx("Chưa tải được mindmap.") });
         }
       });
     return () => {
@@ -107,7 +108,7 @@ export default function ChapterMindmap({
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Tổng kết {label.toLowerCase()}</p>
+          <p className="sp-accent text-[17px] text-[var(--sp-pink)]">{tx("Tổng kết {0}", [label.toLowerCase()])}</p>
           <h3 className="flex items-center gap-2 text-[22px] text-[var(--sp-ink)]">
             Mindmap: {title}
             <Sparkle size={16} className="sp-twinkle text-[var(--sp-yellow)]" />
@@ -122,7 +123,8 @@ export default function ChapterMindmap({
       {state.status === "loading" && (
         <div className="mt-5 rounded-2xl bg-[var(--sp-surface-2)] px-5 py-10 text-center text-sm text-[var(--sp-muted)]">
           <Sparkle size={20} className="sp-twinkle mx-auto mb-2 text-[var(--sp-pink)]" />
-          Đang chuẩn bị mindmap của chương… Lần đầu AI cần khoảng 10–20 giây.
+
+          {tx("Đang chuẩn bị mindmap của chương… Lần đầu AI cần khoảng 10–20 giây.")}
         </div>
       )}
 
@@ -137,7 +139,8 @@ export default function ChapterMindmap({
             }}
             className="font-bold underline underline-offset-2"
           >
-            Thử lại
+
+            {tx("Thử lại")}
           </button>
         </div>
       )}
@@ -203,7 +206,7 @@ function MindmapView({
       {/* Liên kết giữa các ý */}
       {data.links.length > 0 && (
         <div className="mt-5">
-          <p className="text-[13px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">Liên kết giữa các ý</p>
+          <p className="text-[13px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">{tx("Liên kết giữa các ý")}</p>
           <ul className="mt-2 space-y-2">
             {data.links.map((link, index) => {
               const from = data.branches[link.from[0]]?.points[link.from[1]];
@@ -242,7 +245,7 @@ function MindmapView({
             </p>
             {branch.summary && <p className="mt-1 text-[14px] leading-6 text-[var(--sp-text-2)]">{plainMath(branch.summary)}</p>}
             {lessonNames.length > 1 && (
-              <p className="mt-1 text-[12px] text-[var(--sp-muted)]">Gồm: {lessonNames.join(" · ")}</p>
+              <p className="mt-1 text-[12px] text-[var(--sp-muted)]">{tx("Gồm: {0}", [lessonNames.join(" · ")])}</p>
             )}
           </div>
           {onOpenTopic && branch.topic_ids[0] && (
@@ -252,7 +255,8 @@ function MindmapView({
               className="sp-btn sp-btn-secondary shrink-0 px-4 py-2 text-sm"
             >
               <IconBook size={15} />
-              Mở bài học
+
+              {tx("Mở bài học")}
               <IconArrowRight size={14} />
             </button>
           )}
@@ -360,7 +364,7 @@ function MindmapTree({
       ref={rootRef}
       className="flex flex-col justify-center rounded-2xl border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-purple)] px-4 py-4 text-white shadow-[3px_3px_0_var(--sp-pink)]"
     >
-      <span className="text-[11px] font-bold uppercase tracking-wide text-white/70">Chương</span>
+      <span className="text-[11px] font-bold uppercase tracking-wide text-white/70">{tx("Chương")}</span>
       <span className="mt-0.5 text-[16px] font-extrabold leading-snug">{central}</span>
     </div>
   );
@@ -522,7 +526,7 @@ function LockedMindmap({
 
   async function upgrade() {
     if (!canSwitch) {
-      setMessage("Thanh toán gói Pro sẽ sớm được mở. Hẹn bạn quay lại nhé!");
+      setMessage(tx("Thanh toán gói Pro sẽ sớm được mở. Hẹn bạn quay lại nhé!"));
       return;
     }
     setBusy(true);
@@ -533,10 +537,10 @@ function LockedMindmap({
         body: JSON.stringify({ plan: "pro" }),
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result?.detail || "Chưa nâng cấp được.");
+      if (!response.ok) throw new Error(result?.detail || tx("Chưa nâng cấp được."));
       onUnlocked();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Chưa nâng cấp được.");
+      setMessage(error instanceof Error ? error.message : tx("Chưa nâng cấp được."));
     } finally {
       setBusy(false);
     }
@@ -552,11 +556,9 @@ function LockedMindmap({
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
             <IconLock size={22} />
           </span>
-          <p className="mt-3 text-[18px] font-extrabold text-[var(--sp-ink)]">Mindmap có trong gói Pro</p>
+          <p className="mt-3 text-[18px] font-extrabold text-[var(--sp-ink)]">{tx("Mindmap có trong gói Pro")}</p>
           <p className="mt-1.5 text-[14px] leading-6 text-[var(--sp-text-2)]">
-            Chương này có {lessons.length} bài. Nâng cấp để xem sơ đồ kiến thức nối các ý chính giữa các bài, ôn
-            lại cả chương chỉ trong vài phút.
-          </p>
+            {tx("Chương này có {0} bài. Nâng cấp để xem sơ đồ kiến thức nối các ý chính giữa các bài, ôn lại cả chương chỉ trong vài phút.", [lessons.length])}</p>
           <button
             type="button"
             disabled={busy}
@@ -564,7 +566,7 @@ function LockedMindmap({
             className="sp-btn sp-btn-primary mt-4 w-full justify-center py-2.5 text-sm disabled:opacity-60"
           >
             <Sparkle size={14} />
-            {busy ? "Đang nâng cấp…" : canSwitch ? "Nâng cấp lên Pro (chế độ thử)" : "Nâng cấp lên Pro"}
+            {busy ? tx("Đang nâng cấp…") : canSwitch ? tx("Nâng cấp lên Pro (chế độ thử)") : tx("Nâng cấp lên Pro")}
           </button>
           {message && <p className="mt-2 text-[12px] font-semibold text-[var(--sp-pink-dark)]">{message}</p>}
         </div>

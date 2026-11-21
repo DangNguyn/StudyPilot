@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { IconClock } from "@/components/icons";
 
@@ -77,7 +78,7 @@ export default function StudyTimer({ storageKey }: { storageKey: string }) {
           : "border-[var(--sp-line)] bg-[var(--sp-surface-2)]"
       }`}
       role="timer"
-      aria-label={`Đã học ${minutes + hours * 60} phút ${rest} giây`}
+      aria-label={tx("Đã học {0} phút {1} giây", [minutes + hours * 60, rest])}
     >
       <span
         className={`relative flex h-8 w-8 items-center justify-center rounded-xl ${
@@ -91,7 +92,7 @@ export default function StudyTimer({ storageKey }: { storageKey: string }) {
       </span>
       <span className="leading-tight">
         <span className="block text-[10px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">
-          {running ? "Đang học" : "Tạm dừng"}
+          {running ? tx("Đang học") : tx("Tạm dừng")}
         </span>
         <span className="block min-w-[56px] font-mono text-[17px] font-extrabold tabular-nums text-[var(--sp-ink)]">
           {clock}
@@ -102,7 +103,7 @@ export default function StudyTimer({ storageKey }: { storageKey: string }) {
         onClick={() => setPaused((value) => !value)}
         className="rounded-lg px-2 py-1 text-xs font-bold text-[var(--sp-peri-dark)] transition hover:bg-[var(--sp-lav)]"
       >
-        {paused ? "Tiếp tục" : "Dừng"}
+        {paused ? tx("Tiếp tục") : tx("Dừng")}
       </button>
     </div>
   );

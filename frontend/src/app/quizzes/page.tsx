@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -93,7 +94,7 @@ const PALETTE = [
 function formatDuration(seconds = 0, requiredSeconds = 300) {
   const remaining = Math.max(0, requiredSeconds - seconds);
   const minutes = Math.ceil(remaining / 60);
-  return minutes > 0 ? `${minutes} phút` : "Đã đủ thời gian học";
+  return minutes > 0 ? tx("{0} phút", [minutes]) : tx("Đã đủ thời gian học");
 }
 
 // Chỉ cho phép bắt đầu Quiz khi backend xác nhận đã mở khóa
@@ -106,15 +107,15 @@ function getLockMessage(quiz: Quiz) {
   if (quiz.lock_reason) return quiz.lock_reason;
 
   if (quiz.is_retake) {
-    if (quiz.review_status === "completed") return "Đã hoàn thành bài kiểm tra lại";
-    return `Cần ôn lại tài liệu thêm ${formatDuration(quiz.review_study_seconds, 900)}`;
+    if (quiz.review_status === "completed") return tx("Đã hoàn thành bài kiểm tra lại");
+    return tx("Cần ôn lại tài liệu thêm {0}", [formatDuration(quiz.review_study_seconds, 900)]);
   }
 
   if (quiz.session_status !== "in_progress" && quiz.session_status !== "completed") {
-    return "Cần bắt đầu buổi học trước";
+    return tx("Cần bắt đầu buổi học trước");
   }
 
-  return "Quiz đã sẵn sàng để làm.";
+  return tx("Quiz đã sẵn sàng để làm.");
 }
 
 function getAttemptPercent(attempt: QuizAttempt) {
@@ -140,21 +141,21 @@ function initials(name: string) {
 function quizTitle(quiz: Quiz) {
   // Bài kiểm tra lại mới có sẵn tên "Kiểm tra lại ngày N: ..."
   if (quiz.is_retake && /^kiểm tra lại/i.test(quiz.title || "")) {
-    return quiz.title.replace(/^Kiểm tra lại ngày (\d+)/i, "Kiểm tra lại ngày học $1");
+    return quiz.title.replace(/^Kiểm tra lại ngày (\d+)/i, tx("Kiểm tra lại ngày học $1"));
   }
   const title = getMainTopicTitle(quiz.topic_name || quiz.title);
-  return quiz.is_retake ? `Kiểm tra lại: ${title}` : title;
+  return quiz.is_retake ? tx("Kiểm tra lại: {0}", [title]) : title;
 }
 
 /* ================= Trang ================= */
 
-const QUIZ_LIST_STAGES = ["Tìm bài", "Xem điểm cũ", "Kiểm tra mở khoá", "Xếp nhóm"];
+const QUIZ_LIST_STAGES = [tx("Tìm bài"), tx("Xem điểm cũ"), tx("Kiểm tra mở khoá"), tx("Xếp nhóm")];
 
 export default function QuizzesPage() {
   return (
     <Suspense
       fallback={
-        <SmartLoading text="Đang tìm bài kiểm tra của bạn…" stages={QUIZ_LIST_STAGES} />
+        <SmartLoading text={tx("Đang tìm bài kiểm tra của bạn…")} stages={QUIZ_LIST_STAGES} />
       }
     >
       <QuizzesContent />
@@ -179,22 +180,22 @@ function QuizzesContent() {
         const response = await fetch(`${API_URL}/api/quizzes`);
         const result = await response.json();
         if (!response.ok) {
-          throw new Error(result.detail || "Không thể tải danh sách bài kiểm tra.");
+          throw new Error(result.detail || tx("Không thể tải danh sách bài kiểm tra."));
         }
         setQuizzes(result.data || []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Đã xảy ra lỗi khi tải bài kiểm tra.");
+        setError(err instanceof Error ? err.message : tx("Đã xảy ra lỗi khi tải bài kiểm tra."));
       }
 
       try {
         const response = await fetch(`${API_URL}/api/quiz-attempts`);
         const result = await response.json();
         if (!response.ok) {
-          throw new Error(result.detail || "Không thể tải lịch sử làm bài.");
+          throw new Error(result.detail || tx("Không thể tải lịch sử làm bài."));
         }
         setAttempts(result.data || []);
       } catch (err) {
-        setHistoryError(err instanceof Error ? err.message : "Đã xảy ra lỗi khi tải lịch sử.");
+        setHistoryError(err instanceof Error ? err.message : tx("Đã xảy ra lỗi khi tải lịch sử."));
       } finally {
         setLoading(false);
       }
@@ -229,8 +230,8 @@ function QuizzesContent() {
         name:
           planQuizzes[0]?.subject_name ||
           planQuizzes[0]?.plan_title ||
-          (planId === "unassigned" ? "Chưa liên kết môn học" : "Môn học"),
-        planTitle: planQuizzes[0]?.plan_title || "Kế hoạch ôn tập",
+          (planId === "unassigned" ? tx("Chưa liên kết môn học") : tx("Môn học")),
+        planTitle: planQuizzes[0]?.plan_title || tx("Kế hoạch ôn tập"),
         quizzes: planQuizzes,
         attempts: planAttempts,
         unlocked: planQuizzes.filter(canStartQuiz).length,
@@ -248,10 +249,10 @@ function QuizzesContent() {
   if (loading || holdLoading) {
     return (
       <SmartLoading
-        text="Đang tìm bài kiểm tra của bạn…"
-        sub="Pilot đang lục từng ngăn bài kiểm tra."
+        text={tx("Đang tìm bài kiểm tra của bạn…")}
+        sub={tx("Pilot đang lục từng ngăn bài kiểm tra.")}
         stages={QUIZ_LIST_STAGES}
-        continueLabel="Xem bài kiểm tra"
+        continueLabel={tx("Xem bài kiểm tra")}
         done={!loading}
         onHoldChange={setHoldLoading}
       />
@@ -295,25 +296,25 @@ function SubjectPicker({
   return (
     <div className="mx-auto max-w-6xl space-y-7">
       <section>
-        <p className="text-sm font-medium text-[var(--sp-muted)]">KIỂM TRA KIẾN THỨC</p>
+        <p className="text-sm font-medium text-[var(--sp-muted)]">{tx("KIỂM TRA KIẾN THỨC")}</p>
         <h1 className="mt-2 flex items-end gap-3 text-[44px] sm:text-[52px]">
           <span>
-            Chọn môn để <span className="sp-squiggle">kiểm tra</span>
+
+            {tx("Chọn môn để")} <span className="sp-squiggle">{tx("kiểm tra")}</span>
           </span>
           <Sparkle size={24} className="sp-twinkle mb-3 text-[var(--sp-yellow)]" />
         </h1>
         <p className="mt-2 text-[15px] text-[var(--sp-muted)]">
           {totalQuizzes > 0
-            ? `${subjects.length} môn · ${totalQuizzes} bài kiểm tra · ${attemptsCount} lượt đã làm${
-                totalPending > 0 ? ` · ${totalPending} bài đang chờ bạn` : ""
-              }`
-            : "Hoàn thành buổi học để mở khóa bài kiểm tra."}
+            ? tx("{0} môn · {1} bài kiểm tra · {2} lượt đã làm{3}", [subjects.length, totalQuizzes, attemptsCount, totalPending > 0 ? tx(" · {0} bài đang chờ bạn", [totalPending]) : ""])
+            : tx("Hoàn thành buổi học để mở khóa bài kiểm tra.")}
         </p>
       </section>
 
       {missingPlan && (
         <p className="rounded-2xl bg-[var(--sp-amber-bg)] px-4 py-3 text-sm font-medium text-[var(--sp-amber-dark)]">
-          Không tìm thấy bài kiểm tra của môn này. Hãy chọn một môn bên dưới.
+
+          {tx("Không tìm thấy bài kiểm tra của môn này. Hãy chọn một môn bên dưới.")}
         </p>
       )}
 
@@ -322,12 +323,14 @@ function SubjectPicker({
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]">
             <IconPen size={26} />
           </span>
-          <h3 className="mt-4 font-bold text-[var(--sp-ink)]">Chưa có bài kiểm tra nào</h3>
+          <h3 className="mt-4 font-bold text-[var(--sp-ink)]">{tx("Chưa có bài kiểm tra nào")}</h3>
           <p className="mt-1 text-sm text-[var(--sp-muted)]">
-            Tạo kế hoạch ôn thi và hoàn thành buổi học đầu tiên để có bài kiểm tra.
+
+            {tx("Tạo kế hoạch ôn thi và hoàn thành buổi học đầu tiên để có bài kiểm tra.")}
           </p>
           <Link href="/study-plans" className="sp-btn sp-btn-primary mt-5 px-5 py-2.5 text-sm">
-            Đến kế hoạch ôn thi
+
+            {tx("Đến kế hoạch ôn thi")}
           </Link>
         </div>
       ) : (
@@ -354,11 +357,11 @@ function SubjectPicker({
                   </span>
                   {item.pending.length > 0 ? (
                     <span className="sp-chip bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
-                      {item.pending.length} bài đang chờ
-                    </span>
+                      {tx("{0} bài đang chờ", [item.pending.length])}</span>
                   ) : (
                     <span className="sp-chip bg-[var(--sp-surface-2)] text-[var(--sp-muted)]">
-                      Không có bài mới
+
+                      {tx("Không có bài mới")}
                     </span>
                   )}
                 </div>
@@ -369,11 +372,11 @@ function SubjectPicker({
                 <p className="mt-0.5 truncate text-[13px] text-[var(--sp-muted)]">{item.planTitle}</p>
 
                 <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                  <MiniStat value={item.quizzes.length} label="bài" />
-                  <MiniStat value={`${doneCount}/${item.quizzes.length}`} label="đã làm" />
+                  <MiniStat value={item.quizzes.length} label={tx("bài")} />
+                  <MiniStat value={`${doneCount}/${item.quizzes.length}`} label={tx("đã làm")} />
                   <MiniStat
                     value={item.average === null ? "–" : `${item.average}%`}
-                    label="điểm TB"
+                    label={tx("điểm TB")}
                     tone={item.average === null ? undefined : scoreStyle(item.average).text}
                   />
                 </div>
@@ -389,7 +392,8 @@ function SubjectPicker({
                   {next ? (
                     <>
                       <p className="text-xs font-bold uppercase tracking-wide text-[var(--sp-muted)]">
-                        Bài nên làm tiếp
+
+                        {tx("Bài nên làm tiếp")}
                       </p>
                       <p className="mt-1 line-clamp-2 font-semibold text-[var(--sp-ink)]">
                         {quizTitle(next)}
@@ -399,8 +403,8 @@ function SubjectPicker({
                     <p className="flex items-center gap-2 font-semibold text-[var(--sp-muted)]">
                       <IconLock size={15} />
                       {item.unlocked > 0
-                        ? "Đã làm hết các bài đang mở"
-                        : "Học xong buổi tiếp theo để mở bài mới"}
+                        ? tx("Đã làm hết các bài đang mở")
+                        : tx("Học xong buổi tiếp theo để mở bài mới")}
                     </p>
                   )}
                 </div>
@@ -409,7 +413,8 @@ function SubjectPicker({
                   href={`/quizzes?plan=${encodeURIComponent(item.planId)}`}
                   className="sp-btn sp-btn-primary mt-4 w-full justify-center py-2.5 text-sm"
                 >
-                  Làm kiểm tra
+
+                  {tx("Làm kiểm tra")}
                   <IconArrowRight size={16} className="transition group-hover:translate-x-1" />
                 </Link>
               </article>
@@ -469,7 +474,7 @@ type QuizOverview = {
 
 type QuizState = "open" | "done" | "locked";
 
-const WEEKDAYS = ["Chủ nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy"];
+const WEEKDAYS = [tx("Chủ nhật"), tx("Thứ Hai"), tx("Thứ Ba"), tx("Thứ Tư"), tx("Thứ Năm"), tx("Thứ Sáu"), tx("Thứ Bảy")];
 
 function vnDateKey(value?: string | null) {
   if (!value) return "";
@@ -515,20 +520,20 @@ function quizGroup(quiz: Quiz, state: QuizState): QuizGroup {
 
 const GROUPS: Record<QuizGroup, { name: string; desc: string; icon: React.ReactNode; tone: string }> = {
   done: {
-    name: "Đã hoàn thành",
-    desc: "Bấm để xem lại câu sai kèm giải thích và nguồn trong tài liệu.",
+    name: tx("Đã hoàn thành"),
+    desc: tx("Bấm để xem lại câu sai kèm giải thích và nguồn trong tài liệu."),
     icon: <IconCheck size={22} />,
     tone: "bg-emerald-600",
   },
   todo: {
-    name: "Chưa làm · Đang khoá",
-    desc: "Bài kiểm tra trắc nghiệm cuối mỗi buổi. Học xong buổi thì bài mở.",
+    name: tx("Chưa làm · Đang khoá"),
+    desc: tx("Bài kiểm tra trắc nghiệm cuối mỗi buổi. Học xong buổi thì bài mở."),
     icon: <IconBolt size={22} />,
     tone: "bg-[var(--sp-peri)]",
   },
   review: {
-    name: "Ôn tập",
-    desc: "Đề dựng theo điểm lần trước: ưu tiên câu sai, dưới 50% có thêm điền khuyết.",
+    name: tx("Ôn tập"),
+    desc: tx("Đề dựng theo điểm lần trước: ưu tiên câu sai, dưới 50% có thêm điền khuyết."),
     icon: <IconRepeat size={22} />,
     tone: "bg-[var(--sp-pink)]",
   },
@@ -536,9 +541,9 @@ const GROUPS: Record<QuizGroup, { name: string; desc: string; icon: React.ReactN
 const GROUP_ORDER: QuizGroup[] = ["done", "todo", "review"];
 
 function scoreTone(percent: number) {
-  if (percent >= 80) return { box: "border-emerald-200 bg-emerald-50", text: "text-emerald-700", fill: "bg-emerald-600", label: "Đạt" };
-  if (percent >= 50) return { box: "border-[#f0d98a] bg-[var(--sp-amber-bg)]", text: "text-[var(--sp-amber-dark)]", fill: "bg-[#d99a1c]", label: "Cần củng cố" };
-  return { box: "border-[var(--sp-red-line)] bg-[var(--sp-red-bg)]", text: "text-[var(--sp-red-dark)]", fill: "bg-[var(--sp-red)]", label: "Cần ôn cấp tốc" };
+  if (percent >= 80) return { box: "border-emerald-200 bg-emerald-50", text: "text-emerald-700", fill: "bg-emerald-600", label: tx("Đạt") };
+  if (percent >= 50) return { box: "border-[#f0d98a] bg-[var(--sp-amber-bg)]", text: "text-[var(--sp-amber-dark)]", fill: "bg-[#d99a1c]", label: tx("Cần củng cố") };
+  return { box: "border-[var(--sp-red-line)] bg-[var(--sp-red-bg)]", text: "text-[var(--sp-red-dark)]", fill: "bg-[var(--sp-red)]", label: tx("Cần ôn cấp tốc") };
 }
 
 function SubjectQuizzes({
@@ -595,7 +600,7 @@ function SubjectQuizzes({
   );
 
   const tabs: { key: QuizGroup | "all"; name: string; icon: React.ReactNode; tone: string; count: number }[] = [
-    { key: "all", name: "Tất cả", icon: <IconList size={16} />, tone: "bg-[var(--sp-purple-deep)]", count: subject.quizzes.length },
+    { key: "all", name: tx("Tất cả"), icon: <IconList size={16} />, tone: "bg-[var(--sp-purple-deep)]", count: subject.quizzes.length },
     ...GROUP_ORDER.map((key) => ({ key, name: GROUPS[key].name, icon: GROUPS[key].icon, tone: GROUPS[key].tone, count: grouped[key].length })),
   ];
 
@@ -606,25 +611,28 @@ function SubjectQuizzes({
         <div className="min-w-0">
           <nav className="flex items-center gap-1.5 text-sm font-medium text-[var(--sp-muted)]">
             <Link href="/quizzes" className="hover:text-[var(--sp-peri-dark)]">
-              Kiểm tra kiến thức
+
+              {tx("Kiểm tra kiến thức")}
             </Link>
             <IconChevronRight size={14} />
             <span className="truncate text-[var(--sp-text-2)]">{subject.name}</span>
           </nav>
           <h1 className="mt-2 flex items-end gap-3 text-[40px] leading-tight sm:text-[52px]">
             <span>
-              Kiểm tra <span className="sp-squiggle">kiến thức</span>
+
+              {tx("Kiểm tra")} <span className="sp-squiggle">{tx("kiến thức")}</span>
             </span>
             <Sparkle size={24} className="sp-twinkle mb-3 text-[var(--sp-yellow)]" />
           </h1>
           <p className="mt-1 text-[15px] text-[var(--sp-muted)]">
-            Chỉ hỏi những phần bạn đã học. Câu hỏi được tạo từ tài liệu bạn tải lên.
+
+            {tx("Chỉ hỏi những phần bạn đã học. Câu hỏi được tạo từ tài liệu bạn tải lên.")}
           </p>
         </div>
 
         <label className="relative flex w-full items-center gap-2 rounded-2xl border-2 border-[var(--sp-line)] bg-white px-4 py-2.5 transition focus-within:border-[var(--sp-peri)] sm:w-auto sm:min-w-[240px]">
           <IconBook size={18} className="shrink-0 text-[var(--sp-ink)]" />
-          <span className="sr-only">Chọn môn</span>
+          <span className="sr-only">{tx("Chọn môn")}</span>
           <select
             value={subject.planId}
             onChange={(event) => router.push(`/quizzes?plan=${encodeURIComponent(event.target.value)}`)}
@@ -641,7 +649,7 @@ function SubjectQuizzes({
       </section>
 
       {/* Lọc theo loại */}
-      <div className="flex flex-wrap gap-3" role="group" aria-label="Lọc bài kiểm tra">
+      <div className="flex flex-wrap gap-3" role="group" aria-label={tx("Lọc bài kiểm tra")}>
         {tabs.map((tab) => {
           const active = filter === tab.key;
           return (
@@ -674,7 +682,8 @@ function SubjectQuizzes({
 
       {subject.quizzes.length === 0 ? (
         <p className="sp-card p-6 text-center text-sm text-[var(--sp-muted)]">
-          Chưa có bài kiểm tra nào. Học xong buổi đầu tiên để mở bài.
+
+          {tx("Chưa có bài kiểm tra nào. Học xong buổi đầu tiên để mở bài.")}
         </p>
       ) : (
         GROUP_ORDER.filter((key) => filter === "all" || filter === key).map((key) => (
@@ -691,13 +700,13 @@ function SubjectQuizzes({
         {historyError ? (
           historyError
         ) : subject.attempts.length === 0 ? (
-          "Bạn chưa làm bài nào của môn này."
+          tx("Bạn chưa làm bài nào của môn này.")
         ) : (
           <span>
-            Đã làm <b className="text-[var(--sp-ink)]">{totals.questions} câu</b> qua {subject.attempts.length} lượt, đúng{" "}
+
+            {tx("Đã làm")} <b className="text-[var(--sp-ink)]">{tx("{0} câu", [totals.questions])}</b> qua {subject.attempts.length}  {tx("lượt, đúng")}{" "}
             <b className="text-[var(--sp-ink)]">
-              {totals.correct} câu ({totals.questions ? Math.round((totals.correct / totals.questions) * 100) : 0}%)
-            </b>
+              {tx("{0} câu ({1}%)", [totals.correct, totals.questions ? Math.round((totals.correct / totals.questions) * 100) : 0])}</b>
             .
           </span>
         )}
@@ -738,7 +747,7 @@ function GroupSection({
     return (
       <button
         type="button"
-        aria-label={dir < 0 ? "Xem bài phía trước" : "Xem thêm bài"}
+        aria-label={dir < 0 ? tx("Xem bài phía trước") : tx("Xem thêm bài")}
         disabled={disabled}
         onClick={() => track.current?.scrollBy({ left: dir * 490, behavior: "smooth" })}
         className={`flex h-10 w-10 items-center justify-center rounded-xl border-2 bg-white ${
@@ -762,7 +771,7 @@ function GroupSection({
           <h2 className="text-[24px] text-[var(--sp-ink)]">{GROUPS[group].name}</h2>
           <p className="text-sm text-[var(--sp-muted)]">{GROUPS[group].desc}</p>
         </div>
-        <span className="sp-chip border-2 border-[var(--sp-line)] bg-white text-[var(--sp-muted)]">{count} bài</span>
+        <span className="sp-chip border-2 border-[var(--sp-line)] bg-white text-[var(--sp-muted)]">{tx("{0} bài", [count])}</span>
         {showArrows && (
           <div className="flex gap-2">
             {arrow(-1)}
@@ -772,12 +781,12 @@ function GroupSection({
       </div>
       {count === 0 ? (
         <p className="rounded-2xl border-2 border-dashed border-[var(--sp-line)] px-5 py-4 text-sm text-[var(--sp-muted)]">
-          {group === "review" ? "Chưa có bài ôn tập. Bài dưới 80% sẽ có bài ôn ở đây." : "Chưa có bài nào."}
+          {group === "review" ? tx("Chưa có bài ôn tập. Bài dưới 80% sẽ có bài ôn ở đây.") : tx("Chưa có bài nào.")}
         </p>
       ) : horizontal ? (
         <>
           <p className="-mt-2 pl-[66px] text-[12.5px] text-[var(--sp-muted)]">
-            {group === "done" ? "Mới nhất bên trái · vuốt sang phải để xem bài cũ hơn" : "Bài cần làm trước ở bên trái · vuốt sang phải để xem thêm"}
+            {group === "done" ? tx("Mới nhất bên trái · vuốt sang phải để xem bài cũ hơn") : tx("Bài cần làm trước ở bên trái · vuốt sang phải để xem thêm")}
           </p>
           <div
             ref={track}
@@ -816,11 +825,11 @@ function QuizCard({
     fetch(`${API_URL}/api/quizzes/${quiz.id}/overview`)
       .then(async (response) => {
         const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.detail || "Không tải được thông tin bài.");
+        if (!response.ok) throw new Error(result.detail || tx("Không tải được thông tin bài."));
         if (!cancelled) setOverview(result.data);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Không tải được thông tin bài.");
+        if (!cancelled) setError(err instanceof Error ? err.message : tx("Không tải được thông tin bài."));
       });
     return () => {
       cancelled = true;
@@ -833,7 +842,7 @@ function QuizCard({
   const chapter = chapterCode(context?.chapter);
   const questionCount = overview?.question_count ?? quiz.question_count ?? 0;
   const typeLabel =
-    overview && overview.fill_count > 0 ? `${overview.choice_count} trắc nghiệm · ${overview.fill_count} điền` : "Trắc nghiệm";
+    overview && overview.fill_count > 0 ? tx("{0} trắc nghiệm · {1} điền", [overview.choice_count, overview.fill_count]) : tx("Trắc nghiệm");
   const mode = group === "done" ? "revisit" : group === "review" ? "review" : "learn";
   const lessonHref =
     context?.subject_id && context?.study_session_id
@@ -857,28 +866,28 @@ function QuizCard({
   const reviewKey = vnDateKey(quiz.review_date);
   const kicker =
     group === "review"
-      ? `Ôn tập · ${weekdayDate(reviewKey || studyKey)}`
-      : `Bài kiểm tra · ${weekdayDate(studyKey)}`;
+      ? tx("Ôn tập · {0}", [weekdayDate(reviewKey || studyKey)])
+      : tx("Bài kiểm tra · {0}", [weekdayDate(studyKey)]);
 
   const chips: { text: string; style: string; icon: React.ReactNode }[] = [];
   if (group === "done") {
-    chips.push({ text: `Đã nộp ${shortDate(latest?.submitted_at || studyKey)}`, style: "bg-emerald-50 text-emerald-700", icon: <IconCheck size={13} /> });
-    if (quiz.is_retake) chips.push({ text: "Bài ôn tập", style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]", icon: <IconRepeat size={13} /> });
+    chips.push({ text: tx("Đã nộp {0}", [shortDate(latest?.submitted_at || studyKey)]), style: "bg-emerald-50 text-emerald-700", icon: <IconCheck size={13} /> });
+    if (quiz.is_retake) chips.push({ text: tx("Bài ôn tập"), style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]", icon: <IconRepeat size={13} /> });
   } else if (group === "todo") {
     chips.push(
       locked
-        ? { text: "Đang khoá", style: "bg-[var(--sp-surface-2)] text-[var(--sp-muted)]", icon: <IconLock size={13} /> }
-        : { text: studyKey === today ? "Hôm nay" : "Đang mở", style: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]", icon: <IconBolt size={13} /> }
+        ? { text: tx("Đang khoá"), style: "bg-[var(--sp-surface-2)] text-[var(--sp-muted)]", icon: <IconLock size={13} /> }
+        : { text: studyKey === today ? tx("Hôm nay") : tx("Đang mở"), style: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]", icon: <IconBolt size={13} /> }
     );
   } else {
-    chips.push({ text: `Lần làm thứ ${overview?.attempt_round ?? 1}`, style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]", icon: <IconRepeat size={13} /> });
+    chips.push({ text: tx("Lần làm thứ {0}", [overview?.attempt_round ?? 1]), style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]", icon: <IconRepeat size={13} /> });
     if (reviewKey) {
       chips.push(
         reviewKey < today
-          ? { text: `Quá hạn ôn ${shortDate(reviewKey)}`, style: "bg-[var(--sp-red-bg)] text-[var(--sp-red-dark)]", icon: <IconClock size={13} /> }
+          ? { text: tx("Quá hạn ôn {0}", [shortDate(reviewKey)]), style: "bg-[var(--sp-red-bg)] text-[var(--sp-red-dark)]", icon: <IconClock size={13} /> }
           : reviewKey === today
-            ? { text: "Hạn ôn hôm nay", style: "bg-[var(--sp-red-bg)] text-[var(--sp-red-dark)]", icon: <IconClock size={13} /> }
-            : { text: `Hạn ôn ${shortDate(reviewKey)}`, style: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]", icon: <IconClock size={13} /> }
+            ? { text: tx("Hạn ôn hôm nay"), style: "bg-[var(--sp-red-bg)] text-[var(--sp-red-dark)]", icon: <IconClock size={13} /> }
+            : { text: tx("Hạn ôn {0}", [shortDate(reviewKey)]), style: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]", icon: <IconClock size={13} /> }
       );
     }
   }
@@ -952,47 +961,47 @@ function QuizCard({
 
       {/* 4 ô thông tin */}
       <div className="mt-3.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Tile loading={!overview && !error} icon={<IconBook size={13} />} label="Phạm vi" value={chapter?.label || (context?.day_number ? `Ngày ${context.day_number}` : "Bài học")} sub={studyKey ? `Ngày học ${shortDate(studyKey)}` : "—"} />
-        <Tile loading={!overview && !error} icon={<IconList size={13} />} label="Số câu" value={questionCount ? `${questionCount} câu` : "—"} sub={typeLabel} />
+        <Tile loading={!overview && !error} icon={<IconBook size={13} />} label={tx("Phạm vi")} value={chapter?.label || (context?.day_number ? tx("Ngày {0}", [context.day_number]) : tx("Bài học"))} sub={studyKey ? tx("Ngày học {0}", [shortDate(studyKey)]) : "—"} />
+        <Tile loading={!overview && !error} icon={<IconList size={13} />} label={tx("Số câu")} value={questionCount ? tx("{0} câu", [questionCount]) : "—"} sub={typeLabel} />
         <Tile
           icon={<IconClock size={13} />}
-          label="Thời gian"
-          value={quiz.time_limit_minutes ? `${quiz.time_limit_minutes} phút` : "Tự do"}
-          sub={quiz.time_limit_minutes ? "Tính từ lúc bắt đầu" : "Không giới hạn"}
+          label={tx("Thời gian")}
+          value={quiz.time_limit_minutes ? tx("{0} phút", [quiz.time_limit_minutes]) : tx("Tự do")}
+          sub={quiz.time_limit_minutes ? tx("Tính từ lúc bắt đầu") : tx("Không giới hạn")}
         />
         {scoreSource && tone ? (
           <div className={`min-w-0 rounded-xl border-2 px-2 py-2 ${tone.box}`}>
             <p className={`flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wide ${tone.text}`}>
               <IconTrendUp size={13} />
-              {group === "done" ? "Kết quả" : "Lần trước"}
+              {group === "done" ? tx("Kết quả") : tx("Lần trước")}
             </p>
             <p className={`mt-1 truncate text-[14.5px] font-extrabold leading-tight ${tone.text}`}>
-              {scoreSource.total ? `${scoreSource.correct}/${scoreSource.total} câu` : `${scoreSource.percent}%`}
+              {scoreSource.total ? tx("{0}/{1} câu", [scoreSource.correct, scoreSource.total]) : `${scoreSource.percent}%`}
             </p>
             <p className={`mt-0.5 text-[11px] leading-snug ${tone.text}`}>
-              {scoreSource.percent}% · {group === "done" ? tone.label : `Bài gốc ${shortDate(scoreSource.date)}`}
+              {scoreSource.percent}% · {group === "done" ? tone.label : tx("Bài gốc {0}", [shortDate(scoreSource.date)])}
             </p>
           </div>
         ) : locked ? (
-          <Tile icon={<IconLock size={13} />} label="Điều kiện" value="Học xong" sub="Buổi học của bài" />
+          <Tile icon={<IconLock size={13} />} label={tx("Điều kiện")} value={tx("Học xong")} sub={tx("Buổi học của bài")} />
         ) : (
-          <Tile icon={<IconPlay size={13} />} label="Mở từ" value={shortDate(studyKey) || "—"} sub="Sau câu hỏi lồng" />
+          <Tile icon={<IconPlay size={13} />} label={tx("Mở từ")} value={shortDate(studyKey) || "—"} sub={tx("Sau câu hỏi lồng")} />
         )}
       </div>
 
       {/* Nội dung bài */}
       <h4 className="mt-4 text-[13px] font-extrabold text-[var(--sp-ink)]">
-        {group === "done" ? "Câu sai cần xem lại" : locked ? "Để mở bài này" : "Câu hỏi được chọn thế nào?"}
+        {group === "done" ? tx("Câu sai cần xem lại") : locked ? tx("Để mở bài này") : tx("Câu hỏi được chọn thế nào?")}
       </h4>
       {group === "done" && latest && tone ? (
         <>
           <p className={`mt-2 flex items-center gap-2 rounded-xl border-2 border-[var(--sp-purple-deep)] px-3 py-2 text-[13.5px] font-bold text-white ${tone.fill}`}>
             <IconTarget size={15} />
-            {Math.max(0, latest.total_questions - latest.correct_count)} câu sai · đã có giải thích
+            {Math.max(0, latest.total_questions - latest.correct_count)}  {tx("câu sai · đã có giải thích")}
           </p>
           <BulletList
             dot={tone.fill}
-            items={["Mỗi câu sai có giải thích và nguồn trong tài liệu gốc", "Câu sai được ưu tiên trong bài ôn tập"]}
+            items={[tx("Mỗi câu sai có giải thích và nguồn trong tài liệu gốc"), tx("Câu sai được ưu tiên trong bài ôn tập")]}
           />
         </>
       ) : locked ? (
@@ -1005,8 +1014,8 @@ function QuizCard({
             dot="bg-[var(--sp-soft)]"
             items={
               group === "review"
-                ? ["Vào ôn, đọc lại tóm tắt", "Trả lời câu hỏi lồng để mở bài ôn"]
-                : ["Vào học, đọc tóm tắt của buổi", "Trả lời câu hỏi lồng để mở bài"]
+                ? [tx("Vào ôn, đọc lại tóm tắt"), tx("Trả lời câu hỏi lồng để mở bài ôn")]
+                : [tx("Vào học, đọc tóm tắt của buổi"), tx("Trả lời câu hỏi lồng để mở bài")]
             }
           />
         </>
@@ -1017,7 +1026,7 @@ function QuizCard({
       ) : (
         <>
           <div className="mt-2 flex min-h-10 overflow-hidden rounded-xl border-2 border-[var(--sp-purple-deep)]">
-            {(segments.length ? segments : [{ kind: "rest", count: questionCount || 1, label: "phần đã học trong buổi", detail: "" }]).map(
+            {(segments.length ? segments : [{ kind: "rest", count: questionCount || 1, label: tx("phần đã học trong buổi"), detail: "" }]).map(
               (segment, index) => (
                 <div
                   key={`${segment.label}-${index}`}
@@ -1025,11 +1034,11 @@ function QuizCard({
                     index > 0 ? "border-l-2 border-white/60" : ""
                   }`}
                   style={{ flexGrow: segment.count, flexBasis: 0 }}
-                  title={`${segment.count} câu · ${segment.label}`}
+                  title={tx("{0} câu · {1}", [segment.count, segment.label])}
                 >
                   <IconTarget size={15} className="shrink-0" />
                   <span className="truncate">
-                    {segment.count} câu · {segment.label}
+                    {tx("{0} câu · {1}", [segment.count, segment.label])}
                   </span>
                 </div>
               )
@@ -1040,14 +1049,14 @@ function QuizCard({
             items={[
               ...(group === "todo"
                 ? pageNames.length
-                  ? [`Lấy từ ${pageNames.join(", ")} của tài liệu`]
+                  ? [tx("Lấy từ {0} của tài liệu", [pageNames.join(", ")])]
                   : []
                 : segments.filter((segment) => segment.detail).map((segment) => segment.detail).slice(0, 1)),
               group === "review"
                 ? overview.fill_count > 0
-                  ? "Dưới 50%: trắc nghiệm kết hợp điền khuyết, cần đạt từ 80%"
-                  : "50–79%: trắc nghiệm, cần đạt từ 80%"
-                : "Chỉ làm 1 lần; dưới 80% sẽ có bài ôn tập",
+                  ? tx("Dưới 50%: trắc nghiệm kết hợp điền khuyết, cần đạt từ 80%")
+                  : tx("50–79%: trắc nghiệm, cần đạt từ 80%")
+                : tx("Chỉ làm 1 lần; dưới 80% sẽ có bài ôn tập"),
             ]}
           />
         </>
@@ -1060,7 +1069,8 @@ function QuizCard({
         {group === "done" && latest ? (
           <Link href={`/quiz-results/${latest.attempt_id}`} className="sp-btn sp-btn-primary h-[42px] justify-center !bg-emerald-600 text-[13.5px]">
             <IconCheck size={16} />
-            Xem câu sai
+
+            {tx("Xem câu sai")}
           </Link>
         ) : !locked ? (
           <Link
@@ -1068,37 +1078,39 @@ function QuizCard({
             className={`sp-btn sp-btn-primary h-[42px] justify-center text-[13.5px] ${group === "review" ? "!bg-[var(--sp-pink)]" : ""}`}
           >
             <IconPlay size={16} />
-            {group === "review" ? "Làm bài ôn" : "Làm bài"}
+            {group === "review" ? tx("Làm bài ôn") : tx("Làm bài")}
           </Link>
         ) : group === "review" ? (
           <Link href={lessonHref} className="sp-btn sp-btn-primary h-[42px] justify-center !bg-[var(--sp-pink)] text-[13.5px]">
             <IconRepeat size={16} />
-            Vào ôn
+
+            {tx("Vào ôn")}
           </Link>
         ) : (
           <span className="sp-btn h-[42px] cursor-not-allowed justify-center border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-surface-2)] text-[13.5px] text-[var(--sp-soft)]">
             <IconLock size={15} />
-            Chưa mở
+
+            {tx("Chưa mở")}
           </span>
         )}
         <Link href={lessonHref} className="sp-btn sp-btn-secondary h-[42px] justify-center text-[13.5px]">
           {locked && group === "todo" ? <IconBook size={16} /> : <IconFile size={16} />}
-          {locked && group === "todo" ? "Vào học" : "Xem lại bài học"}
+          {locked && group === "todo" ? tx("Vào học") : tx("Xem lại bài học")}
         </Link>
         <p className="col-span-2 text-[12px] leading-5 text-[var(--sp-muted)]">
           {group === "done"
             ? quiz.is_retake
-              ? "Đã đạt bài ôn tập."
+              ? tx("Đã đạt bài ôn tập.")
               : scoreSource && scoreSource.percent < 80
-                ? "Bài ôn tập của buổi này ở mục Ôn tập."
-                : "Đạt từ 80%: buổi này đã hoàn thành."
+                ? tx("Bài ôn tập của buổi này ở mục Ôn tập.")
+                : tx("Đạt từ 80%: buổi này đã hoàn thành.")
             : locked
               ? group === "review"
-                ? "Trả lời câu hỏi lồng trước để mở bài ôn."
-                : "Bài tự mở khi bạn học xong buổi."
+                ? tx("Trả lời câu hỏi lồng trước để mở bài ôn.")
+                : tx("Bài tự mở khi bạn học xong buổi.")
               : group === "review"
-                ? "Cần đạt từ 80% để hoàn thành phần ôn."
-                : "Chưa sẵn sàng? Bạn làm lúc khác cũng được."}
+                ? tx("Cần đạt từ 80% để hoàn thành phần ôn.")
+                : tx("Chưa sẵn sàng? Bạn làm lúc khác cũng được.")}
         </p>
       </div>
     </article>

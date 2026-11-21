@@ -304,6 +304,112 @@ export function IconList(props: IconProps) {
   );
 }
 
+export function IconMail(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="m3.5 6.5 8.5 6.5 8.5-6.5" />
+    </Svg>
+  );
+}
+
+export function IconUser(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 20.5a7.5 7.5 0 0 1 15 0" />
+    </Svg>
+  );
+}
+
+export function IconEye(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </Svg>
+  );
+}
+
+export function IconEyeOff(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 3l18 18" />
+      <path d="M10.6 5.6A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3 3.8" />
+      <path d="M6.3 6.9C3.9 8.6 2.5 12 2.5 12S6 18.5 12 18.5a9 9 0 0 0 4.2-1" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    </Svg>
+  );
+}
+
+export function IconLogout(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
+      <path d="M10 16l-4-4 4-4" />
+      <path d="M6 12h10" />
+    </Svg>
+  );
+}
+
+export function IconSettings(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+    </Svg>
+  );
+}
+
+export function IconImage(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="3" />
+      <circle cx="9" cy="10" r="1.8" />
+      <path d="m21 16-5.2-5.2a1.5 1.5 0 0 0-2.1 0L5 19.5" />
+    </Svg>
+  );
+}
+
+export function IconTrash(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 7h16" />
+      <path d="M9.5 7V4.5h5V7" />
+      <path d="M6.5 7l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12" />
+      <path d="M10 11v6M14 11v6" />
+    </Svg>
+  );
+}
+
+export function IconMonitor(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="12.5" rx="2.5" />
+      <path d="M9 20.5h6M12 16.5v4" />
+    </Svg>
+  );
+}
+
+export function IconGlobe(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+    </Svg>
+  );
+}
+
+export function IconIdCard(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4" y="3.5" width="16" height="17" rx="2.5" />
+      <path d="M8 8.5h8M8 12.5h8M8 16.5h5" />
+    </Svg>
+  );
+}
+
 /* Ngôi sao 4 cánh dùng để trang trí (tô đặc). */
 export function Sparkle({
   size = 20,

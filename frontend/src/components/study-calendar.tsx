@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 /*
  * Lịch tháng của kế hoạch: ô ngày có góc màu khi có lịch, rê chuột (hoặc chạm,
  * hoặc Enter) để mở khung chi tiết gắn cạnh ô, giống bình luận trong bảng tính.
@@ -16,17 +17,17 @@ import {
   type CalendarEntry,
 } from "@/lib/study-calendar";
 
-const WEEKDAYS = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "CN"];
-const WEEKDAY_LONG = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"];
+const WEEKDAYS = [tx("Thứ 2"), tx("Thứ 3"), tx("Thứ 4"), tx("Thứ 5"), tx("Thứ 6"), tx("Thứ 7"), "CN"];
+const WEEKDAY_LONG = [tx("Thứ Hai"), tx("Thứ Ba"), tx("Thứ Tư"), tx("Thứ Năm"), tx("Thứ Sáu"), tx("Thứ Bảy"), tx("Chủ Nhật")];
 
 const ACTION = {
-  learn: { label: "Vào học", className: "sp-btn-primary" },
+  learn: { label: tx("Vào học"), className: "sp-btn-primary" },
   review: {
-    label: "Vào ôn",
+    label: tx("Vào ôn"),
     className:
       "border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-pink)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)] hover:-translate-x-px hover:-translate-y-px hover:bg-[var(--sp-pink-dark)]",
   },
-  revisit: { label: "Xem lại", className: "sp-btn-secondary" },
+  revisit: { label: tx("Xem lại"), className: "sp-btn-secondary" },
 } as const;
 
 const BAR = {
@@ -38,7 +39,7 @@ const BAR = {
 function DoneStamp({ small = false }: { small?: boolean }) {
   return (
     <span
-      title="Đã xong"
+      title={tx("Đã xong")}
       className={`grid shrink-0 -rotate-12 place-items-center rounded-full border-2 border-[var(--sp-purple)] bg-[var(--sp-yellow)] shadow-[2px_2px_0_var(--sp-purple-deep)] ${
         small ? "h-6 w-6" : "h-[34px] w-[34px]"
       }`}
@@ -46,7 +47,7 @@ function DoneStamp({ small = false }: { small?: boolean }) {
       <svg viewBox="0 0 16 16" className={small ? "h-3 w-3" : "h-4 w-4"} aria-hidden>
         <path d="M3 3l10 10M13 3L3 13" stroke="var(--sp-purple)" strokeWidth="3" strokeLinecap="round" />
       </svg>
-      <span className="sr-only">Đã xong</span>
+      <span className="sr-only">{tx("Đã xong")}</span>
     </span>
   );
 }
@@ -103,17 +104,16 @@ export default function StudyCalendar({
       <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="sp-accent text-[17px] text-[var(--sp-pink)]">
-            {learnDays} ngày học · {reviewCount} buổi ôn
-            {exam ? ` · thi ${exam.dateKey.slice(8, 10)}/${exam.dateKey.slice(5, 7)}` : ""}
+            {tx("{0} ngày học · {1} buổi ôn{2}", [learnDays, reviewCount, exam ? ` · thi ${exam.dateKey.slice(8, 10)}/${exam.dateKey.slice(5, 7)}` : ""])}
           </p>
           <h3 className="text-[28px] font-extrabold text-[var(--sp-ink)]">
-            Tháng {monthNumber}, {year}
+            {tx("Tháng {0}, {1}", [monthNumber, year])}
           </h3>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
-            aria-label="Tháng trước"
+            aria-label={tx("Tháng trước")}
             disabled={monthIndex <= 0}
             onClick={() => setMonthIndex((value) => value - 1)}
             className="sp-btn sp-btn-secondary h-10 w-10 p-0"
@@ -125,11 +125,12 @@ export default function StudyCalendar({
             onClick={() => setMonthIndex(Math.max(0, months.indexOf(monthKey(todayKey))))}
             className="sp-btn sp-btn-secondary h-10 px-4 text-sm"
           >
-            Hôm nay
+
+            {tx("Hôm nay")}
           </button>
           <button
             type="button"
-            aria-label="Tháng sau"
+            aria-label={tx("Tháng sau")}
             disabled={monthIndex >= months.length - 1}
             onClick={() => setMonthIndex((value) => value + 1)}
             className="sp-btn sp-btn-secondary h-10 w-10 p-0"
@@ -140,15 +141,15 @@ export default function StudyCalendar({
       </div>
 
       <ul className="mb-5 flex flex-wrap gap-2 text-[12.5px] font-bold">
-        <li className="sp-chip bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]">● Học mới</li>
-        <li className="sp-chip bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">● Ôn lại</li>
-        <li className="sp-chip bg-[var(--sp-red-bg)] text-[var(--sp-red-dark)]">● Trễ lịch ôn</li>
-        <li className="sp-chip bg-[var(--sp-yellow)] text-[var(--sp-purple-deep)]">⚑ Ngày thi</li>
-        <li className="sp-chip border-2 border-[var(--sp-purple)] bg-white text-[var(--sp-purple)]">✕ Đã xong</li>
-        <li className="sp-chip bg-[var(--sp-red)] text-white">Hôm nay</li>
+        <li className="sp-chip bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]">{tx("● Học mới")}</li>
+        <li className="sp-chip bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">{tx("● Ôn lại")}</li>
+        <li className="sp-chip bg-[var(--sp-red-bg)] text-[var(--sp-red-dark)]">{tx("● Trễ lịch ôn")}</li>
+        <li className="sp-chip bg-[var(--sp-yellow)] text-[var(--sp-purple-deep)]">{tx("⚑ Ngày thi")}</li>
+        <li className="sp-chip border-2 border-[var(--sp-purple)] bg-white text-[var(--sp-purple)]">{tx("✕ Đã xong")}</li>
+        <li className="sp-chip bg-[var(--sp-red)] text-white">{tx("Hôm nay")}</li>
       </ul>
 
-      <div className="grid grid-cols-7 gap-1.5 sm:gap-2.5" role="grid" aria-label={`Lịch tháng ${monthNumber}`}>
+      <div className="grid grid-cols-7 gap-1.5 sm:gap-2.5" role="grid" aria-label={tx("Lịch tháng {0}", [monthNumber])}>
         {WEEKDAYS.map((label, index) => (
           <div
             key={label}
@@ -226,7 +227,7 @@ function DayCell({
         role={has ? "button" : undefined}
         tabIndex={has ? 0 : undefined}
         aria-expanded={has ? isOpen : undefined}
-        aria-label={`${WEEKDAY_LONG[day.column]} ${day.day}${has ? ", xem chi tiết" : ""}`}
+        aria-label={`${WEEKDAY_LONG[day.column]} ${day.day}${has ? tx(", xem chi tiết") : ""}`}
         onClick={has ? onOpen : undefined}
         onFocus={has ? onOpen : undefined}
         onKeyDown={(event) => {
@@ -264,7 +265,8 @@ function DayCell({
           </span>
           {day.isToday && (
             <span className="hidden whitespace-nowrap rounded-full bg-[var(--sp-red)] px-2 py-0.5 text-[10.5px] font-extrabold text-white lg:inline">
-              Hôm nay
+
+              {tx("Hôm nay")}
             </span>
           )}
         </div>
@@ -272,25 +274,26 @@ function DayCell({
         <div className="flex flex-wrap gap-1 sm:flex-col">
           {learn > 0 && (
             <Tag className="bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]" dot="bg-[var(--sp-peri)]">
-              {learn} bài học
-            </Tag>
+              {tx("{0} bài học", [learn])}</Tag>
           )}
           {review > 0 && (
             <Tag
               className={day.hasLate ? "bg-[var(--sp-red-bg)] text-[var(--sp-red-dark)]" : "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"}
               dot={day.hasLate ? "bg-[var(--sp-red)]" : "bg-[var(--sp-pink)]"}
             >
-              {review} buổi ôn{day.hasLate ? " · trễ" : ""}
+              {review}  {tx("buổi ôn")}{day.hasLate ? tx(" · trễ") : ""}
             </Tag>
           )}
           {day.missed && (
             <Tag className="bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]" dot="bg-[var(--sp-amber-dark)]">
-              Chưa học
+
+              {tx("Chưa học")}
             </Tag>
           )}
           {day.isExam && (
             <Tag className="bg-white text-[var(--sp-purple-deep)]" dot="bg-[var(--sp-purple-deep)]">
-              ⚑ Ngày thi
+
+              {tx("⚑ Ngày thi")}
             </Tag>
           )}
         </div>
@@ -323,17 +326,17 @@ function Tag({ children, className, dot }: { children: React.ReactNode; classNam
 
 function DayPopover({ day, flip, onClose }: { day: CalendarDay; flip: boolean; onClose: () => void }) {
   const title = day.isExam
-    ? "Ngày thi"
+    ? tx("Ngày thi")
     : day.done
-      ? "Đã hoàn thành"
+      ? tx("Đã hoàn thành")
       : day.isPast
-        ? "Chưa hoàn thành"
-        : "Lịch trong ngày";
+        ? tx("Chưa hoàn thành")
+        : tx("Lịch trong ngày");
 
   return (
     <div
       role="dialog"
-      aria-label={`Chi tiết ${WEEKDAY_LONG[day.column]} ${day.day}`}
+      aria-label={tx("Chi tiết {0} {1}", [WEEKDAY_LONG[day.column], day.day])}
       className={`sp-task-expand max-sm:fixed max-sm:inset-x-3 max-sm:bottom-3 max-sm:z-50 sm:absolute sm:top-[-8px] sm:w-[380px] ${
         flip ? "sm:right-[calc(100%+14px)]" : "sm:left-[calc(100%+14px)]"
       } rounded-[20px] border-2 border-[var(--sp-purple)] bg-white p-4 shadow-[6px_6px_0_var(--sp-purple-deep)]`}
@@ -347,19 +350,19 @@ function DayPopover({ day, flip, onClose }: { day: CalendarDay; flip: boolean; o
       <div className="mb-2 flex items-start justify-between gap-3">
         <div>
           <p className={`sp-accent ${day.isToday ? "text-[var(--sp-red)]" : "text-[var(--sp-pink)]"}`}>
-            {day.isToday ? "Hôm nay · " : ""}
+            {day.isToday ? tx("Hôm nay · ") : ""}
             {WEEKDAY_LONG[day.column]}, {day.dateKey.slice(8, 10)}/{day.dateKey.slice(5, 7)}
           </p>
           <p className="text-lg font-extrabold text-[var(--sp-ink)]">{title}</p>
         </div>
         <div className="flex items-center gap-2">
           {day.done && (
-            <span className="sp-chip border-2 border-[var(--sp-purple)] bg-white text-[var(--sp-purple)]">✕ Đã xong</span>
+            <span className="sp-chip border-2 border-[var(--sp-purple)] bg-white text-[var(--sp-purple)]">{tx("✕ Đã xong")}</span>
           )}
           <button
             type="button"
             onClick={onClose}
-            aria-label="Đóng"
+            aria-label={tx("Đóng")}
             className="rounded-lg p-1 text-[var(--sp-muted)] hover:bg-[var(--sp-surface-2)] sm:hidden"
           >
             <IconX size={18} />
@@ -383,7 +386,7 @@ function EntryRow({ entry }: { entry: CalendarEntry }) {
       <span className={`self-stretch rounded ${entry.late ? "bg-[var(--sp-red)]" : BAR[entry.kind]}`} />
       <div className="min-w-0">
         <p className="text-[13.5px] font-bold leading-snug text-[var(--sp-ink)]">
-          {entry.kind === "review" ? "Ôn lại: " : ""}
+          {entry.kind === "review" ? tx("Ôn lại: ") : ""}
           {entry.title}
         </p>
         {entry.lines.map((line, index) => (
@@ -403,9 +406,10 @@ function EntryRow({ entry }: { entry: CalendarEntry }) {
       </div>
       {entry.action && action ? (
         entry.action.locked ? (
-          <span className="sp-btn sp-btn-secondary w-[92px] cursor-not-allowed px-0 py-2 text-[12.5px] text-[var(--sp-soft)]" title="Nộp bài kiểm tra của các ngày trước để mở">
+          <span className="sp-btn sp-btn-secondary w-[92px] cursor-not-allowed px-0 py-2 text-[12.5px] text-[var(--sp-soft)]" title={tx("Nộp bài kiểm tra của các ngày trước để mở")}>
             <IconLock size={13} />
-            Khóa
+
+            {tx("Khóa")}
           </span>
         ) : (
           <Link href={entry.action.href} className={`sp-btn ${action.className} w-[92px] px-0 py-2 text-[12.5px]`}>

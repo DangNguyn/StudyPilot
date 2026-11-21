@@ -31,6 +31,7 @@ from practice_questions import (
 from supabase_client import supabase
 from email_notifications import router as notifications_router, start_scheduler
 from mindmaps import router as mindmaps_router
+from flashcard_decks import router as flashcard_decks_router
 
 # Đọc biến môi trường
 load_dotenv()
@@ -582,6 +583,7 @@ app.add_middleware(
 # Thông báo học tập qua Gmail (xem email_notifications.py)
 app.include_router(notifications_router)
 app.include_router(mindmaps_router)
+app.include_router(flashcard_decks_router)
 
 
 @app.on_event("startup")

@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 /*
@@ -17,11 +18,11 @@ const H = 121;
 const SLEEP_AFTER_MS = 60_000;
 
 const MOOD_LINES: Partial<Record<Mood, string[]>> = {
-  shy: ["Ơ… đừng nhìn mình chằm chằm thế…", "Hihi, ngại quá à…"],
-  pout: ["Học với mình một bài thôi mà~", "Hứ, bạn chưa ôn bài kìa~"],
-  happy: ["Yay! Bạn giỏi lắm!", "Cố lên, mình ở đây nè!"],
-  tease: ["Hì, không bắt được đâu!", "Né nè~"],
-  dizzy: ["Choáng quá… đừng chọc nữa…"],
+  shy: [tx("Ơ… đừng nhìn mình chằm chằm thế…"), tx("Hihi, ngại quá à…")],
+  pout: [tx("Học với mình một bài thôi mà~"), tx("Hứ, bạn chưa ôn bài kìa~")],
+  happy: [tx("Yay! Bạn giỏi lắm!"), tx("Cố lên, mình ở đây nè!")],
+  tease: [tx("Hì, không bắt được đâu!"), tx("Né nè~")],
+  dizzy: [tx("Choáng quá… đừng chọc nữa…")],
 };
 
 const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)];
@@ -252,7 +253,7 @@ export function HomePilot({
   // Lời chào lần đầu
   useEffect(() => {
     const id = window.setTimeout(() => {
-      if (!props.current.hidden) say("Chào bạn! Chạm vào mình thử xem~", 3800);
+      if (!props.current.hidden) say(tx("Chào bạn! Chạm vào mình thử xem~"), 3800);
     }, 700);
     return () => window.clearTimeout(id);
   }, [say]);
@@ -262,7 +263,7 @@ export function HomePilot({
     if (!celebrate || hidden) return;
     const id = window.setTimeout(() => {
       setMood("happy", 3500, false);
-      say("Xong hết rồi! Tối nay nghỉ ngơi nhé.", 4000);
+      say(tx("Xong hết rồi! Tối nay nghỉ ngơi nhé."), 4000);
     }, 400);
     return () => window.clearTimeout(id);
   }, [celebrate, hidden, say, setMood]);
@@ -275,7 +276,7 @@ export function HomePilot({
       s.lastActive = Date.now();
       if (s.mood === "sleep") {
         setMood("idle", 0, false);
-        say("Ơ, mình có ngủ đâu!");
+        say(tx("Ơ, mình có ngủ đâu!"));
       }
     };
     const move = (event: MouseEvent) => {
@@ -352,7 +353,7 @@ export function HomePilot({
     s.taps.push(now);
     if (s.mood === "sleep") {
       setMood("happy", 2000, false);
-      say("Ơ, mình có ngủ đâu!");
+      say(tx("Ơ, mình có ngủ đâu!"));
       return;
     }
     if (s.taps.length >= 5) {
@@ -379,7 +380,7 @@ export function HomePilot({
           viewBox="0 0 200 220"
           role="button"
           tabIndex={hidden ? -1 : 0}
-          aria-label="Pilot, linh vật StudyPilot. Chạm để xem biểu cảm"
+          aria-label={tx("Pilot, linh vật StudyPilot. Chạm để xem biểu cảm")}
           onClick={poke}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {

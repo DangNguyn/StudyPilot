@@ -1,3 +1,4 @@
+import { tx } from "@/lib/i18n";
 /*
  * Bỏ mọi số đề mục của tài liệu ("1.1.1.", "2.", "I.", "a)", "Chương 2:", "Unit 4 -")
  * ở đầu tiêu đề và ở đầu từng phần sau dấu phân cách (" - ", " – ", ":", ">", "|"),
@@ -55,7 +56,7 @@ export function getMainTopicTitle(
   value?: string | null
 ): string {
   if (!value?.trim()) {
-    return "Chủ đề học tập";
+    return tx("Chủ đề học tập");
   }
 
   let title = value
@@ -84,7 +85,7 @@ export function getMainTopicTitle(
   return stripOutlineNumbers(title)
     .replace(/[.;:,|]+\s*$/, "")
     .replace(/\s{2,}/g, " ")
-    .trim() || "Chủ đề học tập";
+    .trim() || tx("Chủ đề học tập");
 }
 
 export function getPreferredContentTitle(

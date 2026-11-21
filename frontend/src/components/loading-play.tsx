@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconBook, IconCheck, IconPlay } from "@/components/icons";
 
@@ -11,24 +12,24 @@ import { IconBook, IconCheck, IconPlay } from "@/components/icons";
  */
 
 const SAY = [
-  "Chào bạn! Mình đang đọc giáo trình giúp bạn đây…",
-  "Ồ, chương này nhiều ý hay quá, để mình đánh dấu lại.",
-  "Mình đang chia thành từng buổi học ngắn cho dễ nhớ.",
-  "Sắp xong rồi, đang soạn câu hỏi lồng trong tóm tắt…",
-  "Chờ lâu quá? Bấm \"Chơi trong lúc chờ\" để chạy cùng mình nhé!",
+  tx("Chào bạn! Mình đang đọc giáo trình giúp bạn đây…"),
+  tx("Ồ, chương này nhiều ý hay quá, để mình đánh dấu lại."),
+  tx("Mình đang chia thành từng buổi học ngắn cho dễ nhớ."),
+  tx("Sắp xong rồi, đang soạn câu hỏi lồng trong tóm tắt…"),
+  tx("Chờ lâu quá? Bấm \"Chơi trong lúc chờ\" để chạy cùng mình nhé!"),
 ];
 const POKE = [
-  "Hihi, nhột quá!",
-  "Bay lên nào! ✈️",
-  "Bạn học chăm thật đó!",
-  "Bấm nữa là mình chóng mặt đó nha…",
-  "Đếm ngược tới ngày thi, cố lên!",
+  tx("Hihi, nhột quá!"),
+  tx("Bay lên nào! ✈️"),
+  tx("Bạn học chăm thật đó!"),
+  tx("Bấm nữa là mình chóng mặt đó nha…"),
+  tx("Đếm ngược tới ngày thi, cố lên!"),
 ];
 const TIPS = [
-  "Mẹo: học 25 phút rồi nghỉ 5 phút giúp nhớ lâu hơn.",
-  "Mẹo: trả lời câu hỏi lồng trước khi xem đáp án giúp nhớ gấp đôi.",
-  "Mẹo: ôn lại phần sai sau 1–2 ngày hiệu quả hơn ôn ngay.",
-  "Mẹo: tự giảng lại cho bạn bè là cách kiểm tra hiểu bài tốt nhất.",
+  tx("Mẹo: học 25 phút rồi nghỉ 5 phút giúp nhớ lâu hơn."),
+  tx("Mẹo: trả lời câu hỏi lồng trước khi xem đáp án giúp nhớ gấp đôi."),
+  tx("Mẹo: ôn lại phần sai sau 1–2 ngày hiệu quả hơn ôn ngay."),
+  tx("Mẹo: tự giảng lại cho bạn bè là cách kiểm tra hiểu bài tốt nhất."),
 ];
 
 /* ================= Linh vật ================= */
@@ -69,7 +70,7 @@ export function PilotMascot({
       width={size}
       height={size}
       role={interactive ? "button" : "img"}
-      aria-label={interactive ? "Pilot, linh vật StudyPilot. Bấm để Pilot nhảy" : "Pilot, linh vật StudyPilot"}
+      aria-label={interactive ? tx("Pilot, linh vật StudyPilot. Bấm để Pilot nhảy") : tx("Pilot, linh vật StudyPilot")}
       className={`sp-pilot ${interactive ? "cursor-pointer" : ""} ${jumping ? "sp-pilot-jump" : ""}`}
       onClick={(event) => {
         if (!interactive) return;
@@ -115,7 +116,7 @@ export function PilotMascot({
 /* Màn chờ ngắn: Pilot nhỏ cạnh dòng chữ */
 export function LoadingMascot({
   text,
-  sub = "Pilot đang lật từng trang, chờ mình xíu nhé!",
+  sub = tx("Pilot đang lật từng trang, chờ mình xíu nhé!"),
   className = "max-w-5xl",
   bare = false,
 }: {
@@ -146,9 +147,9 @@ export function LoadingMascot({
 /* ================= Màn chờ hai chặng ================= */
 
 const WAIT_SAYS = [
-  "Mình vẫn đang làm nè, sắp xong rồi!",
-  "Mạng hơi chậm, để mình chạy nhanh hơn chút…",
-  "Chơi một ván đi, xong là mình gọi liền!",
+  tx("Mình vẫn đang làm nè, sắp xong rồi!"),
+  tx("Mạng hơi chậm, để mình chạy nhanh hơn chút…"),
+  tx("Chơi một ván đi, xong là mình gọi liền!"),
 ];
 const SWITCH_AFTER_MS = 3000;
 const SMART_EXPECTED_S = 12;
@@ -161,7 +162,7 @@ const SMART_EXPECTED_S = 12;
  */
 export function SmartLoading({
   text,
-  sub = "Pilot đang lật từng trang, chờ mình xíu nhé!",
+  sub = tx("Pilot đang lật từng trang, chờ mình xíu nhé!"),
   stages,
   continueLabel = "Xem ngay",
   done = false,
@@ -258,15 +259,15 @@ export function SmartLoading({
     <div ref={wrapRef} className={`mx-auto max-w-[908px] overflow-hidden pb-2 pr-2 transition-[height] duration-500 ease-[cubic-bezier(.3,1.1,.4,1)] ${long ? "sp-smart-long" : ""}`}>
       {long ? (
         <LoadingPlay
-          kicker={done ? "Cảm ơn bạn đã chờ" : "Hơi lâu một chút… chạy cùng Pilot nhé!"}
+          kicker={done ? tx("Cảm ơn bạn đã chờ") : tx("Hơi lâu một chút… chạy cùng Pilot nhé!")}
           title={text}
-          doneTitle="Xong rồi!"
+          doneTitle={tx("Xong rồi!")}
           stages={stages}
           expectedSeconds={SMART_EXPECTED_S}
           startAt={SWITCH_AFTER_MS / 1000}
           startInGame
           says={WAIT_SAYS}
-          doneNote="Đã xong!"
+          doneNote={tx("Đã xong!")}
           done={done}
           continueLabel={continueLabel}
           onGameStart={() => setPlayed(true)}
@@ -306,20 +307,20 @@ export function SmartLoading({
 /* ================= Màn chờ dài ================= */
 
 export function LoadingPlay({
-  kicker = "AI đang chia nhỏ giáo trình cho bạn",
+  kicker = tx("AI đang chia nhỏ giáo trình cho bạn"),
   title,
-  doneTitle = "Tài liệu đã sẵn sàng",
+  doneTitle = tx("Tài liệu đã sẵn sàng"),
   stages,
   stage,
   expectedSeconds = 30,
   done = false,
-  continueLabel = "Vào học ngay",
+  continueLabel = tx("Vào học ngay"),
   onContinue,
   onPlayingChange,
   startInGame = false,
   startAt = 0,
   says = SAY,
-  doneNote = "Tài liệu đã sẵn sàng!",
+  doneNote = tx("Tài liệu đã sẵn sàng!"),
   onGameStart,
 }: {
   kicker?: string;
@@ -384,7 +385,7 @@ export function LoadingPlay({
 
   const shown = done ? 100 : progress;
   const current = done ? stages.length : stage ?? Math.min(stages.length - 1, Math.floor(shown / (100 / stages.length)));
-  const speech = done ? "Xong rồi! Vào thôi nào 🎉" : pokeText ?? says[sayIndex % says.length];
+  const speech = done ? tx("Xong rồi! Vào thôi nào 🎉") : pokeText ?? says[sayIndex % says.length];
 
   const togglePlaying = () => {
     const next = !playing;
@@ -448,7 +449,7 @@ export function LoadingPlay({
         className="sp-loading-box relative mt-5 h-[300px] overflow-hidden rounded-[20px] border-2 border-dashed border-[var(--sp-lav-line)] sm:h-[260px]"
       >
         {playing ? (
-          <RunnerGame paused={done} onStart={onGameStart} pauseText={`${doneNote} Bấm để chơi tiếp hoặc vào ngay.`} />
+          <RunnerGame paused={done} onStart={onGameStart} pauseText={tx("{0} Bấm để chơi tiếp hoặc vào ngay.", [doneNote])} />
         ) : (
           <div className="grid h-full grid-cols-1 items-center gap-1.5 p-3 sm:grid-cols-[220px_minmax(0,1fr)] sm:gap-6 sm:px-7">
             <div className="justify-self-center">
@@ -480,13 +481,13 @@ export function LoadingPlay({
       {done && (
         <p className="mt-3.5 grid grid-cols-[22px_minmax(0,1fr)] items-center gap-2.5 rounded-[14px] border-2 border-[#a7e3c4] bg-emerald-50 px-3.5 py-3 text-sm font-bold text-emerald-700">
           <IconCheck size={20} />
-          {playing ? `${doneNote} Game đã tạm dừng, bạn có thể vào ngay hoặc chơi tiếp.` : doneNote}
+          {playing ? tx("{0} Game đã tạm dừng, bạn có thể vào ngay hoặc chơi tiếp.", [doneNote]) : doneNote}
         </p>
       )}
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         <button type="button" onClick={togglePlaying} className="sp-btn sp-btn-secondary h-[46px] text-sm">
-          {playing ? "☺ Quay lại xem Pilot" : "🎮 Chơi trong lúc chờ"}
+          {playing ? tx("☺ Quay lại xem Pilot") : tx("🎮 Chơi trong lúc chờ")}
         </button>
         <button
           type="button"
@@ -526,7 +527,7 @@ const saveBest = (value: number) => {
 function RunnerGame({
   paused,
   onStart,
-  pauseText = "Tài liệu đã sẵn sàng. Bấm để chơi tiếp hoặc vào học ngay.",
+  pauseText = tx("Tài liệu đã sẵn sàng. Bấm để chơi tiếp hoặc vào học ngay."),
 }: {
   paused: boolean;
   onStart?: () => void;
@@ -540,9 +541,9 @@ function RunnerGame({
   const scoreRef = useRef<HTMLSpanElement>(null);
   const [best, setBest] = useState(readBest);
   const [overlay, setOverlay] = useState<{ title: string; text: string; label: string } | null>({
-    title: "Pilot chạy deadline",
-    text: "Nhảy qua chồng sách và đồng hồ, nhặt ngôi sao vàng.",
-    label: "Bắt đầu",
+    title: tx("Pilot chạy deadline"),
+    text: tx("Nhảy qua chồng sách và đồng hồ, nhặt ngôi sao vàng."),
+    label: tx("Bắt đầu"),
   });
   const engine = useRef<{ start: () => void; pause: () => void; jump: () => void; running: () => boolean } | null>(null);
 
@@ -724,9 +725,9 @@ function RunnerGame({
         setBest(final);
       }
       setOverlay({
-        title: "Ối, vấp rồi!",
-        text: `Bạn được ${final} điểm${final > previous ? " · kỷ lục mới!" : ""}`,
-        label: "Chơi lại",
+        title: tx("Ối, vấp rồi!"),
+        text: tx("Bạn được {0} điểm{1}", [final, final > previous ? tx(" · kỷ lục mới!") : ""]),
+        label: tx("Chơi lại"),
       });
     };
 
@@ -805,7 +806,7 @@ function RunnerGame({
         if (!running) return;
         running = false;
         cancelAnimationFrame(raf);
-        setOverlay({ title: "Tạm dừng", text: hooks.current.pauseText, label: "Chơi tiếp" });
+        setOverlay({ title: tx("Tạm dừng"), text: hooks.current.pauseText, label: tx("Chơi tiếp") });
       },
       jump: () => {
         if (running && p.onGround) {
@@ -845,14 +846,14 @@ function RunnerGame({
         ref={canvasRef}
         className="block h-full w-full cursor-pointer touch-manipulation"
         onPointerDown={() => engine.current?.jump()}
-        aria-label="Game Pilot chạy deadline: bấm hoặc nhấn phím cách để nhảy"
+        aria-label={tx("Game Pilot chạy deadline: bấm hoặc nhấn phím cách để nhảy")}
       />
       <div className="absolute right-3.5 top-3 flex gap-2">
         <span className="rounded-full border-2 border-[var(--sp-purple-deep)] bg-white px-3 py-0.5 text-[13px] font-extrabold shadow-[2px_2px_0_var(--sp-purple-deep)]">
           <span ref={scoreRef}>0</span>
         </span>
         <span className="rounded-full border-2 border-[var(--sp-purple-deep)] bg-white px-3 py-0.5 text-[13px] font-extrabold shadow-[2px_2px_0_var(--sp-purple-deep)]">
-          Kỷ lục {best}
+          {tx("Kỷ lục {0}", [best])}
         </span>
       </div>
       {overlay && (
@@ -861,7 +862,8 @@ function RunnerGame({
           <p className="text-sm text-[var(--sp-text-2)]">{overlay.text}</p>
           <p className="text-sm text-[var(--sp-text-2)]">
             <span className="rounded-lg border-2 border-b-4 border-[var(--sp-purple-deep)] bg-white px-2 text-xs font-extrabold">Space</span>{" "}
-            hoặc chạm / bấm vào khung để nhảy
+
+            {tx("hoặc chạm / bấm vào khung để nhảy")}
           </p>
           <button type="button" onClick={() => engine.current?.start()} className="sp-btn sp-btn-primary mt-1.5 h-[46px] w-[200px] text-sm">
             <IconPlay size={16} />

@@ -39,9 +39,9 @@ export default function SupabaseTestPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#F3E9DF] p-8 flex items-center justify-center">
+    <main className="min-h-screen bg-[#EEF1FD] p-8 flex items-center justify-center">
       <div className="w-full max-w-lg rounded-2xl bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold text-[#1C3829]">
+        <h1 className="text-2xl font-bold text-[#24123A]">
           StudyPilot - Supabase Test
         </h1>
 

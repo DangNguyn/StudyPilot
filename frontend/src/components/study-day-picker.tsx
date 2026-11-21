@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import {
   IconCalendar,
   IconCheck,
@@ -30,13 +31,13 @@ type StudyDayPickerProps = {
 
 const SHORT_WEEKDAYS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 const LONG_WEEKDAYS = [
-  "Chủ nhật",
-  "Thứ 2",
-  "Thứ 3",
-  "Thứ 4",
-  "Thứ 5",
-  "Thứ 6",
-  "Thứ 7",
+  tx("Chủ nhật"),
+  tx("Thứ 2"),
+  tx("Thứ 3"),
+  tx("Thứ 4"),
+  tx("Thứ 5"),
+  tx("Thứ 6"),
+  tx("Thứ 7"),
 ];
 
 function toDate(dateKey: string) {
@@ -130,10 +131,10 @@ export default function StudyDayPicker({
           </span>
           <div>
             <p className="sp-accent text-[15px] leading-tight text-[var(--sp-pink)]">
-              {studyDaysPerWeek} ngày mỗi tuần
-            </p>
+              {tx("{0} ngày mỗi tuần", [studyDaysPerWeek])}</p>
             <h3 className="text-lg text-[var(--sp-ink)]">
-              Chọn ngày học của bạn
+
+              {tx("Chọn ngày học của bạn")}
             </h3>
           </div>
         </div>
@@ -141,12 +142,11 @@ export default function StudyDayPicker({
         <div className="flex items-center gap-3">
           <div className="min-w-[150px]">
             <p className="text-right text-sm font-bold text-[var(--sp-ink)]">
-              {totalSelected}/{totalRequired} ngày
-            </p>
+              {tx("{0}/{1} ngày", [totalSelected, totalRequired])}</p>
             <div
               className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--sp-surface-2)]"
               role="progressbar"
-              aria-label="Số ngày học đã chọn"
+              aria-label={tx("Số ngày học đã chọn")}
               aria-valuenow={percent}
               aria-valuemin={0}
               aria-valuemax={100}
@@ -167,9 +167,9 @@ export default function StudyDayPicker({
             aria-label={
               confirmed
                 ? expanded
-                  ? "Thu gọn bảng chọn ngày học"
-                  : "Mở bảng chọn ngày học"
-                : "Đóng bảng chọn ngày học"
+                  ? tx("Thu gọn bảng chọn ngày học")
+                  : tx("Mở bảng chọn ngày học")
+                : tx("Đóng bảng chọn ngày học")
             }
           >
             {confirmed ? (
@@ -190,7 +190,7 @@ export default function StudyDayPicker({
       {confirmed && !expanded && (
         <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl bg-[var(--sp-lav)] px-4 py-3 text-sm text-[var(--sp-ink)]">
           <IconCheck size={16} className="text-[var(--sp-peri-dark)]" />
-          <span className="font-semibold">Đã lưu lịch học:</span>
+          <span className="font-semibold">{tx("Đã lưu lịch học:")}</span>
           {isUniformPattern ? (
             <>
               {pattern.map((label) => (
@@ -201,12 +201,11 @@ export default function StudyDayPicker({
                   {label}
                 </span>
               ))}
-              <span className="text-[var(--sp-muted)]">mỗi tuần</span>
+              <span className="text-[var(--sp-muted)]">{tx("mỗi tuần")}</span>
             </>
           ) : (
             <span>
-              {totalSelected} ngày trong {weeks.length} tuần
-            </span>
+              {tx("{0} ngày trong {1} tuần", [totalSelected, weeks.length])}</span>
           )}
         </div>
       )}
@@ -215,20 +214,24 @@ export default function StudyDayPicker({
         <>
           {!examDate ? (
             <p className="mt-5 rounded-2xl bg-[var(--sp-surface-2)] p-4 text-sm text-[var(--sp-muted)]">
-              Chọn ngày thi trước để StudyPilot hiển thị các tuần ôn tập.
+
+              {tx("Chọn ngày thi trước để StudyPilot hiển thị các tuần ôn tập.")}
             </p>
           ) : weeks.length === 0 ? (
             <p className="mt-5 rounded-2xl bg-[var(--sp-pink-bg)] p-4 text-sm text-[var(--sp-pink-dark)]">
-              Ngày thi phải sau hôm nay để tạo lịch học.
+
+              {tx("Ngày thi phải sau hôm nay để tạo lịch học.")}
             </p>
           ) : (
             <>
               {/* Chọn nhanh */}
               <div className="mt-5 rounded-2xl bg-[var(--sp-surface-2)] p-4">
                 <p className="mb-2.5 text-sm font-semibold text-[var(--sp-text-2)]">
-                  Chọn nhanh cho mọi tuần
+
+                  {tx("Chọn nhanh cho mọi tuần")}
                   <span className="ml-1 font-normal text-[var(--sp-muted)]">
-                    · bấm vào thứ bạn muốn học
+
+                    {tx("· bấm vào thứ bạn muốn học")}
                   </span>
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -239,7 +242,7 @@ export default function StudyDayPicker({
                         key={date}
                         type="button"
                         aria-pressed={active}
-                        title={`${LONG_WEEKDAYS[weekdayIndex(date)]} mọi tuần`}
+                        title={tx("{0} mọi tuần", [LONG_WEEKDAYS[weekdayIndex(date)]])}
                         onClick={() => onToggleWeekday(columnIndex)}
                         className={`h-10 min-w-[52px] rounded-full border-2 px-3 text-sm font-bold transition ${
                           active
@@ -293,7 +296,8 @@ export default function StudyDayPicker({
                           {/* Tiêu đề tuần trên điện thoại */}
                           <div className="mb-1.5 flex items-center justify-between px-1 sm:hidden">
                             <p className="text-sm font-bold text-[var(--sp-purple)]">
-                              Tuần {week.weekNumber}
+
+                              {tx("Tuần")} {week.weekNumber}
                               <span className="ml-1.5 text-xs font-medium text-[var(--sp-muted)]">
                                 {dayMonth(week.dates[0])}–{dayMonth(lastDate)}
                               </span>
@@ -313,7 +317,7 @@ export default function StudyDayPicker({
                           <div className="grid grid-cols-7 items-center gap-1 sm:grid-cols-[96px_repeat(7,minmax(0,1fr))_64px] sm:gap-2">
                           <div className="hidden pl-1.5 sm:block">
                             <p className="text-sm font-bold text-[var(--sp-purple)]">
-                              Tuần {week.weekNumber}
+                              {tx("Tuần {0}", [week.weekNumber])}
                             </p>
                             <p className="text-[11px] text-[var(--sp-muted)]">
                               {dayMonth(week.dates[0])}–{dayMonth(lastDate)}
@@ -330,7 +334,7 @@ export default function StudyDayPicker({
                                   <div
                                     key={`exam-${columnIndex}`}
                                     className="flex h-12 flex-col items-center justify-center rounded-xl bg-[var(--sp-purple)] text-[var(--sp-yellow)] sm:h-16"
-                                    title="Ngày thi"
+                                    title={tx("Ngày thi")}
                                   >
                                     <IconFlag size={18} />
                                     <span className="text-[11px] font-bold text-white">
@@ -358,7 +362,7 @@ export default function StudyDayPicker({
                                 key={date}
                                 type="button"
                                 aria-pressed={isSelected}
-                                aria-label={`${LONG_WEEKDAYS[weekdayIndex(date)]} ${dayMonth(date)}${isToday ? ", hôm nay" : ""}`}
+                                aria-label={`${LONG_WEEKDAYS[weekdayIndex(date)]} ${dayMonth(date)}${isToday ? tx(", hôm nay") : ""}`}
                                 onClick={() => onToggleDate(week.dates, date)}
                                 className={`group relative flex h-12 flex-col items-center justify-center rounded-xl border-2 transition sm:h-16 ${
                                   isSelected
@@ -418,15 +422,18 @@ export default function StudyDayPicker({
               <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[var(--sp-muted)]">
                 <span className="flex items-center gap-1.5">
                   <span className="h-3 w-3 rounded border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-peri)]" />
-                  Ngày học
+
+                  {tx("Ngày học")}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-[var(--sp-pink)]" />
-                  Hôm nay
+
+                  {tx("Hôm nay")}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <IconFlag size={13} className="text-[var(--sp-purple)]" />
-                  Ngày thi (không tính vào lịch)
+
+                  {tx("Ngày thi (không tính vào lịch)")}
                 </span>
               </div>
             </>
@@ -440,7 +447,8 @@ export default function StudyDayPicker({
                 onClick={onClear}
                 className="sp-btn sp-btn-secondary px-4 py-2.5 text-sm"
               >
-                Xoá lựa chọn
+
+                {tx("Xoá lựa chọn")}
               </button>
             )}
             <button
@@ -449,7 +457,8 @@ export default function StudyDayPicker({
               className="sp-btn sp-btn-primary px-5 py-2.5 text-sm"
             >
               <IconCheck size={16} />
-              Xác nhận ngày học
+
+              {tx("Xác nhận ngày học")}
             </button>
           </div>
         </>

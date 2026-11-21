@@ -1,5 +1,6 @@
 "use client";
 
+import { currentLocale, tx } from "@/lib/i18n";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -173,7 +174,7 @@ function formatFullDate(dateKey: string) {
 }
 
 function weekdayLong(dateKey: string) {
-  const label = keyToDate(dateKey).toLocaleDateString("vi-VN", {
+  const label = keyToDate(dateKey).toLocaleDateString(currentLocale(), {
     weekday: "long",
   });
   return label.charAt(0).toUpperCase() + label.slice(1);
@@ -186,12 +187,12 @@ function weekdayShort(dateKey: string) {
 
 function formatDuration(minutes: number) {
   if (minutes < 60) {
-    return `${minutes} phút`;
+    return tx("{0} phút", [minutes]);
   }
 
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest ? `${hours} giờ ${rest} phút` : `${hours} giờ`;
+  return rest ? tx("{0} giờ {1} phút", [hours, rest]) : tx("{0} giờ", [hours]);
 }
 
 /* ================= Tiện ích chủ đề ================= */
@@ -203,7 +204,7 @@ function getChapter(topic: Topic | undefined) {
 }
 
 function getTopicTitle(topic: Topic | undefined) {
-  return topic ? getMainTopicTitle(topic.name) : "Chủ đề chưa xác định";
+  return topic ? getMainTopicTitle(topic.name) : tx("Chủ đề chưa xác định");
 }
 
 /* ================= Trang ================= */
@@ -237,7 +238,7 @@ export default function StudyPlanDetailPage() {
 
         if (!planResponse.ok) {
           throw new Error(
-            planResult.detail || "Không thể tải kế hoạch ôn thi."
+            planResult.detail || tx("Không thể tải kế hoạch ôn thi.")
           );
         }
 
@@ -246,7 +247,7 @@ export default function StudyPlanDetailPage() {
         );
 
         if (!currentPlan) {
-          throw new Error("Không tìm thấy kế hoạch ôn thi.");
+          throw new Error(tx("Không tìm thấy kế hoạch ôn thi."));
         }
 
         setPlan(currentPlan);
@@ -261,12 +262,12 @@ export default function StudyPlanDetailPage() {
 
         if (!topicResponse.ok) {
           throw new Error(
-            topicResult.detail || "Không thể tải danh sách chủ đề."
+            topicResult.detail || tx("Không thể tải danh sách chủ đề.")
           );
         }
 
         if (!sessionResponse.ok) {
-          throw new Error(sessionResult.detail || "Không thể tải lịch học.");
+          throw new Error(sessionResult.detail || tx("Không thể tải lịch học."));
         }
 
         setTopics(topicResult.data || []);
@@ -301,7 +302,7 @@ export default function StudyPlanDetailPage() {
         setError(
           loadError instanceof Error
             ? loadError.message
-            : "Đã xảy ra lỗi khi tải dữ liệu."
+            : tx("Đã xảy ra lỗi khi tải dữ liệu.")
         );
       } finally {
         setIsLoading(false);
@@ -588,7 +589,7 @@ export default function StudyPlanDetailPage() {
         ? Math.round((completedSessions / totalSessions) * 100)
         : 0,
       chapterCount: chapterList.length,
-      chapterUnit: hasChapterNames ? "chương" : "chủ đề",
+      chapterUnit: hasChapterNames ? tx("chương") : tx("chủ đề"),
       chaptersDone: chapterList.filter(
         (chapter) => chapter.total > 0 && chapter.done === chapter.total
       ).length,
@@ -614,14 +615,14 @@ export default function StudyPlanDetailPage() {
         title: getTopicTitle(insight.topic),
         done,
         lines: [
-          { text: `Học mới · ${insight.session.duration_minutes} phút` },
+          { text: tx("Học mới · {0} phút", [insight.session.duration_minutes]) },
           done && attempt
             ? {
-                text: `Quiz ${attempt.correct_count ?? 0}/${attempt.total_questions ?? 0} (${percent}%)${band ? ` · ${band.weak ? "Yếu" : "Cần củng cố"}` : " · Đạt"}`,
+                text: `Quiz ${attempt.correct_count ?? 0}/${attempt.total_questions ?? 0} (${percent}%)${band ? ` · ${band.weak ? tx("Yếu") : tx("Cần củng cố")}` : tx(" · Đạt")}`,
                 tone: band ? (band.weak ? "weak" : "mid") : undefined,
               }
-            : { text: insight.session.status === "in_progress" ? "Đang học, chưa nộp bài kiểm tra" : "Chưa học" },
-          ...(reviewOn ? [{ text: `Đã đặt lịch ôn ${formatDayMonth(reviewOn)}` }] : []),
+            : { text: insight.session.status === "in_progress" ? tx("Đang học, chưa nộp bài kiểm tra") : tx("Chưa học") },
+          ...(reviewOn ? [{ text: tx("Đã đặt lịch ôn {0}", [formatDayMonth(reviewOn)]) }] : []),
         ],
         action: done
           ? { kind: "revisit", href: insight.links.revisit }
@@ -640,19 +641,19 @@ export default function StudyPlanDetailPage() {
           done: reviewDone,
           late,
           lines: [
-            { text: `Từ buổi ${weekdayLong(insight.dateKey)} ${formatDayMonth(insight.dateKey)}` },
+            { text: tx("Từ buổi {0} {1}", [weekdayLong(insight.dateKey), formatDayMonth(insight.dateKey)]) },
             {
-              text: `Quiz ${attempt.correct_count ?? 0}/${attempt.total_questions ?? 0} (${percent}%) · ${band?.weak ? "Yếu" : "Cần củng cố"}`,
+              text: `Quiz ${attempt.correct_count ?? 0}/${attempt.total_questions ?? 0} (${percent}%) · ${band?.weak ? tx("Yếu") : tx("Cần củng cố")}`,
               tone: band?.weak ? "weak" : "mid",
             },
             {
               text: reviewDone
-                ? "Đã ôn xong, đạt từ 80%"
+                ? tx("Đã ôn xong, đạt từ 80%")
                 : late
-                  ? `Trễ lịch ôn ${daysBetween(reviewKey, todayKey)} ngày`
+                  ? tx("Trễ lịch ôn {0} ngày", [daysBetween(reviewKey, todayKey)])
                   : reviewKey === todayKey
-                    ? "Đến hạn hôm nay"
-                    : "Đã lên lịch",
+                    ? tx("Đến hạn hôm nay")
+                    : tx("Đã lên lịch"),
             },
           ],
           action: reviewDone
@@ -668,7 +669,7 @@ export default function StudyPlanDetailPage() {
         dateKey: toDateKey(plan.exam_date),
         title: `Thi: ${plan.title}`,
         done: false,
-        lines: [{ text: `Còn ${Math.max(0, daysBetween(todayKey, toDateKey(plan.exam_date)))} ngày` }],
+        lines: [{ text: tx("Còn {0} ngày", [Math.max(0, daysBetween(todayKey, toDateKey(plan.exam_date)))]) }],
       });
     }
     return entries;
@@ -679,10 +680,10 @@ export default function StudyPlanDetailPage() {
   if (isLoading || holdLoading) {
     return (
       <SmartLoading
-        text="Đang tải lộ trình ôn tập…"
-        sub="Pilot đang xếp lịch học và lịch ôn của bạn."
-        stages={["Tải kế hoạch", "Xếp buổi học", "Gắn lịch ôn", "Vẽ lịch tháng"]}
-        continueLabel="Xem kế hoạch"
+        text={tx("Đang tải lộ trình ôn tập…")}
+        sub={tx("Pilot đang xếp lịch học và lịch ôn của bạn.")}
+        stages={[tx("Tải kế hoạch"), tx("Xếp buổi học"), tx("Gắn lịch ôn"), tx("Vẽ lịch tháng")]}
+        continueLabel={tx("Xem kế hoạch")}
         done={!isLoading}
         onHoldChange={setHoldLoading}
       />
@@ -693,14 +694,15 @@ export default function StudyPlanDetailPage() {
     return (
       <div className="sp-card mx-auto max-w-3xl p-8">
         <p className="text-sm font-medium text-[var(--sp-pink-dark)]">
-          {error || "Không tìm thấy kế hoạch."}
+          {error || tx("Không tìm thấy kế hoạch.")}
         </p>
         <button
           type="button"
           onClick={() => router.push("/study-plans")}
           className="sp-btn sp-btn-primary mt-5 px-5 py-2.5 text-sm"
         >
-          Quay lại kế hoạch
+
+          {tx("Quay lại kế hoạch")}
         </button>
       </div>
     );
@@ -717,8 +719,8 @@ export default function StudyPlanDetailPage() {
     titleWords.length > 2 ? titleWords.slice(0, -2).join(" ") : "";
   const dailyHours = plan.daily_available_minutes / 60;
   const dailyLabel = Number.isInteger(dailyHours)
-    ? `${dailyHours} giờ/ngày`
-    : `${plan.daily_available_minutes} phút/ngày`;
+    ? tx("{0} giờ/ngày", [dailyHours])
+    : tx("{0} phút/ngày", [plan.daily_available_minutes]);
 
   const learningTotalMinutes = todayPlan.learningSessions.reduce(
     (sum, insight) => sum + (insight.session.duration_minutes || 0),
@@ -779,7 +781,8 @@ export default function StudyPlanDetailPage() {
               href="/study-plans"
               className="hover:text-[var(--sp-peri-dark)]"
             >
-              Kế hoạch ôn thi
+
+              {tx("Kế hoạch ôn thi")}
             </Link>
             <IconChevronRight size={14} />
             <span className="truncate text-[var(--sp-text-2)]">
@@ -801,18 +804,19 @@ export default function StudyPlanDetailPage() {
           <p className="mt-2 text-[15px] text-[var(--sp-muted)]">
             {materials.length > 0 && (
               <>
-                Tạo từ{" "}
+
+                {tx("Tạo từ")}{" "}
                 <span className="font-semibold text-[var(--sp-ink)]">
                   {materials[0].file_name}
                 </span>
                 {materials.length > 1 &&
-                  ` và ${materials.length - 1} tài liệu khác`}
+                  tx(" và {0} tài liệu khác", [materials.length - 1])}
                 {" · "}
               </>
             )}
             {dailyLabel}
             {plan.study_days_per_week
-              ? ` · ${plan.study_days_per_week} ngày/tuần`
+              ? tx(" · {0} ngày/tuần", [plan.study_days_per_week])
               : ""}
           </p>
         </div>
@@ -823,7 +827,8 @@ export default function StudyPlanDetailPage() {
             className="sp-btn sp-btn-primary px-5 py-3 text-[15px]"
           >
             <IconPlus size={18} />
-            Tạo kế hoạch mới
+
+            {tx("Tạo kế hoạch mới")}
           </Link>
         </div>
       </section>
@@ -840,39 +845,38 @@ export default function StudyPlanDetailPage() {
         />
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-0">
-          <BannerStat icon={<IconFlag size={16} />} label="Ngày thi">
+          <BannerStat icon={<IconFlag size={16} />} label={tx("Ngày thi")}>
             <p className="text-[30px] font-extrabold leading-tight">
               {formatFullDate(examKey)}
             </p>
             <p className="text-sm text-white/70">{weekdayLong(examKey)}</p>
           </BannerStat>
 
-          <BannerStat icon={<IconClock size={16} />} label="Còn lại" divided>
+          <BannerStat icon={<IconClock size={16} />} label={tx("Còn lại")} divided>
             <p className="text-[30px] font-extrabold leading-tight">
-              {daysLeft} <span className="text-lg font-semibold">ngày</span>
+              {daysLeft} <span className="text-lg font-semibold">{tx("ngày")}</span>
             </p>
             <p className="text-sm text-white/70">
               {stats.firstDateKey
-                ? `Bắt đầu từ ${formatDayMonth(stats.firstDateKey)}`
-                : "Chưa có lịch học"}
+                ? tx("Bắt đầu từ {0}", [formatDayMonth(stats.firstDateKey)])
+                : tx("Chưa có lịch học")}
             </p>
           </BannerStat>
 
           <BannerStat
             icon={<IconChart size={16} />}
-            label="Tiến độ kế hoạch"
+            label={tx("Tiến độ kế hoạch")}
             divided
           >
             <p className="text-[30px] font-extrabold leading-tight">
               {stats.percent}%
               <span className="ml-2 text-base font-semibold text-white/80">
-                · {stats.completedSessions}/{stats.totalSessions} buổi
-              </span>
+                {tx("· {0}/{1} buổi", [stats.completedSessions, stats.totalSessions])}</span>
             </p>
             <div
               className="mt-2 h-2.5 w-full max-w-[260px] overflow-hidden rounded-full bg-white/15"
               role="progressbar"
-              aria-label="Tiến độ kế hoạch"
+              aria-label={tx("Tiến độ kế hoạch")}
               aria-valuenow={stats.percent}
               aria-valuemin={0}
               aria-valuemax={100}
@@ -886,7 +890,7 @@ export default function StudyPlanDetailPage() {
 
           <BannerStat
             icon={<IconBook size={16} />}
-            label="Nội dung cần học"
+            label={tx("Nội dung cần học")}
             divided
           >
             <p className="text-[30px] font-extrabold leading-tight">
@@ -897,12 +901,10 @@ export default function StudyPlanDetailPage() {
             </p>
             <div className="mt-1.5 flex flex-wrap gap-2">
               <span className="sp-chip bg-white/15 text-white">
-                {stats.chaptersDone} đã học
-              </span>
+                {tx("{0} đã học", [stats.chaptersDone])}</span>
               {stats.chaptersNeedReview > 0 && (
                 <span className="sp-chip bg-[var(--sp-pink)]/30 text-[#ffd3e2]">
-                  {stats.chaptersNeedReview} cần ôn lại
-                </span>
+                  {tx("{0} cần ôn lại", [stats.chaptersNeedReview])}</span>
               )}
             </div>
           </BannerStat>
@@ -918,13 +920,13 @@ export default function StudyPlanDetailPage() {
                 {`${weekdayLong(todayKey)}, ${formatDayMonth(todayKey)}`}
               </p>
               <h2 className="text-[26px] text-[var(--sp-ink)]">
-                {todayPlan.isStudyDay ? "Hôm nay học gì?" : "Hôm nay không có lịch học"}
+                {todayPlan.isStudyDay ? tx("Hôm nay học gì?") : tx("Hôm nay không có lịch học")}
               </h2>
             </div>
 
             {todayPlan.learningSessions.length > 0 && (
               <span className="sp-chip bg-[var(--sp-surface-2)] text-[var(--sp-text-2)]">
-                {todayPlan.learningSessions.length} buổi ·{" "}
+                {todayPlan.learningSessions.length}  {tx("buổi ·")}{" "}
                 {formatDuration(learningTotalMinutes)} · xong {learningDone}/
                 {todayPlan.learningSessions.length}
               </span>
@@ -944,7 +946,8 @@ export default function StudyPlanDetailPage() {
                 >
                   <p className="flex items-center gap-2 font-bold text-[var(--sp-red-dark)]">
                     <IconAlert size={18} />
-                    Bắt buộc chọn ngày ôn cho {todayPlan.extras.length} bài chưa đạt 80%
+
+                    {tx("Bắt buộc chọn ngày ôn cho")} {todayPlan.extras.length}  {tx("bài chưa đạt 80%")}
                   </p>
                   <ul className="mt-2 space-y-2">
                     {todayPlan.extras.map(({ insight }) => (
@@ -955,7 +958,7 @@ export default function StudyPlanDetailPage() {
                         <div className="min-w-0">
                           <p className="text-sm font-bold text-[var(--sp-ink)]">{getTopicTitle(insight.topic)}</p>
                           <p className="text-xs text-[var(--sp-muted)]">
-                            Buổi {weekdayLong(insight.dateKey)} {formatDayMonth(insight.dateKey)}
+                            {tx("Buổi {0} {1}", [weekdayLong(insight.dateKey), formatDayMonth(insight.dateKey)])}
                           </p>
                         </div>
                         {insight.attempt ? (
@@ -963,7 +966,8 @@ export default function StudyPlanDetailPage() {
                             href={`/quiz-results/${insight.attempt.attempt_id}`}
                             className="sp-btn sp-btn-primary w-[120px] px-0 py-2 text-[13px]"
                           >
-                            Chọn ngày ôn
+
+                            {tx("Chọn ngày ôn")}
                           </Link>
                         ) : (
                           <span />
@@ -979,11 +983,12 @@ export default function StudyPlanDetailPage() {
           {todayPlan.nextLearning && (
             <p className="mt-5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl bg-[var(--sp-surface-2)] px-4 py-3 text-sm text-[var(--sp-text-2)]">
               <IconCalendar size={16} className="shrink-0 text-[var(--sp-peri-dark)]" />
-              Buổi học kế tiếp:
+
+              {tx("Buổi học kế tiếp:")}
               <span className="font-semibold text-[var(--sp-ink)]">
                 {weekdayLong(todayPlan.nextLearning.dateKey)}, {formatDayMonth(todayPlan.nextLearning.dateKey)}
               </span>
-              · {todayPlan.nextLearning.sessions.length} buổi · {formatDuration(nextLearningMinutes)}
+              · {todayPlan.nextLearning.sessions.length}  {tx("buổi ·")} {formatDuration(nextLearningMinutes)}
             </p>
           )}
         </section>
@@ -998,9 +1003,10 @@ export default function StudyPlanDetailPage() {
             <IconCalendar size={20} />
           </span>
           <div>
-            <h2 className="text-xl text-[var(--sp-ink)]">Toàn bộ lịch học</h2>
+            <h2 className="text-xl text-[var(--sp-ink)]">{tx("Toàn bộ lịch học")}</h2>
             <p className="text-sm text-[var(--sp-muted)]">
-              Rê chuột (hoặc chạm) vào ngày có góc màu để xem buổi học, buổi ôn và vào học ngay.
+
+              {tx("Rê chuột (hoặc chạm) vào ngày có góc màu để xem buổi học, buổi ôn và vào học ngay.")}
             </p>
           </div>
         </div>
@@ -1084,48 +1090,48 @@ function UpcomingCard({
   if (first) {
     lines.push(
       first.items.length === 0 && first.reviews.length === 1
-        ? `${dayName(first.dateKey)} mình ôn lại “${getTopicTitle(first.reviews[0].topic)}” nha, chỉ một bài thôi!`
-        : `${dayName(first.dateKey)} có ${[
-            first.items.length && `${first.items.length} bài mới`,
-            first.reviews.length && `${first.reviews.length} bài ôn`,
+        ? tx("{0} mình ôn lại “{1}” nha, chỉ một bài thôi!", [dayName(first.dateKey), getTopicTitle(first.reviews[0].topic)])
+        : tx("{0} có {1}, cố lên!", [dayName(first.dateKey), [
+            first.items.length && tx("{0} bài mới", [first.items.length]),
+            first.reviews.length && tx("{0} bài ôn", [first.reviews.length]),
           ]
             .filter(Boolean)
-            .join(" + ")}, cố lên!`
+            .join(" + ")])
     );
   }
   const heaviest = [...days].sort((a, b) => minutesOf(b) - minutesOf(a))[0];
   if (heaviest && heaviest !== first && heaviest.items.length + heaviest.reviews.length >= 3) {
     lines.push(
-      `${weekdayLong(heaviest.dateKey)} hơi nặng: ${heaviest.items.length} bài mới${
-        heaviest.reviews.length ? ` + ${heaviest.reviews.length} bài ôn` : ""
-      }. Nhớ ngủ sớm hôm trước nha!`
+      tx("{0} hơi nặng: {1} bài mới{2}. Nhớ ngủ sớm hôm trước nha!", [weekdayLong(heaviest.dateKey), heaviest.items.length, heaviest.reviews.length ? tx(" + {0} bài ôn", [heaviest.reviews.length]) : ""])
     );
   }
-  lines.push(`Còn ${daysLeft} ngày nữa là thi, mình đi cùng bạn!`);
+  lines.push(tx("Còn {0} ngày nữa là thi, mình đi cùng bạn!", [daysLeft]));
 
   return (
     <aside className="flex flex-col rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-white p-5 shadow-[6px_6px_0_var(--sp-lav-line)] sm:p-6">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
         <div>
-          <p className="sp-accent text-[17px] text-[var(--sp-pink)]">{days.length} ngày học tới</p>
-          <h2 className="text-[22px] text-[var(--sp-ink)]">Sắp tới</h2>
+          <p className="sp-accent text-[17px] text-[var(--sp-pink)]">{tx("{0} ngày học tới", [days.length])}</p>
+          <h2 className="text-[22px] text-[var(--sp-ink)]">{tx("Sắp tới")}</h2>
         </div>
         <a href="#full-schedule" className="flex items-center gap-1 text-sm font-bold text-[var(--sp-peri-dark)] hover:underline">
-          Cả lịch <IconArrowRight size={16} />
+
+          {tx("Cả lịch")} <IconArrowRight size={16} />
         </a>
       </div>
 
       {days.length === 0 ? (
         <p className="mt-4 rounded-2xl bg-[var(--sp-surface-2)] p-5 text-sm text-[var(--sp-muted)]">
-          Không còn buổi học nào phía trước. Hãy ôn lại các chương cần củng cố trước ngày thi.
+
+          {tx("Không còn buổi học nào phía trước. Hãy ôn lại các chương cần củng cố trước ngày thi.")}
         </p>
       ) : (
         <>
           <div className="mt-4 grid grid-cols-3 gap-2">
             {[
-              { value: lessonCount, label: "buổi học", shadow: "var(--sp-lav-line)" },
-              { value: reviewCount, label: "buổi ôn", shadow: "var(--sp-pink-line)" },
-              { value: shortMinutes(totalMinutes), label: "tổng giờ", shadow: "#f3dc9b" },
+              { value: lessonCount, label: tx("buổi học"), shadow: "var(--sp-lav-line)" },
+              { value: reviewCount, label: tx("buổi ôn"), shadow: "var(--sp-pink-line)" },
+              { value: shortMinutes(totalMinutes), label: tx("tổng giờ"), shadow: "#f3dc9b" },
             ].map((stat) => (
               <div
                 key={stat.label}
@@ -1158,7 +1164,7 @@ function UpcomingCard({
                     <p className="mb-1.5 mt-0.5 flex items-center justify-between gap-2 text-[12px] font-extrabold text-[var(--sp-muted)]">
                       {weekdayLong(day.dateKey)}
                       <span className={day.items.length === 0 ? "text-[var(--sp-pink-dark)]" : ""}>
-                        {[minutes > 0 && formatDuration(minutes), day.reviews.length > 0 && `${day.reviews.length} buổi ôn`]
+                        {[minutes > 0 && formatDuration(minutes), day.reviews.length > 0 && tx("{0} buổi ôn", [day.reviews.length])]
                           .filter(Boolean)
                           .join(" · ")}
                       </span>
@@ -1183,10 +1189,10 @@ function UpcomingCard({
                           className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-xl border-2 border-l-[5px] border-[var(--sp-pink-line)] border-l-[var(--sp-pink)] bg-[var(--sp-pink-bg)] px-2.5 py-1.5"
                         >
                           <span className="line-clamp-2 text-[13.5px] font-bold leading-snug text-[var(--sp-ink)]" title={getTopicTitle(insight.topic)}>
-                            <span className="text-[var(--sp-pink-dark)]">↻ Ôn lại · </span>
+                            <span className="text-[var(--sp-pink-dark)]">{tx("↻ Ôn lại ·")} </span>
                             {getTopicTitle(insight.topic)}
                           </span>
-                          <span className="rounded-full bg-[var(--sp-pink)] px-2 py-0.5 text-[11.5px] font-extrabold text-white">Ôn</span>
+                          <span className="rounded-full bg-[var(--sp-pink)] px-2 py-0.5 text-[11.5px] font-extrabold text-white">{tx("Ôn")}</span>
                         </li>
                       ))}
                     </ul>
@@ -1199,7 +1205,7 @@ function UpcomingCard({
           {restDays.length > 0 && (
             <p className="mt-3 flex items-center gap-2 text-[12.5px] font-semibold text-[var(--sp-muted)]">
               <IconMoon size={15} className="shrink-0" />
-              {restDays.map((key) => `${weekdayLong(key)} ${formatDayMonth(key)}`).join(", ")} nghỉ
+              {restDays.map((key) => `${weekdayLong(key)} ${formatDayMonth(key)}`).join(", ")}  {tx("nghỉ")}
             </p>
           )}
         </>
@@ -1209,7 +1215,7 @@ function UpcomingCard({
       <div className="mt-auto grid grid-cols-[72px_minmax(0,1fr)] items-end gap-2.5 pt-4">
         <button
           type="button"
-          aria-label="Bấm để Pilot nói câu khác"
+          aria-label={tx("Bấm để Pilot nói câu khác")}
           onClick={() => setLine((value) => (value + 1) % lines.length)}
           className="h-[72px] w-[72px]"
         >
@@ -1224,9 +1230,9 @@ function UpcomingCard({
         </p>
       </div>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 border-t-2 border-dashed border-[var(--sp-line)] pt-3 text-[12.5px] font-semibold text-[var(--sp-text-2)]">
-        <Legend color="var(--sp-peri)" label="Học mới" />
-        <Legend color="var(--sp-pink)" label="Ôn lại" />
-        <Legend color="var(--sp-yellow)" label="Ngày gần nhất" />
+        <Legend color="var(--sp-peri)" label={tx("Học mới")} />
+        <Legend color="var(--sp-pink)" label={tx("Ôn lại")} />
+        <Legend color="var(--sp-yellow)" label={tx("Ngày gần nhất")} />
       </div>
     </aside>
   );
@@ -1247,13 +1253,13 @@ function EmptyState({ hasSessions }: { hasSessions: boolean }) {
       <Sparkle size={24} className="mx-auto mb-3 text-[var(--sp-yellow)]" />
       <p className="font-bold text-[var(--sp-ink)]">
         {hasSessions
-          ? "Bạn đã hoàn thành mọi buổi học"
-          : "Lộ trình chưa được tạo"}
+          ? tx("Bạn đã hoàn thành mọi buổi học")
+          : tx("Lộ trình chưa được tạo")}
       </p>
       <p className="mx-auto mt-1 max-w-md text-sm text-[var(--sp-muted)]">
         {hasSessions
-          ? "Hãy làm lại Quiz hoặc ôn Flashcard để giữ kiến thức trước ngày thi."
-          : "Sau khi AI phân tích tài liệu, StudyPilot sẽ chia các bài thành từng buổi học theo thời gian của bạn."}
+          ? tx("Hãy làm lại Quiz hoặc ôn Flashcard để giữ kiến thức trước ngày thi.")
+          : tx("Sau khi AI phân tích tài liệu, StudyPilot sẽ chia các bài thành từng buổi học theo thời gian của bạn.")}
       </p>
     </div>
   );
@@ -1270,18 +1276,18 @@ function getTaskAction(task: TodayTask) {
   const { insight } = task;
 
   if (task.kind === "review") {
-    return { href: insight.links.review, label: "Vào ôn" };
+    return { href: insight.links.review, label: tx("Vào ôn") };
   }
 
   if (task.kind === "quiz") {
-    return { href: `/quizzes/${insight.quizId}`, label: "Làm bài kiểm tra" };
+    return { href: `/quizzes/${insight.quizId}`, label: tx("Làm bài kiểm tra") };
   }
 
   const status = insight.session.status;
-  if (status === "completed") return { href: insight.links.revisit, label: "Xem lại" };
+  if (status === "completed") return { href: insight.links.revisit, label: tx("Xem lại") };
   return {
     href: insight.links.learn,
-    label: status === "in_progress" ? "Học tiếp" : "Vào học",
+    label: status === "in_progress" ? tx("Học tiếp") : tx("Vào học"),
   };
 }
 
@@ -1290,17 +1296,17 @@ const TASK_STYLE: Record<
   { label: string; chip: string; icon: React.ReactNode }
 > = {
   review: {
-    label: "Ôn lại",
+    label: tx("Ôn lại"),
     chip: "border border-[var(--sp-pink-line)] bg-white text-[var(--sp-pink-dark)]",
     icon: <IconRepeat size={14} />,
   },
   quiz: {
-    label: "Kiểm tra",
+    label: tx("Kiểm tra"),
     chip: "bg-[var(--sp-purple)] text-white",
     icon: <IconPen size={14} />,
   },
   learn: {
-    label: "Học mới",
+    label: tx("Học mới"),
     chip: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]",
     icon: <IconBook size={14} />,
   },
@@ -1316,7 +1322,8 @@ function TaskReason({ task }: { task: TodayTask }) {
   if (task.kind === "quiz") {
     return (
       <p className="mt-1.5 text-sm text-[var(--sp-muted)]">
-        Bạn đã vào học buổi này: nộp bài kiểm tra cuối buổi để hoàn thành.
+
+        {tx("Bạn đã vào học buổi này: nộp bài kiểm tra cuối buổi để hoàn thành.")}
       </p>
     );
   }
@@ -1326,7 +1333,7 @@ function TaskReason({ task }: { task: TodayTask }) {
       <p className="mt-1.5 flex items-center gap-1.5 text-sm text-[var(--sp-muted)]">
         <IconLock size={14} className="shrink-0" />
         {insight.session.lock_reason ||
-          "Hoàn thành các buổi trước để mở khóa"}
+          tx("Hoàn thành các buổi trước để mở khóa")}
       </p>
     );
   }
@@ -1334,8 +1341,7 @@ function TaskReason({ task }: { task: TodayTask }) {
   if (task.overdue) {
     return (
       <p className="mt-1.5 text-sm font-medium text-[var(--sp-amber-dark)]">
-        Trễ lịch từ {formatDayMonth(insight.dateKey)}, nên học bù hôm nay
-      </p>
+        {tx("Trễ lịch từ {0}, nên học bù hôm nay", [formatDayMonth(insight.dateKey)])}</p>
     );
   }
 
@@ -1375,7 +1381,8 @@ function FeaturedTask({
     >
       {isToday && (
         <span className="absolute -top-2.5 left-5 rounded-full bg-[var(--sp-pink)] px-2.5 py-0.5 text-[11px] font-bold text-white">
-          Hôm nay
+
+          {tx("Hôm nay")}
         </span>
       )}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -1387,7 +1394,7 @@ function FeaturedTask({
           <p className="text-[40px] font-extrabold leading-none text-[var(--sp-purple)]">
             {insight.session.duration_minutes}
           </p>
-          <p className="text-sm font-semibold text-[var(--sp-muted)]">phút</p>
+          <p className="text-sm font-semibold text-[var(--sp-muted)]">{tx("phút")}</p>
         </div>
 
         <div className="min-w-0 flex-1">
@@ -1412,7 +1419,7 @@ function FeaturedTask({
           className="sp-btn sp-btn-primary shrink-0 px-6 py-3 text-[15px]"
         >
           {locked ? <IconLock size={17} /> : <IconPlay size={17} />}
-          {locked ? "Chưa mở khóa" : action.label}
+          {locked ? tx("Chưa mở khóa") : action.label}
         </button>
       </div>
 
@@ -1449,7 +1456,7 @@ function CompactTask({
     <article
       role="button"
       tabIndex={0}
-      aria-label={`Xem hành trình: ${getTopicTitle(insight.topic)}`}
+      aria-label={tx("Xem hành trình: {0}", [getTopicTitle(insight.topic)])}
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -1465,14 +1472,15 @@ function CompactTask({
     >
       {isToday && (
         <span className="absolute -top-2.5 left-5 rounded-full bg-[var(--sp-pink)] px-2.5 py-0.5 text-[11px] font-bold text-white">
-          Hôm nay
+
+          {tx("Hôm nay")}
         </span>
       )}
       <div className="flex shrink-0 items-baseline gap-2 sm:w-[92px] sm:flex-col sm:items-center sm:gap-0 sm:border-r-2 sm:border-dashed sm:border-[var(--sp-line)] sm:pr-5">
         <p className="text-[32px] font-extrabold leading-none text-[var(--sp-purple)]">
           {insight.session.duration_minutes}
         </p>
-        <p className="text-sm font-semibold text-[var(--sp-muted)]">phút</p>
+        <p className="text-sm font-semibold text-[var(--sp-muted)]">{tx("phút")}</p>
       </div>
 
       <div className="min-w-0 flex-1">
@@ -1481,7 +1489,7 @@ function CompactTask({
         ) : (
           <span className={`sp-chip ${style.chip}`}>
             {done ? <IconCheck size={14} /> : style.icon}
-            {done ? "Đã xong" : style.label}
+            {done ? tx("Đã xong") : style.label}
           </span>
         )}
         <h3 className="mt-2 text-lg text-[var(--sp-ink)]">
@@ -1489,7 +1497,8 @@ function CompactTask({
         </h3>
         <TaskReason task={task} />
         <p className="mt-2 flex items-center gap-1 text-xs font-bold text-[var(--sp-peri-dark)] opacity-70 transition group-hover:opacity-100">
-          Bấm để xem hành trình
+
+          {tx("Bấm để xem hành trình")}
           <IconChevronDown size={14} className="transition group-hover:translate-y-0.5" />
         </p>
       </div>
@@ -1504,7 +1513,7 @@ function CompactTask({
         className="sp-btn sp-btn-secondary shrink-0 px-5 py-2.5 text-sm"
       >
         {locked && <IconLock size={15} />}
-        {locked ? "Chưa mở khóa" : action.label}
+        {locked ? tx("Chưa mở khóa") : action.label}
       </button>
     </article>
   );
@@ -1547,9 +1556,9 @@ function Journey({
       key: "learn",
       title:
         insight.dateKey === todayKey
-          ? "Hôm nay"
+          ? tx("Hôm nay")
           : formatDayMonth(insight.dateKey),
-      caption: learned ? "Đã học" : "Học lần đầu",
+      caption: learned ? tx("Đã học") : tx("Học lần đầu"),
       dateKey: insight.dateKey,
       state: learned ? "done" : focus === "learn" ? "current" : "todo",
       icon: learned ? <IconCheck size={18} /> : <IconBook size={18} />,
@@ -1559,11 +1568,11 @@ function Journey({
       title: attemptKey
         ? formatDayMonth(attemptKey)
         : focus === "quiz"
-          ? "Hôm nay"
+          ? tx("Hôm nay")
           : "Quiz",
       caption: attempt
-        ? `Đúng ${attempt.correct_count ?? 0}/${attempt.total_questions ?? 0} câu`
-        : "Kiểm tra",
+        ? tx("Đúng {0}/{1} câu", [attempt.correct_count ?? 0, attempt.total_questions ?? 0])
+        : tx("Kiểm tra"),
       dateKey: attemptKey,
       state: attempt
         ? insight.passed
@@ -1588,8 +1597,8 @@ function Journey({
     const reviewDone = !insight.pendingReviewId;
     steps.push({
       key: "review",
-      title: reviewDone ? "Đã ôn" : "Hôm nay",
-      caption: reviewDone ? "Ôn tập xong" : "Ôn lại",
+      title: reviewDone ? tx("Đã ôn") : tx("Hôm nay"),
+      caption: reviewDone ? tx("Ôn tập xong") : tx("Ôn lại"),
       dateKey: reviewDone ? null : todayKey,
       state: reviewDone ? "done" : "current",
       icon: reviewDone ? <IconCheck size={18} /> : <IconRepeat size={18} />,
@@ -1599,7 +1608,7 @@ function Journey({
   steps.push({
     key: "exam",
     title: formatDayMonth(examKey),
-    caption: "Ngày thi",
+    caption: tx("Ngày thi"),
     dateKey: examKey,
     state: "exam",
     icon: <IconFlag size={17} />,
@@ -1618,7 +1627,8 @@ function Journey({
     <div className="mt-5 rounded-2xl border border-[var(--sp-line)] bg-white p-4 sm:p-5">
       <p className="mb-5 flex items-center gap-2 text-[15px] font-bold text-[var(--sp-purple)]">
         <IconRepeat size={17} />
-        Hành trình của bài này
+
+        {tx("Hành trình của bài này")}
       </p>
 
       <ol className="flex items-start overflow-x-auto pb-1 pt-3">
@@ -1665,8 +1675,7 @@ function Journey({
                   />
                   {gap !== null && gap > 0 && (
                     <span className="absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs font-bold text-[var(--sp-peri-dark)]">
-                      +{gap} ngày
-                    </span>
+                      {tx("+{0} ngày", [gap])}</span>
                   )}
                 </div>
               )}
@@ -1762,7 +1771,8 @@ function ReviewOrigin({
   return (
     <>
       <p className={compact ? "text-xs text-[var(--sp-muted)]" : "mt-1.5 text-sm text-[var(--sp-text-2)]"}>
-        Kiến thức của buổi học {weekdayLong(insight.dateKey)} {formatDayMonth(insight.dateKey)}
+
+        {tx("Kiến thức của buổi học")} {weekdayLong(insight.dateKey)} {formatDayMonth(insight.dateKey)}
         {attempt &&
           ` · Quiz ${attempt.correct_count ?? 0}/${attempt.total_questions ?? 0} (${percent}%)`}
         {band && (
@@ -1785,7 +1795,7 @@ function ReviewOrigin({
           className="mt-1.5 inline-flex items-center gap-1 text-xs font-bold text-[var(--sp-peri-dark)] hover:underline"
         >
           <IconCalendar size={13} />
-          {insight.reviewDate ? "Đổi ngày ôn" : "Chọn ngày ôn"}
+          {insight.reviewDate ? tx("Đổi ngày ôn") : tx("Chọn ngày ôn")}
         </Link>
       )}
     </>

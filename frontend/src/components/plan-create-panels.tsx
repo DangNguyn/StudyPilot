@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { IconCheck, IconLayers, IconTarget, IconX, Sparkle } from "@/components/icons";
 import { PilotMascot } from "@/components/loading-play";
@@ -71,13 +72,13 @@ export function chapterShares(chapters: OutlineChapter[], mode: PlanMode, focus:
 /* ---------- Đầu trang: Pilot hướng dẫn + 4 bước ---------- */
 
 const HERO_LINES = [
-  "Chào bạn! Cho mình biết môn học và ngày thi trước nhé.",
-  "Ngon! Giờ chọn số ngày bạn học được mỗi tuần nha.",
-  "Đưa mình tài liệu, mình sẽ đọc và chia chương cho.",
-  "Chọn cách chia rồi bấm “Xem kế hoạch dự kiến” nhé!",
-  "Xong hết rồi! Bấm xem kế hoạch dự kiến, mình xếp thử cho bạn xem 🎉",
+  tx("Chào bạn! Cho mình biết môn học và ngày thi trước nhé."),
+  tx("Ngon! Giờ chọn số ngày bạn học được mỗi tuần nha."),
+  tx("Đưa mình tài liệu, mình sẽ đọc và chia chương cho."),
+  tx("Chọn cách chia rồi bấm “Xem kế hoạch dự kiến” nhé!"),
+  tx("Xong hết rồi! Bấm xem kế hoạch dự kiến, mình xếp thử cho bạn xem 🎉"),
 ];
-const HERO_POKE = ["Hihi, nhột quá!", "Mình đợi bạn điền xong nè~", "Cố lên, sắp có lịch rồi!"];
+const HERO_POKE = [tx("Hihi, nhột quá!"), tx("Mình đợi bạn điền xong nè~"), tx("Cố lên, sắp có lịch rồi!")];
 
 export function CreatePlanHero({ steps, ready = false }: { steps: CreateStep[]; ready?: boolean }) {
   const firstOpen = steps.findIndex((step) => !step.complete);
@@ -103,8 +104,8 @@ export function CreatePlanHero({ steps, ready = false }: { steps: CreateStep[]; 
         />
       </div>
       <div className="relative min-w-0">
-        <p className="sp-accent text-[17px] text-[#ffd3e2]">Kế hoạch ôn thi · Tạo mới</p>
-        <h1 className="font-display text-[28px] leading-tight !text-white sm:text-[34px]">Tạo kế hoạch ôn thi</h1>
+        <p className="sp-accent text-[17px] text-[#ffd3e2]">{tx("Kế hoạch ôn thi · Tạo mới")}</p>
+        <h1 className="font-display text-[28px] leading-tight !text-white sm:text-[34px]">{tx("Tạo kế hoạch ôn thi")}</h1>
         <p
           key={poke?.at ?? (ready ? "ready" : current)}
           className="sp-hero-bubble relative mt-2 inline-block max-w-[560px] rounded-[14px] border-2 border-[var(--sp-purple-deep)] bg-white px-3.5 py-2 text-[14px] font-bold text-[var(--sp-ink)] shadow-[3px_3px_0_var(--sp-pink)]"
@@ -113,7 +114,7 @@ export function CreatePlanHero({ steps, ready = false }: { steps: CreateStep[]; 
           {poke?.text ?? HERO_LINES[ready ? HERO_LINES.length - 1 : Math.min(current, HERO_LINES.length - 2)]}
         </p>
       </div>
-      <ol className="relative col-span-full grid grid-cols-4 gap-2 xl:col-span-1 xl:grid-cols-[repeat(4,92px)]" aria-label="Các bước tạo kế hoạch">
+      <ol className="relative col-span-full grid grid-cols-4 gap-2 xl:col-span-1 xl:grid-cols-[repeat(4,92px)]" aria-label={tx("Các bước tạo kế hoạch")}>
         {steps.map((step, index) => {
           const on = index === Math.min(current, steps.length - 1) && !step.complete;
           return (
@@ -159,22 +160,22 @@ export function PlanModeCards({
   const options: { value: PlanMode; title: string; tag: string; text: string; icon: typeof IconLayers }[] = [
     {
       value: "chapter",
-      title: "Theo chương",
-      tag: "Tuyến tính",
-      text: compact ? "Chia đều các chương, học lần lượt từ đầu đến cuối." : "Chia đều các chương theo ngày, học lần lượt từ chương đầu đến chương cuối.",
+      title: tx("Theo chương"),
+      tag: tx("Tuyến tính"),
+      text: compact ? tx("Chia đều các chương, học lần lượt từ đầu đến cuối.") : tx("Chia đều các chương theo ngày, học lần lượt từ chương đầu đến chương cuối."),
       icon: IconLayers,
     },
     {
       value: "focus",
-      title: "Theo trọng tâm",
-      tag: "Trọng số",
-      text: compact ? "Dồn 70–80% thời gian cho chương bạn chọn." : "Dồn 70–80% thời gian cho chương trọng tâm, phần còn lại đọc lướt.",
+      title: tx("Theo trọng tâm"),
+      tag: tx("Trọng số"),
+      text: compact ? tx("Dồn 70–80% thời gian cho chương bạn chọn.") : tx("Dồn 70–80% thời gian cho chương trọng tâm, phần còn lại đọc lướt."),
       icon: IconTarget,
     },
   ];
 
   return (
-    <div role="radiogroup" aria-label="Cách chia kế hoạch" className="grid gap-3 sm:grid-cols-2">
+    <div role="radiogroup" aria-label={tx("Cách chia kế hoạch")} className="grid gap-3 sm:grid-cols-2">
       {options.map((option) => {
         const active = mode === option.value;
         const Icon = option.icon;
@@ -246,10 +247,12 @@ export function FocusChapterChips({
   return (
     <div className="sp-task-expand rounded-2xl border border-[var(--sp-line)] bg-[var(--sp-surface-2)] p-4">
       <p className="flex flex-wrap items-center gap-x-2 text-sm font-bold text-[var(--sp-ink)]">
-        Chương trọng tâm
+
+        {tx("Chương trọng tâm")}
         <span className="flex items-center gap-1 text-xs font-semibold text-[var(--sp-muted)]">
           <Sparkle size={11} className="text-[var(--sp-pink)]" />
-          AI gợi ý · bấm để bật/tắt
+
+          {tx("AI gợi ý · bấm để bật/tắt")}
         </span>
       </p>
 
@@ -272,7 +275,7 @@ export function FocusChapterChips({
                       : "border-[var(--sp-line)] bg-white text-[var(--sp-muted)] hover:border-[var(--sp-pink-line)]"
                   }`}
                 >
-                  {chapter.suggested_focus && <span aria-label="AI gợi ý">★</span>}
+                  {chapter.suggested_focus && <span aria-label={tx("AI gợi ý")}>★</span>}
                   <span className="font-extrabold">{code}</span>
                   <span className="truncate">{title}</span>
                 </button>
@@ -280,11 +283,12 @@ export function FocusChapterChips({
             })}
           </div>
           {focus.size === 0 && (
-            <p className="mt-2 text-xs font-semibold text-[var(--sp-pink-dark)]">Chọn ít nhất 1 chương trọng tâm.</p>
+            <p className="mt-2 text-xs font-semibold text-[var(--sp-pink-dark)]">{tx("Chọn ít nhất 1 chương trọng tâm.")}</p>
           )}
           {focus.size > 0 && focus.size === outline.chapters.length && (
             <p className="mt-2 text-xs font-semibold text-[var(--sp-amber-dark)]">
-              Đang chọn tất cả chương — kế hoạch sẽ giống chia theo chương.
+
+              {tx("Đang chọn tất cả chương — kế hoạch sẽ giống chia theo chương.")}
             </p>
           )}
         </>
@@ -293,18 +297,19 @@ export function FocusChapterChips({
           {[72, 96, 64, 88, 70].map((width, index) => (
             <span key={index} className="h-8 animate-pulse rounded-full bg-white" style={{ width }} />
           ))}
-          <span className="w-full text-xs text-[var(--sp-muted)]">AI đang đọc tài liệu để nhận diện chương…</span>
+          <span className="w-full text-xs text-[var(--sp-muted)]">{tx("AI đang đọc tài liệu để nhận diện chương…")}</span>
         </div>
       ) : outline.status === "error" ? (
         <div className="mt-2 text-[13px] text-[var(--sp-pink-dark)]">
           {outline.message}{" "}
           <button type="button" onClick={onRetry} className="font-bold underline underline-offset-2">
-            Thử lại
+
+            {tx("Thử lại")}
           </button>
         </div>
       ) : (
         <p className="mt-2 text-[13px] text-[var(--sp-muted)]">
-          {hasFile ? "Đang chuẩn bị…" : "Tải tài liệu lên để AI nhận diện chương và gợi ý phần trọng tâm."}
+          {hasFile ? tx("Đang chuẩn bị…") : tx("Tải tài liệu lên để AI nhận diện chương và gợi ý phần trọng tâm.")}
         </p>
       )}
     </div>
@@ -385,10 +390,10 @@ export function PlanPreviewDialog({
     : [];
 
   const stats = [
-    { value: daysToExam ?? "—", label: "ngày đến thi", shadow: "var(--sp-pink-line)" },
-    { value: studyDayCount || "—", label: "ngày học", shadow: "var(--sp-lav-line)" },
-    { value: lessonCount || "—", label: "bài học", shadow: "#f3dc9b" },
-    { value: `${dailyHours} giờ`, label: "mỗi ngày", shadow: "#e3cdf0" },
+    { value: daysToExam ?? "—", label: tx("ngày đến thi"), shadow: "var(--sp-pink-line)" },
+    { value: studyDayCount || "—", label: tx("ngày học"), shadow: "var(--sp-lav-line)" },
+    { value: lessonCount || "—", label: tx("bài học"), shadow: "#f3dc9b" },
+    { value: tx("{0} giờ", [dailyHours]), label: tx("mỗi ngày"), shadow: "#e3cdf0" },
   ];
 
   return (
@@ -405,15 +410,15 @@ export function PlanPreviewDialog({
         <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-3.5 sm:grid-cols-[76px_minmax(0,1fr)_auto]">
           <PilotMascot size={76} />
           <div className="min-w-0">
-            <p className="sp-accent text-[16px] text-[var(--sp-pink)]">Pilot đã xếp thử cho bạn</p>
+            <p className="sp-accent text-[16px] text-[var(--sp-pink)]">{tx("Pilot đã xếp thử cho bạn")}</p>
             <h3 id="plan-preview-title" className="truncate text-[21px] font-extrabold text-[var(--sp-ink)]">
-              Kế hoạch dự kiến · {subjectName}
+              {tx("Kế hoạch dự kiến · {0}", [subjectName])}
             </h3>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Đóng"
+            aria-label={tx("Đóng")}
             className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-[var(--sp-line)] bg-white text-[var(--sp-muted)] hover:border-[var(--sp-lav-line)]"
           >
             <IconX size={18} />
@@ -435,14 +440,15 @@ export function PlanPreviewDialog({
 
         <div className="mt-5">
           <p className="text-[14.5px] font-bold text-[var(--sp-ink)]">
-            Phân bổ thời gian{" "}
-            <span className="font-semibold text-[var(--sp-muted)]">· {isFocus ? "theo trọng tâm" : "theo chương"}</span>
+
+            {tx("Phân bổ thời gian")}{" "}
+            <span className="font-semibold text-[var(--sp-muted)]">· {isFocus ? tx("theo trọng tâm") : tx("theo chương")}</span>
           </p>
           {chapters.length === 0 ? (
             <p className="mt-2 rounded-2xl border-2 border-dashed border-[var(--sp-line)] px-4 py-4 text-[13px] text-[var(--sp-muted)]">
               {outline.status === "loading"
-                ? "AI đang nhận diện chương, phân bổ sẽ hiện khi đọc xong."
-                : "Chưa nhận diện trước được chương, AI sẽ chia khi tạo kế hoạch."}
+                ? tx("AI đang nhận diện chương, phân bổ sẽ hiện khi đọc xong.")
+                : tx("Chưa nhận diện trước được chương, AI sẽ chia khi tạo kế hoạch.")}
             </p>
           ) : (
             <ul className="mt-2 space-y-2">
@@ -468,7 +474,7 @@ export function PlanPreviewDialog({
               })}
               {review > 0 && (
                 <li className="grid grid-cols-[minmax(0,220px)_minmax(0,1fr)_44px] items-center gap-3 text-[13px] font-semibold">
-                  <span className="text-[var(--sp-ink)]">Ôn tổng hợp · {reviewDayCount} ngày cuối</span>
+                  <span className="text-[var(--sp-ink)]">{tx("Ôn tổng hợp · {0} ngày cuối", [reviewDayCount])}</span>
                   <span className="h-3 overflow-hidden rounded-full border border-[var(--sp-line)] bg-[var(--sp-surface-2)]">
                     <span className="block h-full rounded-full bg-[var(--sp-purple)] transition-[width] duration-700 ease-out" style={{ width: grow ? `${review}%` : 0 }} />
                   </span>
@@ -481,7 +487,7 @@ export function PlanPreviewDialog({
 
         {firstWeek.length > 0 && (
           <div className="mt-5">
-            <p className="text-[14.5px] font-bold text-[var(--sp-ink)]">Tuần học đầu tiên</p>
+            <p className="text-[14.5px] font-bold text-[var(--sp-ink)]">{tx("Tuần học đầu tiên")}</p>
             <div className="mt-2 grid grid-cols-7 gap-1.5">
               {firstWeek.map((key) => {
                 const index = sorted.indexOf(key);
@@ -495,19 +501,20 @@ export function PlanPreviewDialog({
                           : "bg-[repeating-linear-gradient(135deg,#f1edf4_0_6px,#f8f6fa_6px_12px)] text-[var(--sp-soft)]"
                       }`}
                     >
-                      {index >= 0 ? `Buổi ${index + 1}` : "Nghỉ"}
+                      {index >= 0 ? tx("Buổi {0}", [index + 1]) : tx("Nghỉ")}
                     </p>
                   </div>
                 );
               })}
             </div>
-            <p className="mt-2 text-[12.5px] text-[var(--sp-muted)]">AI sẽ chia bài vào từng buổi khi tạo kế hoạch.</p>
+            <p className="mt-2 text-[12.5px] text-[var(--sp-muted)]">{tx("AI sẽ chia bài vào từng buổi khi tạo kế hoạch.")}</p>
           </div>
         )}
 
         <div className="mt-6 grid grid-cols-2 gap-3">
           <button type="button" onClick={onClose} className="sp-btn sp-btn-secondary h-[46px] text-sm !text-[var(--sp-peri-dark)]">
-            ← Sửa lại
+
+            {tx("← Sửa lại")}
           </button>
           <button
             type="button"
@@ -516,7 +523,8 @@ export function PlanPreviewDialog({
             className="sp-btn sp-btn-primary h-[46px] text-sm !bg-[var(--sp-pink)] disabled:opacity-60"
           >
             <Sparkle size={15} />
-            Tạo kế hoạch theo dự kiến
+
+            {tx("Tạo kế hoạch theo dự kiến")}
           </button>
         </div>
       </div>

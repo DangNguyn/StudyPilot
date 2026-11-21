@@ -57,6 +57,15 @@ cd frontend && node src/lib/study-calendar.test.ts   # kiểm thử .ts chạy t
 - `app/quiz-results/[attemptId]`: kết quả, câu sai (`components/wrong-answer-review.tsx`), hộp chọn ngày ôn bắt buộc.
 - Thiết kế: token màu `--sp-*` trong `app/globals.css` (tím `--sp-purple`, hồng `--sp-pink`, đỏ `--sp-red*` cho mức khẩn/hôm nay), viền 2px + bóng lệch (`sp-card-pop`, `sp-btn-primary`), font Anton (tiêu đề), Be Vietnam Pro (chữ), Playfair italic (`sp-accent`).
 
+## Phần gộp từ bản StudyPilot của Đăng Nguyên (21/11/2026)
+
+- **Đăng nhập thật bằng Supabase Auth (chỉ ở frontend):** `components/auth-provider.tsx`, `lib/auth.ts`, trang `/login` `/register` `/reset-password` (`components/auth-screen.tsx`, giao diện cuốn sách), mã 6 số qua Gmail, nút Google. `AppShell` chặn trang khi chưa đăng nhập. Cần `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` trong `frontend/.env.local`. **Backend vẫn dùng `DEMO_USER_ID`** (dữ liệu chưa tách theo tài khoản, vẫn là việc của P8).
+- **Màn hình chào sau đăng nhập:** `components/login-splash.tsx`.
+- **Trang Cài đặt `/settings`:** tên, ảnh đại diện (khung căn chỉnh `components/avatar-cropper.tsx`, lưu Supabase Storage bucket `avatars`), đổi mật khẩu, giờ nhắc học, ngôn ngữ. Tuỳ chọn lưu ở `user_metadata` với tiền tố `sp_` (`sp_name`, `sp_avatar`, `sp_reminder`, `sp_language`). Giờ nhắc học chưa nối với bộ gửi thư.
+- **Đa ngôn ngữ Việt/Anh:** `lib/i18n.ts` (`tx("câu tiếng Việt", [biến])`, `currentLocale()`), bản dịch `lib/i18n-en.ts` (khoá là câu tiếng Việt). Chữ mới trên giao diện phải bọc `tx(...)` và thêm bản dịch. Ngôn ngữ đọc từ localStorage `sp-lang` lúc tải trang, đổi thì tải lại trang. `lib/review-urgency.ts` dùng `globalThis.__spTx` để vẫn chạy được bằng `node`.
+- `AppShell` chỉ vẽ nội dung sau khi hydrate (tránh lệch máy chủ/trình duyệt); `next.config.ts` đặt `instantInsights.validationLevel = "manual-warning"`.
+- **Flashcards (21/11/2026):** bỏ 4 ô chấm mức nhớ, thay bằng vuốt thẻ: vuốt phải = đã nhớ (rating 3), vuốt trái = chưa nhớ (rating 1), phím ← → và Space. Có **bộ thẻ tự tải tài liệu lên, không cần kế hoạch ôn thi**: router `backend/flashcard_decks.py` (`POST/GET /api/flashcard-decks`, `DELETE /api/flashcard-decks/{id}`), thẻ lưu chung bảng `flashcards` với `deck_id` (để trống `topic_id`). Cần chạy SQL "Bộ flashcard tự tải lên" trong `backend/supabase_grants.sql`.
+
 ## Việc còn lại theo bộ prompt
 
 Đã xong P1 (buổi hoàn thành gắn với quiz) và phần lịch/ôn lại. Còn: P8 đăng nhập đa người dùng → P2 Email A nhắc 19h (gồm buổi ôn có `review_date` hôm nay chưa xong) → P3 Email B (bỏ qua phần yếu đã có ngày ôn sắp tới) → P4 gom ngưỡng → P5 cảnh báo thiếu thời gian → P6 trích nguồn → P7 ẩn flashcards/mindmap/Pro → P9 kiểm tra toàn luồng.

@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { IconCalendar, IconCheck, IconFile, IconFlag, IconPen, Sparkle } from "@/components/icons";
 
 export type HeroStep = {
@@ -38,12 +39,15 @@ export default function PlanHeroBanner({
         <div className="max-w-xl">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/12 px-3 py-1 text-xs font-bold tracking-wide text-[#ffd3e2] ring-1 ring-white/15">
             <Sparkle size={12} className="text-[var(--sp-yellow)]" />
-            TRỢ LÝ AI STUDYPILOT
+
+            {tx("TRỢ LÝ AI STUDYPILOT")}
           </span>
           <h2 className="mt-4 font-[family-name:var(--font-sp-display)] text-[34px] uppercase leading-[1.05] tracking-wide sm:text-[44px]">
-            Chuẩn bị cho{" "}
+
+            {tx("Chuẩn bị cho")}{" "}
             <span className="relative inline-block text-[var(--sp-yellow)]">
-              kỳ thi
+
+              {tx("kỳ thi")}
               <svg
                 aria-hidden="true"
                 viewBox="0 0 120 12"
@@ -59,11 +63,12 @@ export default function PlanHeroBanner({
                 />
               </svg>
             </span>{" "}
-            tiếp theo
+
+            {tx("tiếp theo")}
           </h2>
           <p className="mt-4 max-w-lg text-[15px] leading-6 text-white/80">
-            Cho biết môn học, ngày thi và tài liệu. AI sẽ chia nội dung thành từng bài, xếp
-            vào những ngày bạn rảnh và tạo bài kiểm tra sau mỗi buổi.
+
+            {tx("Cho biết môn học, ngày thi và tài liệu. AI sẽ chia nội dung thành từng bài, xếp vào những ngày bạn rảnh và tạo bài kiểm tra sau mỗi buổi.")}
           </p>
         </div>
 
@@ -71,9 +76,10 @@ export default function PlanHeroBanner({
         <div aria-hidden="true" className="relative hidden h-[190px] lg:block">
           <div className="absolute right-6 top-2 w-[250px] rotate-[4deg] rounded-[20px] border-2 border-[var(--sp-purple-deep)] bg-white p-4 text-[var(--sp-ink)] shadow-[5px_5px_0_var(--sp-purple-deep)]">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-bold uppercase tracking-wide text-[var(--sp-muted)]">Tuần này</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--sp-muted)]">{tx("Tuần này")}</p>
               <span className="rounded-full bg-[var(--sp-pink-bg)] px-2 py-0.5 text-[11px] font-bold text-[var(--sp-pink-dark)]">
-                còn 21 ngày
+
+                {tx("còn 21 ngày")}
               </span>
             </div>
             <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-[var(--sp-muted)]">
@@ -97,11 +103,13 @@ export default function PlanHeroBanner({
             <div className="mt-3 space-y-1.5 text-[12px] font-semibold">
               <p className="flex items-center gap-2 rounded-lg bg-[var(--sp-lav)] px-2 py-1.5">
                 <span className="h-2 w-2 rounded-full bg-[var(--sp-peri)]" />
-                Học mới · Chương 3
+
+                {tx("Học mới · Chương 3")}
               </p>
               <p className="flex items-center gap-2 rounded-lg bg-[var(--sp-pink-bg)] px-2 py-1.5">
                 <span className="h-2 w-2 rounded-full bg-[var(--sp-pink)]" />
-                Kiểm tra · 10 câu
+
+                {tx("Kiểm tra · 10 câu")}
               </p>
             </div>
           </div>
@@ -118,11 +126,11 @@ export default function PlanHeroBanner({
       <div className="relative border-t border-white/10 bg-[var(--sp-purple-deep)] px-4 py-4 sm:px-8">
         <div className="mb-3 flex items-center justify-between gap-3 px-2">
           <p className="text-xs font-bold uppercase tracking-wide text-white/60">
-            Các bước tạo kế hoạch
+
+            {tx("Các bước tạo kế hoạch")}
           </p>
           <p className="text-xs font-bold text-[var(--sp-yellow)]">
-            {doneCount}/{steps.length} hoàn thành
-          </p>
+            {tx("{0}/{1} hoàn thành", [doneCount, steps.length])}</p>
         </div>
         <ol className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           {steps.map((step, index) => {

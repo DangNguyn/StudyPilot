@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -167,15 +168,16 @@ export default function PracticeQuizPanel({
       {/* Đầu khung */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="sp-accent text-[14px] text-[var(--sp-pink)]">Tự kiểm tra nhanh</p>
+          <p className="sp-accent text-[14px] text-[var(--sp-pink)]">{tx("Tự kiểm tra nhanh")}</p>
           <h2 className="text-lg leading-tight text-[var(--sp-ink)]">
             {total > 0 && !finished ? (
               <>
-                Câu {index + 1}
+
+                {tx("Câu")} {index + 1}
                 <span className="text-[var(--sp-soft)]"> / {total}</span>
               </>
             ) : (
-              "Ôn nhanh"
+              tx("Ôn nhanh")
             )}
           </h2>
         </div>
@@ -183,7 +185,8 @@ export default function PracticeQuizPanel({
           <div className="flex gap-2.5 pt-5 text-xs font-semibold text-[var(--sp-text-2)]">
             <span className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Đúng {correctCount}
+
+              {tx("Đúng")} {correctCount}
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full bg-[var(--sp-pink)]" />
@@ -220,9 +223,10 @@ export default function PracticeQuizPanel({
         {isLoading ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 py-10 text-center">
             <Sparkle size={26} className="sp-twinkle text-[var(--sp-pink)]" />
-            <p className="font-bold text-[var(--sp-ink)]">Đang soạn câu hỏi ôn nhanh…</p>
+            <p className="font-bold text-[var(--sp-ink)]">{tx("Đang soạn câu hỏi ôn nhanh…")}</p>
             <p className="max-w-[260px] text-sm text-[var(--sp-muted)]">
-              Lần đầu mở bài có thể mất vài giây, những lần sau sẽ hiện ngay.
+
+              {tx("Lần đầu mở bài có thể mất vài giây, những lần sau sẽ hiện ngay.")}
             </p>
             <div className="mt-2 w-full space-y-2.5">
               {[0, 1, 2, 3].map((item) => (
@@ -235,20 +239,21 @@ export default function PracticeQuizPanel({
             <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
               <IconAlert size={20} />
             </span>
-            <p className="font-bold text-[var(--sp-ink)]">Chưa tạo được câu hỏi</p>
+            <p className="font-bold text-[var(--sp-ink)]">{tx("Chưa tạo được câu hỏi")}</p>
             <p className="max-w-[280px] text-sm text-[var(--sp-muted)]">{error}</p>
             <button type="button" onClick={onRetry} className="sp-btn sp-btn-secondary mt-1 px-4 py-2 text-sm">
               <IconRepeat size={15} />
-              Thử lại
+
+              {tx("Thử lại")}
             </button>
             <UnlockBlock unlock={unlock} onComplete={() => onFinish(0, 0)} compact />
           </div>
         ) : total === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 py-10 text-center">
             <IconBook size={26} className="text-[var(--sp-peri-dark)]" />
-            <p className="font-bold text-[var(--sp-ink)]">Chưa có câu hỏi cho ngày này</p>
+            <p className="font-bold text-[var(--sp-ink)]">{tx("Chưa có câu hỏi cho ngày này")}</p>
             <p className="max-w-[280px] text-sm text-[var(--sp-muted)]">
-              {emptyHint || "Nội dung hôm nay quá ngắn để tạo câu hỏi ôn nhanh."}
+              {emptyHint || tx("Nội dung hôm nay quá ngắn để tạo câu hỏi ôn nhanh.")}
             </p>
             <UnlockBlock unlock={unlock} onComplete={() => onFinish(0, 0)} compact />
           </div>
@@ -265,12 +270,12 @@ export default function PracticeQuizPanel({
             </span>
             <p className="mt-3 text-[15px] font-bold text-[var(--sp-ink)]">
               {correctCount === total
-                ? "Xuất sắc, bạn nhớ hết rồi!"
+                ? tx("Xuất sắc, bạn nhớ hết rồi!")
                 : correctCount === 0
-                  ? "Đọc lại phần tô vàng rồi thử lần nữa nhé"
-                  : "Gần được rồi, ôn lại câu sai nhé"}
+                  ? tx("Đọc lại phần tô vàng rồi thử lần nữa nhé")
+                  : tx("Gần được rồi, ôn lại câu sai nhé")}
             </p>
-            <p className="mt-1 text-[13px] text-[var(--sp-muted)]">Câu hỏi ôn nhanh không tính điểm.</p>
+            <p className="mt-1 text-[13px] text-[var(--sp-muted)]">{tx("Câu hỏi ôn nhanh không tính điểm.")}</p>
             <UnlockBlock unlock={unlock} onComplete={() => onFinish(total, correctCount)} />
             <button
               type="button"
@@ -278,17 +283,18 @@ export default function PracticeQuizPanel({
               className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-bold text-[var(--sp-peri-dark)] hover:underline"
             >
               <IconRepeat size={14} />
-              Làm lại với câu hỏi khác
+
+              {tx("Làm lại với câu hỏi khác")}
             </button>
           </div>
         ) : current ? (
           <>
             <p className="truncate text-[11px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">
-              Mục {current.sectionNumber} · {current.sectionHeading}
+              {tx("Mục {0} · {1}", [current.sectionNumber, current.sectionHeading])}
             </p>
             <p className="mt-1 text-justify text-[14.5px] font-bold leading-6 text-[var(--sp-ink)]">{renderText(current.question)}</p>
 
-            <div className="mt-3 space-y-2" role="radiogroup" aria-label="Các lựa chọn">
+            <div className="mt-3 space-y-2" role="radiogroup" aria-label={tx("Các lựa chọn")}>
               {current.options.map((option, optionIndex) => {
                 const selected = (answer ? answer.choice : choice) === optionIndex;
                 const isCorrect = optionIndex === current.correct_index;
@@ -351,13 +357,15 @@ export default function PracticeQuizPanel({
                 {answer.correct ? (
                   <p className="flex items-center gap-2 text-sm font-bold text-emerald-800">
                     <IconCheck size={15} />
-                    Chính xác!
+
+                    {tx("Chính xác!")}
                   </p>
                 ) : (
                   <>
                     <p className="flex items-center gap-2 text-sm font-bold text-[var(--sp-pink-dark)]">
                       <IconX size={15} />
-                      Chưa đúng, đáp án là {LETTERS[current.correct_index]}
+
+                      {tx("Chưa đúng, đáp án là")} {LETTERS[current.correct_index]}
                     </p>
                     {current.explanation && (
                       <p className="mt-1 text-[13px] leading-5 text-[var(--sp-text-2)]">{renderText(current.explanation)}</p>
@@ -369,7 +377,8 @@ export default function PracticeQuizPanel({
                         className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-[13px] font-bold text-white transition hover:bg-emerald-700"
                       >
                         <IconCheck size={14} />
-                        Đã hiểu
+
+                        {tx("Đã hiểu")}
                       </button>
                     ) : (
                       <button
@@ -378,7 +387,8 @@ export default function PracticeQuizPanel({
                         className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-[#fff1b8] px-2.5 py-1 text-[13px] font-bold text-[var(--sp-purple)] transition hover:bg-[#ffe68a]"
                       >
                         <IconBook size={14} />
-                        Xem giải thích trong bài
+
+                        {tx("Xem giải thích trong bài")}
                         <IconArrowRight size={13} />
                       </button>
                     )}
@@ -389,11 +399,11 @@ export default function PracticeQuizPanel({
 
             <div className="mt-auto flex items-center justify-between gap-3 pt-4">
               <p className="text-xs leading-4 text-[var(--sp-muted)]">
-                {answer ? "Không tính điểm" : "Chọn đáp án rồi xác nhận"}
+                {answer ? tx("Không tính điểm") : tx("Chọn đáp án rồi xác nhận")}
               </p>
               {answer ? (
                 <button type="button" onClick={next} className="sp-btn sp-btn-primary shrink-0 px-4 py-2 text-[13px]">
-                  {index + 1 < total ? "Câu tiếp theo" : "Xem kết quả"}
+                  {index + 1 < total ? tx("Câu tiếp theo") : tx("Xem kết quả")}
                   <IconArrowRight size={16} />
                 </button>
               ) : (
@@ -403,7 +413,8 @@ export default function PracticeQuizPanel({
                   onClick={confirm}
                   className="sp-btn sp-btn-primary shrink-0 px-4 py-2 text-[13px] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Xác nhận
+
+                  {tx("Xác nhận")}
                   <IconArrowRight size={15} />
                 </button>
               )}
@@ -431,10 +442,10 @@ function UnlockBlock({
         <p className="flex items-center gap-2 text-sm font-bold text-emerald-800">
           <IconCheck size={16} />
           {unlock.title ? unlock.title : unlock.retakeHref
-            ? "Bài kiểm tra lại đã mở"
+            ? tx("Bài kiểm tra lại đã mở")
             : unlock.quizLabel
-              ? "Bạn đã làm bài kiểm tra của buổi này"
-              : "Bài kiểm tra hôm nay đã mở"}
+              ? tx("Bạn đã làm bài kiểm tra của buổi này")
+              : tx("Bài kiểm tra hôm nay đã mở")}
         </p>
         {unlock.retakeHref && (
           <Link
@@ -442,7 +453,8 @@ function UnlockBlock({
             className="sp-btn sp-btn-primary mt-2.5 w-full justify-center py-2 text-[13px]"
           >
             <IconRepeat size={14} />
-            Làm bài kiểm tra lại
+
+            {tx("Làm bài kiểm tra lại")}
           </Link>
         )}
         {!unlock.retakeHref && (!unlock.title || unlock.quizHref) && (
@@ -450,7 +462,7 @@ function UnlockBlock({
             href={unlock.quizHref || "/quizzes"}
             className="sp-btn sp-btn-primary mt-2.5 w-full justify-center py-2 text-[13px]"
           >
-            {unlock.quizLabel || "Làm bài kiểm tra"}
+            {unlock.quizLabel || tx("Làm bài kiểm tra")}
             <IconArrowRight size={15} />
           </Link>
         )}
@@ -464,7 +476,8 @@ function UnlockBlock({
         <p className="text-[13px] text-[var(--sp-pink-dark)]">{unlock.message}</p>
         <button type="button" onClick={onComplete} className="sp-btn sp-btn-secondary mt-2 px-3 py-1.5 text-[13px]">
           <IconRepeat size={14} />
-          Mở lại bài kiểm tra
+
+          {tx("Mở lại bài kiểm tra")}
         </button>
       </div>
     );
@@ -474,14 +487,16 @@ function UnlockBlock({
     return (
       <p className="mt-4 flex items-center gap-2 text-[13px] font-semibold text-[var(--sp-muted)]">
         <Sparkle size={13} className="sp-twinkle text-[var(--sp-pink)]" />
-        Đang mở bài kiểm tra…
+
+        {tx("Đang mở bài kiểm tra…")}
       </p>
     );
   }
 
   return compact ? (
     <button type="button" onClick={onComplete} className="sp-btn sp-btn-primary mt-3 px-4 py-2 text-[13px]">
-      Hoàn thành bài học
+
+      {tx("Hoàn thành bài học")}
       <IconArrowRight size={15} />
     </button>
   ) : null;

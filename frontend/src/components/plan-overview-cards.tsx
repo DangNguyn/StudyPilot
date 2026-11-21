@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import Link from "next/link";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import {
@@ -157,9 +158,9 @@ export default function PlanOverviewCards({
       <div className="mb-3 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
           <p className="sp-accent text-[17px] text-[var(--sp-pink)]">
-            {plans.length > 0 ? `${plans.length} môn đang ôn` : "Chưa có môn nào"}
+            {plans.length > 0 ? tx("{0} môn đang ôn", [plans.length]) : tx("Chưa có môn nào")}
           </p>
-          <h2 className="text-[22px] text-[var(--sp-ink)]">Lịch ôn tập của tôi</h2>
+          <h2 className="text-[22px] text-[var(--sp-ink)]">{tx("Lịch ôn tập của tôi")}</h2>
         </div>
 
         <button
@@ -169,20 +170,21 @@ export default function PlanOverviewCards({
           className="sp-btn sp-btn-secondary w-fit px-4 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           <IconRepeat size={16} />
-          {isLoading ? "Đang tải..." : "Làm mới"}
+          {isLoading ? tx("Đang tải...") : tx("Làm mới")}
         </button>
       </div>
 
       {error ? (
         <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-600">{error}</p>
       ) : isLoading && plans.length === 0 ? (
-        <p className="text-sm text-[var(--sp-muted)]">Đang tải các môn học...</p>
+        <p className="text-sm text-[var(--sp-muted)]">{tx("Đang tải các môn học...")}</p>
       ) : cards.length === 0 ? (
         <div className="flex flex-col items-center rounded-2xl border-2 border-dashed border-[var(--sp-line)] bg-[var(--sp-surface-2)] px-5 py-10 text-center">
           <Sparkle size={24} className="text-[var(--sp-yellow)]" />
-          <h3 className="mt-3 font-bold text-[var(--sp-ink)]">Chưa có kế hoạch ôn thi</h3>
+          <h3 className="mt-3 font-bold text-[var(--sp-ink)]">{tx("Chưa có kế hoạch ôn thi")}</h3>
           <p className="mt-1 text-sm text-[var(--sp-muted)]">
-            Tạo kế hoạch ở phía trên, môn học sẽ xuất hiện tại đây.
+
+            {tx("Tạo kế hoạch ở phía trên, môn học sẽ xuất hiện tại đây.")}
           </p>
         </div>
       ) : (
@@ -191,12 +193,12 @@ export default function PlanOverviewCards({
             const color = PALETTE[index % PALETTE.length];
             const finished = card.daysLeft !== null && card.daysLeft < 0;
             const status = finished
-              ? { label: "Đã thi", style: "bg-[var(--sp-surface-2)] text-[var(--sp-muted)]" }
+              ? { label: tx("Đã thi"), style: "bg-[var(--sp-surface-2)] text-[var(--sp-muted)]" }
               : card.total > 0 && card.completed === card.total
-                ? { label: "Đã học xong", style: "bg-emerald-50 text-emerald-700" }
+                ? { label: tx("Đã học xong"), style: "bg-emerald-50 text-emerald-700" }
                 : card.todayLeft.length > 0
-                  ? { label: "Hôm nay có bài", style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]" }
-                  : { label: "Đang ôn", style: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]" };
+                  ? { label: tx("Hôm nay có bài"), style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]" }
+                  : { label: tx("Đang ôn"), style: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]" };
             const nextTopic = card.nextSession
               ? topicById.get(card.nextSession.topic_id)
               : undefined;
@@ -225,7 +227,7 @@ export default function PlanOverviewCards({
                     <IconFlag size={13} />
                     Thi {card.examKey ? card.examKey.split("-").reverse().join("/") : "—"}
                     {!finished && card.daysLeft !== null && (
-                      <b className="text-[var(--sp-pink-dark)]">· {card.daysLeft === 0 ? "thi hôm nay" : `còn ${card.daysLeft} ngày`}</b>
+                      <b className="text-[var(--sp-pink-dark)]">· {card.daysLeft === 0 ? tx("thi hôm nay") : tx("còn {0} ngày", [card.daysLeft])}</b>
                     )}
                   </p>
                 </div>
@@ -234,7 +236,7 @@ export default function PlanOverviewCards({
                 <div className="col-span-2 lg:col-span-1">
                   <p className="text-[13px] font-semibold text-[var(--sp-text-2)]">
                     <span className="text-[17px] font-extrabold text-[var(--sp-ink)]">{card.percent}%</span> · {card.completed}/
-                    {card.total} buổi
+                    {card.total}  {tx("buổi")}
                   </p>
                   <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
                     <div className="h-full rounded-full bg-[var(--sp-peri)] transition-all duration-700" style={{ width: `${card.percent}%` }} />
@@ -247,22 +249,22 @@ export default function PlanOverviewCards({
                     <>
                       <p className="text-[11.5px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">
                         {toDateKey(card.nextSession.scheduled_start) === toDateKey(new Date())
-                          ? `Hôm nay · còn ${card.todayLeft.length} buổi`
-                          : `Tiếp theo · ${shortDay(card.nextSession.scheduled_start)}`}
+                          ? tx("Hôm nay · còn {0} buổi", [card.todayLeft.length])
+                          : tx("Tiếp theo · {0}", [shortDay(card.nextSession.scheduled_start)])}
                       </p>
                       <p className="truncate font-semibold text-[var(--sp-ink)]">
-                        {nextTopic ? getMainTopicTitle(nextTopic.name) : "Buổi học"}
-                        <span className="font-normal text-[var(--sp-muted)]"> · {card.nextSession.duration_minutes} phút</span>
+                        {nextTopic ? getMainTopicTitle(nextTopic.name) : tx("Buổi học")}
+                        <span className="font-normal text-[var(--sp-muted)]">  {tx("· {0} phút", [card.nextSession.duration_minutes])}</span>
                       </p>
                     </>
                   ) : (
                     <p className={`flex items-center gap-1.5 font-semibold ${card.total === 0 && !finished ? "text-[var(--sp-muted)]" : "text-emerald-700"}`}>
                       <IconCheck size={15} />
-                      {finished ? "Kỳ thi đã kết thúc" : card.total === 0 ? "Chưa có lịch học" : "Đã học hết các buổi"}
+                      {finished ? tx("Kỳ thi đã kết thúc") : card.total === 0 ? tx("Chưa có lịch học") : tx("Đã học hết các buổi")}
                     </p>
                   )}
                   {card.overdue > 0 && !finished && (
-                    <p className="text-xs font-semibold text-[var(--sp-pink-dark)]">{card.overdue} buổi bị lỡ cần học bù</p>
+                    <p className="text-xs font-semibold text-[var(--sp-pink-dark)]">{tx("{0} buổi bị lỡ cần học bù", [card.overdue])}</p>
                   )}
                 </div>
 
@@ -270,7 +272,8 @@ export default function PlanOverviewCards({
                   href={`/study-plans/${card.plan.id}`}
                   className="sp-btn sp-btn-primary col-span-2 h-[42px] w-full justify-center text-sm lg:col-span-1"
                 >
-                  Xem chi tiết
+
+                  {tx("Xem chi tiết")}
                   <IconArrowRight size={16} className="transition group-hover:translate-x-1" />
                 </Link>
               </article>

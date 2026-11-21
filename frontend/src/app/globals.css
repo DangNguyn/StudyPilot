@@ -342,6 +342,152 @@ main button[class*="bg-[#5B7FE3]"]:disabled {
   box-shadow: none;
 }
 
+/* Trang đăng nhập / đăng ký */
+@keyframes sp-shake {
+  20%, 60% { translate: -7px 0; }
+  40%, 80% { translate: 7px 0; }
+}
+.sp-shake { animation: sp-shake 0.4s ease-in-out; }
+@keyframes sp-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.sp-fade-in { animation: sp-fade-in 0.35s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .sp-shake, .sp-fade-in { animation: none; }
+}
+
+/* ===== Cuốn sách đăng nhập / đăng ký ===== */
+.sp-book-stage {
+  perspective: 3000px;
+  perspective-origin: 50% 30%;
+}
+.sp-book {
+  --sp-book-page-w: min(520px, calc((100vw - 80px) / 2));
+  --sp-book-page-h: min(720px, calc(100dvh - 56px));
+  --sp-book-depth: 22px;
+  position: relative;
+  width: calc(var(--sp-book-page-w) * 2);
+  height: var(--sp-book-page-h);
+  transform-style: preserve-3d;
+  transition: transform 0.14s ease-out;
+}
+.sp-book.is-thud { transform: scale(0.985); }
+.sp-book-side {
+  position: absolute;
+  top: 0;
+  width: var(--sp-book-page-w);
+  height: var(--sp-book-page-h);
+  transform-style: preserve-3d;
+}
+.sp-book-side.is-left { left: 0; transform-origin: 100% 50%; }
+.sp-book-side.is-right { left: var(--sp-book-page-w); transform-origin: 0 50%; }
+.sp-book-side.is-closing { transition: transform 0.7s cubic-bezier(0.55, 0, 0.75, 0.4); }
+.sp-book-side.is-opening { transition: transform 0.75s cubic-bezier(0.2, 0.6, 0.35, 1); }
+/* Úp kín: mỗi nửa gập trọn 90°, hai mặt trang áp vào nhau ở gáy */
+.sp-book.is-shut .sp-book-side.is-left { transform: rotateY(90deg); }
+.sp-book.is-shut .sp-book-side.is-right { transform: rotateY(-90deg); }
+
+/* Bìa cứng phía sau */
+.sp-book-board {
+  position: absolute;
+  top: -12px;
+  bottom: -12px;
+  background: var(--sp-purple-deep);
+  border: 2px solid #24062f;
+  transform: translateZ(calc(var(--sp-book-depth) * -1 - 2px));
+}
+.is-left > .sp-book-board { left: -16px; right: 0; border-right: 0; border-radius: 20px 0 0 20px; }
+.is-right > .sp-book-board { left: 0; right: -16px; border-left: 0; border-radius: 0 20px 20px 0; }
+
+/* Các lớp giấy */
+.sp-book-sheet {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: #f6efe4;
+  border: 1px solid #d6c6ae;
+}
+.is-left > .sp-book-sheet { border-radius: 18px 3px 3px 18px; }
+.is-right > .sp-book-sheet { border-radius: 3px 18px 18px 3px; }
+
+/* Mép giấy (thấy rõ khi sách úp lại) */
+.sp-book-edge,
+.sp-book-edge-x {
+  position: absolute;
+  border: 1px solid #cdbb9f;
+}
+.sp-book-edge {
+  top: 0;
+  width: var(--sp-book-depth);
+  height: 100%;
+  background: repeating-linear-gradient(90deg, #f1e6d3 0 1.4px, #d6c5aa 1.4px 1.8px);
+}
+.is-left > .sp-book-edge { left: 0; transform-origin: 0 50%; transform: rotateY(90deg); }
+.is-right > .sp-book-edge { right: 0; transform-origin: 100% 50%; transform: rotateY(-90deg); }
+.sp-book-edge-x {
+  left: 0;
+  width: 100%;
+  height: var(--sp-book-depth);
+  background: repeating-linear-gradient(180deg, #f1e6d3 0 1.4px, #d6c5aa 1.4px 1.8px);
+}
+.sp-book-edge-x.is-top { top: 0; transform-origin: 50% 0; transform: rotateX(90deg); }
+.sp-book-edge-x.is-bottom { bottom: 0; transform-origin: 50% 100%; transform: rotateX(-90deg); }
+
+/* Trang trên cùng */
+.sp-book-page,
+.sp-book-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 2px solid #d9cab6;
+}
+.sp-book-page.is-left,
+.sp-book-face.is-back { border-radius: 18px 3px 3px 18px; border-right-width: 1px; }
+.sp-book-page.is-right,
+.sp-book-face.is-front { border-radius: 3px 18px 18px 3px; border-left-width: 1px; }
+/* Bóng gáy sách */
+.sp-book-page::after,
+.sp-book-face::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 44px;
+  pointer-events: none;
+}
+.sp-book-page.is-left::after,
+.sp-book-face.is-back::after { right: 0; background: linear-gradient(to left, rgb(74 16 104 / 0.13), transparent); }
+.sp-book-page.is-right::after,
+.sp-book-face.is-front::after { left: 0; background: linear-gradient(to right, rgb(74 16 104 / 0.11), transparent); }
+
+/* Tờ giấy đang lật */
+.sp-book-leaf {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  transform-style: preserve-3d;
+  transform-origin: 0 50%;
+  will-change: transform;
+}
+.sp-book-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.sp-book-face.is-back { transform: rotateY(180deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-book, .sp-book-side, .sp-book-leaf { transition: none !important; }
+}
+
+/* Nền của màn hình chào sau khi đăng nhập (giống nền giấy chấm của web) */
+.sp-splash-bg {
+  background-color: var(--sp-paper);
+  background-image: radial-gradient(var(--sp-paper-dot) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+.sp-splash-bg { animation: sp-splash-in 0.25s ease-out; }
+@keyframes sp-splash-in { from { opacity: 0; } }
 /*
  * Lộ trình nhỏ trong khung "Tiếp theo nên ôn gì?" (Đánh giá năng lực):
  * 4 bước chia đều cột, ô bật lên lần lượt, thanh vàng chạy tới bước hiện tại.

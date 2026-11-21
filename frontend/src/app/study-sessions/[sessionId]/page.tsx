@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 /*
  * Trang buổi học cũ không dùng nữa (20/11/2026): chuyển sang trang Tài liệu học tập
  * (tóm tắt có câu hỏi lồng) của đúng buổi, giữ được các liên kết cũ.
@@ -45,13 +46,14 @@ export default function StudySessionRedirect() {
     <div className="sp-card mx-auto max-w-xl p-8 text-center">
       {failed ? (
         <>
-          <p className="text-sm text-[var(--sp-text-2)]">Không mở được buổi học này.</p>
+          <p className="text-sm text-[var(--sp-text-2)]">{tx("Không mở được buổi học này.")}</p>
           <Link href="/study-materials" className="sp-btn sp-btn-primary mt-4 px-5 py-2.5 text-sm">
-            Về Tài liệu học tập
+
+            {tx("Về Tài liệu học tập")}
           </Link>
         </>
       ) : (
-        <LoadingMascot bare className="text-left" text="Đang mở bài học…" />
+        <LoadingMascot bare className="text-left" text={tx("Đang mở bài học…")} />
       )}
     </div>
   );

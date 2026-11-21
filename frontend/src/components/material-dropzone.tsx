@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { useRef, useState, type DragEvent, type ReactNode } from "react";
 import { IconBulb, IconCheck, IconFile, IconRepeat, IconX, Sparkle } from "@/components/icons";
 
@@ -123,7 +124,8 @@ export default function MaterialDropzone({
                 {status ?? (
                   <span className="flex items-center gap-1 font-semibold text-emerald-700">
                     <IconCheck size={15} />
-                    Sẵn sàng để AI phân tích
+
+                    {tx("Sẵn sàng để AI phân tích")}
                   </span>
                 )}
               </p>
@@ -139,11 +141,12 @@ export default function MaterialDropzone({
                 className="sp-btn sp-btn-secondary px-4 py-2 text-sm"
               >
                 <IconRepeat size={15} />
-                Đổi file
+
+                {tx("Đổi file")}
               </button>
               <button
                 type="button"
-                aria-label="Xóa tài liệu"
+                aria-label={tx("Xóa tài liệu")}
                 onClick={() => {
                   setError("");
                   onChange(null);
@@ -177,11 +180,11 @@ export default function MaterialDropzone({
           </span>
           <span className="min-w-0">
             <span className="block text-[14.5px] font-bold text-[var(--sp-ink)]">
-              {isDragging ? "Thả tài liệu vào đây" : "Kéo thả hoặc bấm để chọn tài liệu"}
+              {isDragging ? tx("Thả tài liệu vào đây") : tx("Kéo thả hoặc bấm để chọn tài liệu")}
             </span>
-            <span className="mt-0.5 block text-[12.5px] text-[var(--sp-muted)]">PDF, DOCX, PPTX · tối đa 50 MB</span>
+            <span className="mt-0.5 block text-[12.5px] text-[var(--sp-muted)]">{tx("PDF, DOCX, PPTX · tối đa 50 MB")}</span>
           </span>
-          <span className="text-[13px] font-extrabold text-[var(--sp-peri-dark)]">Chọn tệp</span>
+          <span className="text-[13px] font-extrabold text-[var(--sp-peri-dark)]">{tx("Chọn tệp")}</span>
         </label>
       ) : (
         /* ---------- Khu kéo thả ---------- */
@@ -212,12 +215,14 @@ export default function MaterialDropzone({
           </div>
 
           <p className="text-[17px] font-bold text-[var(--sp-ink)]">
-            {isDragging ? "Thả tài liệu vào đây" : "Kéo thả tài liệu vào đây"}
+            {isDragging ? tx("Thả tài liệu vào đây") : tx("Kéo thả tài liệu vào đây")}
           </p>
           <p className="mt-1 text-sm text-[var(--sp-muted)]">
-            hoặc{" "}
+
+            {tx("hoặc")}{" "}
             <span className="font-bold text-[var(--sp-peri-dark)] underline decoration-2 underline-offset-4">
-              chọn từ thiết bị
+
+              {tx("chọn từ thiết bị")}
             </span>
           </p>
 
@@ -237,7 +242,8 @@ export default function MaterialDropzone({
               DOC · PPT
             </span>
             <span className="rounded-lg bg-white px-2 py-0.5 text-[11px] font-bold text-[var(--sp-muted)]">
-              Tối đa 50 MB
+
+              {tx("Tối đa 50 MB")}
             </span>
           </div>
         </label>
@@ -256,23 +262,27 @@ export default function MaterialDropzone({
           <IconBulb size={17} />
         </span>
         <div className="text-[13px] leading-5 text-[var(--sp-text-2)]">
-          <p className="font-bold text-[var(--sp-ink)]">Mẹo để AI chia bài chính xác hơn</p>
+          <p className="font-bold text-[var(--sp-ink)]">{tx("Mẹo để AI chia bài chính xác hơn")}</p>
           <ul className="mt-1 grid gap-x-5 gap-y-0.5 sm:grid-cols-2">
             <li className="flex gap-1.5">
               <IconFile size={13} className="mt-1 shrink-0 text-[var(--sp-peri-dark)]" />
-              Tài liệu có mục lục, tên chương rõ ràng
+
+              {tx("Tài liệu có mục lục, tên chương rõ ràng")}
             </li>
             <li className="flex gap-1.5">
               <IconFile size={13} className="mt-1 shrink-0 text-[var(--sp-peri-dark)]" />
-              PDF dạng chữ, không phải ảnh chụp/scan
+
+              {tx("PDF dạng chữ, không phải ảnh chụp/scan")}
             </li>
             <li className="flex gap-1.5">
               <IconFile size={13} className="mt-1 shrink-0 text-[var(--sp-peri-dark)]" />
-              Một file gồm đủ các chương sẽ thi
+
+              {tx("Một file gồm đủ các chương sẽ thi")}
             </li>
             <li className="flex gap-1.5">
               <IconFile size={13} className="mt-1 shrink-0 text-[var(--sp-peri-dark)]" />
-              Bỏ bớt trang bìa, đề bài không cần học
+
+              {tx("Bỏ bớt trang bìa, đề bài không cần học")}
             </li>
           </ul>
         </div>

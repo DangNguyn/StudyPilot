@@ -8,6 +8,7 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import AppShell from "@/components/app-shell";
+import { AuthProvider } from "@/components/auth-provider";
 import { Suspense } from "react";
 
 // Chữ tiêu đề lớn (cô đặc, đậm)
@@ -53,9 +54,11 @@ export default function RootLayout({
       className={`${anton.variable} ${beVietnamPro.variable} ${playfair.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full">
-        <Suspense fallback={<div className="min-h-screen bg-[#F7F5FA]" />}>
-  <AppShell>{children}</AppShell>
-</Suspense>
+        <AuthProvider>
+          <Suspense fallback={<div className="min-h-screen bg-[#F7F5FA]" />}>
+            <AppShell>{children}</AppShell>
+          </Suspense>
+        </AuthProvider>
       </body>
     </html>
   );

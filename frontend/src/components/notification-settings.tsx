@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { IconAlert, IconBell, IconCheck, IconX, Sparkle } from "@/components/icons";
 
@@ -26,7 +27,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.detail || "Có lỗi xảy ra, vui lòng thử lại.");
+  if (!response.ok) throw new Error(data?.detail || tx("Có lỗi xảy ra, vui lòng thử lại."));
   return data as T;
 }
 
@@ -63,7 +64,7 @@ export default function NotificationBell() {
     <div ref={ref} className="relative">
       <button
         type="button"
-        aria-label="Thông báo qua Gmail"
+        aria-label={tx("Thông báo qua Gmail")}
         aria-expanded={open}
         onClick={() => {
           setOpen((value) => !value);
@@ -110,7 +111,7 @@ function NotificationPanel({
     try {
       await action();
     } catch (error) {
-      setNotice({ tone: "error", text: error instanceof Error ? error.message : "Có lỗi xảy ra." });
+      setNotice({ tone: "error", text: error instanceof Error ? error.message : tx("Có lỗi xảy ra.") });
     } finally {
       setBusy("");
     }
@@ -154,13 +155,14 @@ function NotificationPanel({
         method: "POST",
         body: JSON.stringify({ kind }),
       });
-      setNotice({ tone: "ok", text: `${result.message} Kiểm tra cả mục Spam nếu chưa thấy.` });
+      setNotice({ tone: "ok", text: tx("{0} Kiểm tra cả mục Spam nếu chưa thấy.", [result.message]) });
     });
 
   if (!settings) {
     return (
       <p className="text-sm text-[var(--sp-muted)]">
-        Chưa kết nối được backend. Hãy chạy backend rồi mở lại.
+
+        {tx("Chưa kết nối được backend. Hãy chạy backend rồi mở lại.")}
       </p>
     );
   }
@@ -172,13 +174,13 @@ function NotificationPanel({
     <div>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="sp-accent text-[15px] text-[var(--sp-pink)]">Nhắc lịch học</p>
-          <h2 className="text-[19px] text-[var(--sp-ink)]">Thông báo qua Gmail</h2>
+          <p className="sp-accent text-[15px] text-[var(--sp-pink)]">{tx("Nhắc lịch học")}</p>
+          <h2 className="text-[19px] text-[var(--sp-ink)]">{tx("Thông báo qua Gmail")}</h2>
         </div>
         <button
           type="button"
           onClick={onClose}
-          aria-label="Đóng"
+          aria-label={tx("Đóng")}
           className="rounded-lg p-1.5 text-[var(--sp-muted)] hover:bg-[var(--sp-surface-2)]"
         >
           <IconX size={16} />
@@ -188,7 +190,8 @@ function NotificationPanel({
       {!settings.gmail_configured && (
         <p className="mt-3 flex gap-2 rounded-xl bg-[var(--sp-amber-bg)] px-3 py-2.5 text-[13px] text-[var(--sp-amber-dark)]">
           <IconAlert size={15} className="mt-0.5 shrink-0" />
-          Backend chưa có GMAIL_ADDRESS và GMAIL_APP_PASSWORD trong file .env nên chưa gửi được thư.
+
+          {tx("Backend chưa có GMAIL_ADDRESS và GMAIL_APP_PASSWORD trong file .env nên chưa gửi được thư.")}
         </p>
       )}
 
@@ -203,7 +206,7 @@ function NotificationPanel({
       {showEmailForm ? (
         <div className="mt-4 space-y-3">
           <label className="block">
-            <span className="text-[13px] font-semibold text-[var(--sp-text-2)]">Email nhận thông báo</span>
+            <span className="text-[13px] font-semibold text-[var(--sp-text-2)]">{tx("Email nhận thông báo")}</span>
             <div className="mt-1.5 flex gap-2">
               <input
                 type="email"
@@ -218,7 +221,7 @@ function NotificationPanel({
                 onClick={() => sendCode(email || settings.pending_email || "")}
                 className="sp-btn sp-btn-primary shrink-0 px-3 py-2 text-[13px] disabled:opacity-50"
               >
-                {busy === "code" ? "Đang gửi..." : waitingCode ? "Gửi lại mã" : "Gửi mã"}
+                {busy === "code" ? tx("Đang gửi...") : waitingCode ? tx("Gửi lại mã") : tx("Gửi mã")}
               </button>
             </div>
           </label>
@@ -226,7 +229,7 @@ function NotificationPanel({
           {waitingCode && (
             <label className="block">
               <span className="text-[13px] font-semibold text-[var(--sp-text-2)]">
-                Mã 6 số đã gửi tới {settings.pending_email}
+                {tx("Mã 6 số đã gửi tới {0}", [settings.pending_email])}
               </span>
               <div className="mt-1.5 flex gap-2">
                 <input
@@ -243,7 +246,7 @@ function NotificationPanel({
                   onClick={confirmCode}
                   className="sp-btn sp-btn-primary shrink-0 px-3 py-2 text-[13px] disabled:opacity-50"
                 >
-                  {busy === "confirm" ? "Đang kiểm tra..." : "Xác nhận"}
+                  {busy === "confirm" ? tx("Đang kiểm tra...") : tx("Xác nhận")}
                 </button>
               </div>
             </label>
@@ -255,11 +258,13 @@ function NotificationPanel({
               onClick={() => setChangingEmail(false)}
               className="text-[13px] font-bold text-[var(--sp-muted)] hover:underline"
             >
-              Huỷ đổi email
+
+              {tx("Huỷ đổi email")}
             </button>
           )}
           <p className="text-[12px] leading-5 text-[var(--sp-muted)]">
-            Cần xác minh để chắc chắn email có thật, tránh gửi thư vào địa chỉ không tồn tại.
+
+            {tx("Cần xác minh để chắc chắn email có thật, tránh gửi thư vào địa chỉ không tồn tại.")}
           </p>
         </div>
       ) : (
@@ -274,7 +279,8 @@ function NotificationPanel({
             }}
             className="shrink-0 text-[12px] font-bold text-[var(--sp-peri-dark)] hover:underline"
           >
-            Đổi email
+
+            {tx("Đổi email")}
           </button>
         </div>
       )}
@@ -283,15 +289,15 @@ function NotificationPanel({
       {settings.verified && !changingEmail && (
         <div className="mt-4 space-y-2.5">
           <Toggle
-            label="Bật thông báo"
-            hint="Tắt để tạm dừng mọi thư"
+            label={tx("Bật thông báo")}
+            hint={tx("Tắt để tạm dừng mọi thư")}
             checked={settings.enabled}
             onChange={(value) => update({ enabled: value })}
           />
           <div className={settings.enabled ? "" : "pointer-events-none opacity-50"}>
             <Toggle
-              label="Thông báo theo lịch học"
-              hint="Bài hôm nay, bài còn nợ, ngày ôn lại đã chọn, đếm ngược ngày thi"
+              label={tx("Thông báo theo lịch học")}
+              hint={tx("Bài hôm nay, bài còn nợ, ngày ôn lại đã chọn, đếm ngược ngày thi")}
               checked={settings.daily_enabled}
               onChange={(value) => update({ daily_enabled: value })}
             >
@@ -299,8 +305,8 @@ function NotificationPanel({
                 value={settings.daily_hour}
                 onChange={(event) => update({ daily_hour: Number(event.target.value) })}
                 className="rounded-lg border-2 border-[var(--sp-line)] bg-white px-2 py-1 text-[13px] font-semibold"
-                aria-label="Giờ gửi thông báo"
-                title="Cả 2 loại thông báo được gửi vào giờ này"
+                aria-label={tx("Giờ gửi thông báo")}
+                title={tx("Cả 2 loại thông báo được gửi vào giờ này")}
               >
                 {Array.from({ length: 17 }, (_, index) => index + 5).map((hour) => (
                   <option key={hour} value={hour}>
@@ -311,8 +317,8 @@ function NotificationPanel({
             </Toggle>
             <div className="mt-2.5">
               <Toggle
-                label="Ôn tập phần còn yếu"
-                hint="Còn 7, 5, 3, 2, 1 ngày tới ngày thi mà vẫn có bài dưới 80% thì nhắc vào ôn lại"
+                label={tx("Ôn tập phần còn yếu")}
+                hint={tx("Còn 7, 5, 3, 2, 1 ngày tới ngày thi mà vẫn có bài dưới 80% thì nhắc vào ôn lại")}
                 checked={settings.weak_enabled}
                 onChange={(value) => update({ weak_enabled: value })}
               />
@@ -326,7 +332,7 @@ function NotificationPanel({
               onClick={() => sendTest("schedule")}
               className="sp-btn sp-btn-secondary px-3 py-1.5 text-[13px] disabled:opacity-50"
             >
-              {busy === "test-schedule" ? "Đang gửi..." : "Gửi thử: lịch học"}
+              {busy === "test-schedule" ? tx("Đang gửi...") : tx("Gửi thử: lịch học")}
             </button>
             <button
               type="button"
@@ -334,7 +340,7 @@ function NotificationPanel({
               onClick={() => sendTest("weak")}
               className="sp-btn sp-btn-secondary px-3 py-1.5 text-[13px] disabled:opacity-50"
             >
-              {busy === "test-weak" ? "Đang gửi..." : "Gửi thử: ôn phần còn yếu"}
+              {busy === "test-weak" ? tx("Đang gửi...") : tx("Gửi thử: ôn phần còn yếu")}
             </button>
           </div>
         </div>
@@ -354,7 +360,8 @@ function NotificationPanel({
 
       <p className="mt-4 flex gap-1.5 border-t border-[var(--sp-line)] pt-3 text-[11.5px] leading-5 text-[var(--sp-muted)]">
         <Sparkle size={12} className="mt-1 shrink-0 text-[var(--sp-yellow)]" />
-        Thư được gửi tự động khi backend đang chạy. Nếu không thấy thư, hãy xem mục Spam.
+
+        {tx("Thư được gửi tự động khi backend đang chạy. Nếu không thấy thư, hãy xem mục Spam.")}
       </p>
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -60,7 +61,7 @@ function shortExplanation(text?: string | null) {
 
 function chapterShort(chapter?: string | null) {
   const match = (chapter || "").match(/^\s*(?:chương|chapter|unit|phần|part)\s*([0-9]+|[IVXLC]+)/i);
-  return match ? `Chương ${match[1]}` : chapter || "";
+  return match ? tx("Chương {0}", [match[1]]) : chapter || "";
 }
 
 /* Nhóm câu theo trang tài liệu (tối đa 4 nhóm, gộp các trang gần nhau) */
@@ -84,7 +85,7 @@ function buildGroups(results: ReviewQuestion[]): Group[] {
       numbers: slice.flatMap((page) => byPage.get(page) || []).sort((a, b) => a - b),
     });
   }
-  if (noPage.length) groups.push({ key: "other", label: groups.length ? "Phần khác" : "Toàn bài", numbers: noPage });
+  if (noPage.length) groups.push({ key: "other", label: groups.length ? tx("Phần khác") : tx("Toàn bài"), numbers: noPage });
   return groups;
 }
 
@@ -124,11 +125,12 @@ export function ScoreSummaryCard({
         </p>
         <div className="min-w-0 pb-1">
           <p className={`flex flex-wrap items-center gap-2 text-[22px] font-extrabold ${tone}`}>
-            Đúng {percent}%
+
+            {tx("Đúng")} {percent}%
             <span className={`sp-chip text-[12px] ${levelChip}`}>{levelLabel}</span>
           </p>
           <p className="text-[14px] text-[var(--sp-muted)]">
-            {wrongCount ? `${wrongCount} câu sai, đã có giải thích` : "Không có câu sai nào"}
+            {wrongCount ? tx("{0} câu sai, đã có giải thích", [wrongCount]) : tx("Không có câu sai nào")}
           </p>
         </div>
       </div>
@@ -212,13 +214,13 @@ export default function WrongAnswerReview({
     try {
       const response = await fetch(`${API_URL}/api/study-materials/${materialId}/download-url`);
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data?.signed_url) throw new Error(data?.detail || "Không mở được tài liệu gốc.");
+      if (!response.ok || !data?.signed_url) throw new Error(data?.detail || tx("Không mở được tài liệu gốc."));
       const url = `${data.signed_url}${page ? `#page=${page}` : ""}`;
       if (popup) popup.location.href = url;
       else window.open(url, "_blank");
     } catch (error) {
       popup?.close();
-      setSourceError(error instanceof Error ? error.message : "Không mở được tài liệu gốc.");
+      setSourceError(error instanceof Error ? error.message : tx("Không mở được tài liệu gốc."));
     } finally {
       setOpeningSource(false);
     }
@@ -239,19 +241,20 @@ export default function WrongAnswerReview({
 
         <section className="sp-card p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-[20px] text-[var(--sp-ink)]">Câu trả lời sai</h2>
-            <span className="sp-chip bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">{wrongNumbers.length} câu</span>
+            <h2 className="text-[20px] text-[var(--sp-ink)]">{tx("Câu trả lời sai")}</h2>
+            <span className="sp-chip bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">{tx("{0} câu", [wrongNumbers.length])}</span>
           </div>
 
           {wrongNumbers.length === 0 ? (
             <p className="mt-4 rounded-2xl bg-emerald-50 p-5 text-center text-sm font-semibold text-emerald-800">
-              Bạn trả lời đúng tất cả. Tuyệt vời!
+
+              {tx("Bạn trả lời đúng tất cả. Tuyệt vời!")}
             </p>
           ) : (
             <>
               {wrongGroups.length > 1 && (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {[{ key: "all", label: "Tất cả", count: 0 }, ...wrongGroups.map((group) => ({ key: group.key, label: group.label, count: group.wrong.length }))].map(
+                  {[{ key: "all", label: tx("Tất cả"), count: 0 }, ...wrongGroups.map((group) => ({ key: group.key, label: group.label, count: group.wrong.length }))].map(
                     (chip) => (
                       <button
                         key={chip.key}
@@ -291,7 +294,7 @@ export default function WrongAnswerReview({
                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
                           <IconX size={13} />
                         </span>
-                        <span className="shrink-0 text-[14px] font-extrabold text-[var(--sp-ink)]">Câu {number}</span>
+                        <span className="shrink-0 text-[14px] font-extrabold text-[var(--sp-ink)]">{tx("Câu {0}", [number])}</span>
                         <span className="min-w-0 flex-1 truncate text-[14px] text-[var(--sp-text-2)]">{item.question_text}</span>
                         {page && <span className="shrink-0 text-[12px] font-bold text-[var(--sp-muted)]">tr.{page}</span>}
                       </button>
@@ -311,9 +314,10 @@ export default function WrongAnswerReview({
             <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
               <IconCheck size={28} />
             </span>
-            <h3 className="mt-4 text-[22px] text-[var(--sp-ink)]">Không có câu sai để xem lại</h3>
+            <h3 className="mt-4 text-[22px] text-[var(--sp-ink)]">{tx("Không có câu sai để xem lại")}</h3>
             <p className="mt-1 max-w-sm text-sm text-[var(--sp-muted)]">
-              Bạn đã nắm chắc bài này. Kéo xuống để xem nhận xét và gợi ý ôn tiếp.
+
+              {tx("Bạn đã nắm chắc bài này. Kéo xuống để xem nhận xét và gợi ý ôn tiếp.")}
             </p>
           </div>
         ) : (
@@ -391,7 +395,7 @@ function QuestionDetail({
   return (
     <div className="sp-task-expand text-justify">
       <div className="flex flex-wrap items-center gap-2.5">
-        <h2 className="mr-1 text-[34px] font-black leading-none text-[var(--sp-pink)]">Câu {number}</h2>
+        <h2 className="mr-1 text-[34px] font-black leading-none text-[var(--sp-pink)]">{tx("Câu {0}", [number])}</h2>
         {(chapterLabel || page) && (
           <span className="sp-chip bg-[var(--sp-lav)] text-[var(--sp-purple)]">
             {[chapterLabel, page ? `trang ${page}` : groupLabel].filter(Boolean).join(" · ")}
@@ -400,13 +404,14 @@ function QuestionDetail({
         {isWeak && (
           <span className="sp-chip flex items-center gap-1 bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
             <IconTarget size={13} />
-            Phần yếu
+
+            {tx("Phần yếu")}
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
-            aria-label="Câu sai trước"
+            aria-label={tx("Câu sai trước")}
             disabled={position <= 0}
             onClick={onPrev}
             className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[var(--sp-line)] bg-white text-[var(--sp-ink)] transition hover:border-[var(--sp-lav-line)] disabled:opacity-40"
@@ -414,11 +419,11 @@ function QuestionDetail({
             <IconChevronLeft size={16} />
           </button>
           <span className="text-[14px] font-bold text-[var(--sp-text-2)]">
-            Câu sai {position + 1} / {wrongTotal}
+            {tx("Câu sai {0} / {1}", [position + 1, wrongTotal])}
           </span>
           <button
             type="button"
-            aria-label="Câu sai tiếp theo"
+            aria-label={tx("Câu sai tiếp theo")}
             disabled={wrongTotal <= 1}
             onClick={onNext}
             className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-[var(--sp-line)] bg-white text-[var(--sp-ink)] transition hover:border-[var(--sp-lav-line)] disabled:opacity-40"
@@ -436,18 +441,20 @@ function QuestionDetail({
           <div className="rounded-2xl border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-4 py-3">
             <p className="flex items-center gap-1 text-[12px] font-bold text-[var(--sp-pink-dark)]">
               <IconX size={13} />
-              Bạn điền
+
+              {tx("Bạn điền")}
             </p>
             <p className="mt-1 font-semibold text-[var(--sp-ink)]">
               {Array.isArray(question.selected_answer)
                 ? question.selected_answer.join(", ")
-                : question.selected_answer || "Bỏ trống"}
+                : question.selected_answer || tx("Bỏ trống")}
             </p>
           </div>
           <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 px-4 py-3 shadow-[3px_3px_0_#a7e3c4]">
             <p className="flex items-center gap-1 text-[12px] font-bold text-emerald-700">
               <IconCheck size={13} />
-              Đáp án đúng
+
+              {tx("Đáp án đúng")}
             </p>
             <p className="mt-1 font-semibold text-[var(--sp-ink)]">
               {Array.isArray(question.correct_answer) ? question.correct_answer.join(", ") : question.correct_answer}
@@ -494,13 +501,14 @@ function QuestionDetail({
                   {state === "correct" && (
                     <p className="mt-1.5 flex items-center gap-1 text-[12px] font-bold text-emerald-700">
                       <IconCheck size={13} />
-                      {isChosen ? "Bạn chọn đúng" : "Đáp án đúng"}
+                      {isChosen ? tx("Bạn chọn đúng") : tx("Đáp án đúng")}
                     </p>
                   )}
                   {state === "wrong" && (
                     <p className="mt-1.5 flex items-center gap-1 text-[12px] font-bold text-[var(--sp-pink-dark)]">
                       <IconX size={13} />
-                      Bạn chọn
+
+                      {tx("Bạn chọn")}
                     </p>
                   )}
                 </div>
@@ -508,7 +516,7 @@ function QuestionDetail({
             );
           })}
           {chosen.length === 0 && (
-            <p className="text-[13px] font-semibold text-[var(--sp-pink-dark)] sm:col-span-2">Bạn đã bỏ trống câu này.</p>
+            <p className="text-[13px] font-semibold text-[var(--sp-pink-dark)] sm:col-span-2">{tx("Bạn đã bỏ trống câu này.")}</p>
           )}
         </div>
       )}
@@ -518,17 +526,19 @@ function QuestionDetail({
         <div className="rounded-2xl border-2 border-[var(--sp-lav-line)] bg-[var(--sp-lav)] px-5 py-4">
           <p className="flex items-center gap-2 text-[15px] font-bold text-[var(--sp-purple)]">
             <IconBulb size={17} />
-            Vì sao chọn {isFill ? "đáp án này" : correctLabel}?
+
+            {tx("Vì sao chọn")} {isFill ? tx("đáp án này") : correctLabel}?
           </p>
           <p className="mt-2 text-[14px] leading-6 text-[var(--sp-text-2)]">
-            {explanation || "Xem lại đoạn tài liệu gốc bên dưới để hiểu vì sao đây là đáp án đúng."}
+            {explanation || tx("Xem lại đoạn tài liệu gốc bên dưới để hiểu vì sao đây là đáp án đúng.")}
           </p>
         </div>
         {mistake && (
           <div className="rounded-2xl border-2 border-[#f3dca0] bg-[var(--sp-amber-bg)] px-5 py-4">
             <p className="flex items-center gap-2 text-[15px] font-bold text-[var(--sp-amber-dark)]">
               <IconAlert size={17} />
-              Bạn nhầm ở đâu?
+
+              {tx("Bạn nhầm ở đâu?")}
             </p>
             <p className="mt-2 text-[14px] leading-6 text-[var(--sp-text-2)]">{mistake}</p>
           </div>
@@ -541,17 +551,18 @@ function QuestionDetail({
           {(fileName?.split(".").pop() || "PDF").toUpperCase().slice(0, 4)}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="sp-accent text-[15px] text-[var(--sp-pink)]">Nguồn trong tài liệu gốc</p>
-          <p className="truncate text-[16px] font-bold text-[var(--sp-ink)]">{fileName || "Tài liệu ôn tập"}</p>
+          <p className="sp-accent text-[15px] text-[var(--sp-pink)]">{tx("Nguồn trong tài liệu gốc")}</p>
+          <p className="truncate text-[16px] font-bold text-[var(--sp-ink)]">{fileName || tx("Tài liệu ôn tập")}</p>
           <p className="truncate text-[13px] text-[var(--sp-muted)]">
-            {[chapter, page ? `Trang ${page}` : null].filter(Boolean).join(" › ") || "Nội dung của buổi học"}
+            {[chapter, page ? `Trang ${page}` : null].filter(Boolean).join(" › ") || tx("Nội dung của buổi học")}
           </p>
           {sourceError && <p className="mt-1 text-[12px] font-semibold text-[var(--sp-pink-dark)]">{sourceError}</p>}
         </div>
         <div className="flex shrink-0 flex-col gap-2">
           <Link href={materialsHref} className="sp-btn sp-btn-secondary justify-center px-4 py-2 text-[13px]">
             <IconFile size={15} />
-            Mở bài học
+
+            {tx("Mở bài học")}
           </Link>
           {materialId && (
             <button
@@ -561,7 +572,7 @@ function QuestionDetail({
               className="sp-btn sp-btn-secondary justify-center px-4 py-2 text-[13px] disabled:opacity-60"
             >
               <IconBook size={15} />
-              {openingSource ? "Đang mở..." : "Mở tài liệu gốc"}
+              {openingSource ? tx("Đang mở...") : tx("Mở tài liệu gốc")}
             </button>
           )}
         </div>
@@ -570,11 +581,12 @@ function QuestionDetail({
       <div className="mt-6 flex items-center justify-between gap-3 border-t-2 border-dashed border-[var(--sp-line)] pt-5">
         <p className="flex items-center gap-1.5 text-[13px] text-[var(--sp-muted)]">
           <Sparkle size={12} className="text-[var(--sp-yellow)]" />
-          Câu sai sẽ được ưu tiên trong bài kiểm tra lại
+
+          {tx("Câu sai sẽ được ưu tiên trong bài kiểm tra lại")}
         </p>
         {wrongTotal > 1 && (
           <button type="button" onClick={onNext} className="sp-btn sp-btn-primary px-5 py-2.5 text-sm">
-            {position + 1 < wrongTotal ? "Câu sai tiếp theo" : "Về câu sai đầu tiên"}
+            {position + 1 < wrongTotal ? tx("Câu sai tiếp theo") : tx("Về câu sai đầu tiên")}
             <IconChevronRight size={16} />
           </button>
         )}

@@ -1,11 +1,12 @@
 "use client";
 
+import { currentLocale, tx } from "@/lib/i18n";
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type SVGProps } from "react";
 import Link from "next/link";
 import { HomePilot, usePilotRest, type PilotPerch } from "@/components/home-pilot";
 import { LoadingMascot } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
-import { CURRENT_USER } from "@/lib/current-user";
+import { useCurrentUserName } from "@/lib/current-user";
 import {
   IconAlert,
   IconArrowRight,
@@ -105,10 +106,10 @@ const WEEKDAY = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 /* "ngày mai 21/11", "CN 22/11" (trong 6 ngày tới) hoặc "ngày 05/12" */
 function dayPhrase(key: string, todayKey: string) {
   const diff = daysBetween(todayKey, key);
-  if (diff === 0) return "hôm nay";
-  if (diff === 1) return `ngày mai ${dayMonth(key)}`;
+  if (diff === 0) return tx("hôm nay");
+  if (diff === 1) return tx("ngày mai {0}", [dayMonth(key)]);
   if (diff > 1 && diff < 7) return `${WEEKDAY[new Date(`${key}T00:00:00Z`).getUTCDay()]} ${dayMonth(key)}`;
-  return `ngày ${dayMonth(key)}`;
+  return tx("ngày {0}", [dayMonth(key)]);
 }
 
 /* Cùng quy ước với trang Đánh giá năng lực */
@@ -117,7 +118,7 @@ const chapterKeyOf = (topic: Topic | undefined) => String(topic?.hierarchy || ""
 
 async function fetchList<T>(path: string): Promise<T[]> {
   const response = await fetch(`${API_BASE_URL}${path}`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`API ${path} trả về lỗi ${response.status}`);
+  if (!response.ok) throw new Error(tx("API {0} trả về lỗi {1}", [path, response.status]));
   const result = await response.json();
   return Array.isArray(result?.data) ? result.data : [];
 }
@@ -137,9 +138,9 @@ async function loadDashboard(): Promise<{ data: Dashboard; error: string }> {
   return {
     error:
       failed === results.length
-        ? "Không kết nối được backend. Hãy kiểm tra backend có đang chạy không."
+        ? tx("Không kết nối được backend. Hãy kiểm tra backend có đang chạy không.")
         : failed > 0
-          ? "Một vài dữ liệu chưa tải được, số liệu có thể chưa đầy đủ."
+          ? tx("Một vài dữ liệu chưa tải được, số liệu có thể chưa đầy đủ.")
           : "",
     data: {
       subjects: pick<Subject>(0),
@@ -160,15 +161,16 @@ const QUICK_LINKS: {
   tone: string;
   shadow: string;
 }[] = [
-  { title: "Kế hoạch ôn thi", text: "Lịch học và lịch ôn", href: "/study-plans", icon: IconCalendar, tone: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]", shadow: "var(--sp-lav-line)" },
-  { title: "Tài liệu học tập", text: "Tóm tắt từng bài học", href: "/study-materials", icon: IconFile, tone: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]", shadow: "var(--sp-pink-line)" },
-  { title: "Kiểm tra kiến thức", text: "Có giải thích câu sai", href: "/quizzes", icon: IconPen, tone: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]", shadow: "#f3dc9b" },
-  { title: "Đánh giá năng lực", text: "Tiến độ và điểm yếu", href: "/weak-areas", icon: IconChart, tone: "bg-[#f1e6f7] text-[var(--sp-purple)]", shadow: "#e3cdf0" },
+  { title: tx("Kế hoạch ôn thi"), text: tx("Lịch học và lịch ôn"), href: "/study-plans", icon: IconCalendar, tone: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]", shadow: "var(--sp-lav-line)" },
+  { title: tx("Tài liệu học tập"), text: tx("Tóm tắt từng bài học"), href: "/study-materials", icon: IconFile, tone: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]", shadow: "var(--sp-pink-line)" },
+  { title: tx("Kiểm tra kiến thức"), text: tx("Có giải thích câu sai"), href: "/quizzes", icon: IconPen, tone: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]", shadow: "#f3dc9b" },
+  { title: tx("Đánh giá năng lực"), text: tx("Tiến độ và điểm yếu"), href: "/weak-areas", icon: IconChart, tone: "bg-[#f1e6f7] text-[var(--sp-purple)]", shadow: "#e3cdf0" },
 ];
 
 /* ================= Trang ================= */
 
 export default function Home() {
+  const userName = useCurrentUserName();
   const [data, setData] = useState<Dashboard>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -202,7 +204,7 @@ export default function Home() {
   const todayKey = toKey(new Date());
   const view = useMemo(() => buildView(data, todayKey), [data, todayKey]);
   const todayLabel = (() => {
-    const label = new Date(`${todayKey}T00:00:00`).toLocaleDateString("vi-VN", {
+    const label = new Date(`${todayKey}T00:00:00`).toLocaleDateString(currentLocale(), {
       weekday: "long",
       day: "2-digit",
       month: "2-digit",
@@ -214,34 +216,34 @@ export default function Home() {
   const open = view.today.filter((item) => !item.done);
   const openMinutes = open.reduce((sum, item) => sum + (item.minutes || 0), 0);
   const minutesText =
-    openMinutes >= 60 ? `${Math.round((openMinutes / 60) * 10) / 10} giờ`.replace(".", ",") : `${openMinutes} phút`;
+    openMinutes >= 60 ? tx("{0} giờ", [(Math.round((openMinutes / 60) * 10) / 10).toLocaleString(currentLocale())]) : tx("{0} phút", [openMinutes]);
   const allDone = view.today.length > 0 && open.length === 0;
 
   const countOf = (kind: TodayItem["kind"]) => open.filter((item) => item.kind === kind).length;
   const todayParts = [
-    countOf("lesson") && `${countOf("lesson")} buổi học mới`,
-    countOf("retake") && `${countOf("retake")} bài kiểm tra lại`,
-    countOf("review") && `${countOf("review")} bài cần ôn`,
-    countOf("pick") && `${countOf("pick")} bài chưa chọn ngày ôn`,
+    countOf("lesson") && tx("{0} buổi học mới", [countOf("lesson")]),
+    countOf("retake") && tx("{0} bài kiểm tra lại", [countOf("retake")]),
+    countOf("review") && tx("{0} bài cần ôn", [countOf("review")]),
+    countOf("pick") && tx("{0} bài chưa chọn ngày ôn", [countOf("pick")]),
   ].filter(Boolean) as string[];
 
   const percent = view.totalSessions ? Math.round((view.completedSessions / view.totalSessions) * 100) : 0;
   const pilotLines: Record<PilotPerch, string[]> = {
     sign: open.length
-      ? [`Hôm nay còn ${open.length} việc nè!`, "Làm bài hôm nay trước rồi chơi nha~"]
+      ? [tx("Hôm nay còn {0} việc nè!", [open.length]), tx("Làm bài hôm nay trước rồi chơi nha~")]
       : allDone
-        ? ["Xong hết rồi! Nghỉ ngơi thôi~"]
-        : ["Hôm nay nhẹ nhàng ghê~"],
+        ? [tx("Xong hết rồi! Nghỉ ngơi thôi~")]
+        : [tx("Hôm nay nhẹ nhàng ghê~")],
     hero:
       view.daysLeft !== null
-        ? [`Còn ${view.daysLeft} ngày nữa là thi, mình đi cùng bạn!`, `${percent}% rồi đó, cố lên!`]
-        : ["Tạo kế hoạch để mình xếp lịch cho bạn nha!"],
+        ? [tx("Còn {0} ngày nữa là thi, mình đi cùng bạn!", [view.daysLeft]), tx("{0}% rồi đó, cố lên!", [percent])]
+        : [tx("Tạo kế hoạch để mình xếp lịch cho bạn nha!")],
     today: open[0]
-      ? [`Làm “${open[0].name}” trước nha ↓`, open[0].minutes ? `Chỉ ${open[0].minutes} phút thôi, mình canh giờ cho!` : "Việc này trước nha ↓"]
-      : ["Hôm nay xong hết rồi nè!"],
+      ? [tx("Làm “{0}” trước nha ↓", [open[0].name]), open[0].minutes ? tx("Chỉ {0} phút thôi, mình canh giờ cho!", [open[0].minutes]) : tx("Việc này trước nha ↓")]
+      : [tx("Hôm nay xong hết rồi nè!")],
     read: view.upcoming
-      ? [`Mình đọc trước bài ${view.upcoming.phrase} cho bạn…`, "Suỵt, Pilot đang học bài…"]
-      : ["Suỵt, Pilot đang học bài…"],
+      ? [tx("Mình đọc trước bài {0} cho bạn…", [view.upcoming.phrase]), tx("Suỵt, Pilot đang học bài…")]
+      : [tx("Suỵt, Pilot đang học bài…")],
   };
 
   return (
@@ -250,7 +252,8 @@ export default function Home() {
       <section className="grid grid-cols-[minmax(0,1fr)_100px] items-center gap-x-3 lg:grid-cols-[auto_130px_minmax(0,1fr)_auto]">
         <p className="sp-accent col-span-full text-[18px] text-[var(--sp-pink)]">{todayLabel}</p>
         <h1 className="mt-1 text-[36px] leading-[1.08] sm:text-[52px]">
-          Chào mừng trở lại, <span className="sp-squiggle">{CURRENT_USER.name}</span>
+
+          {tx("Chào mừng trở lại,")} <span className="sp-squiggle">{userName}</span>
         </h1>
         <div className="h-[120px]" data-pilot-perch="sign" />
         <span className="hidden lg:block" />
@@ -260,29 +263,32 @@ export default function Home() {
             onClick={() => setPilotRest(!pilotRest)}
             className="sp-btn sp-btn-secondary h-11 px-4 text-[14px] !text-[var(--sp-peri-dark)]"
           >
-            {pilotRest ? "Gọi Pilot về" : "Cho Pilot nghỉ"}
+            {pilotRest ? tx("Gọi Pilot về") : tx("Cho Pilot nghỉ")}
           </button>
           <Link href="/study-plans#create-plan" className="sp-btn sp-btn-primary h-11 whitespace-nowrap px-5 text-[15px]">
             <IconPlus size={17} />
-            Tạo kế hoạch mới
+
+            {tx("Tạo kế hoạch mới")}
           </Link>
         </div>
         <p className="col-span-full mt-2 text-[15px] text-[var(--sp-text-2)]">
           {loading ? (
-            "Đang tải lịch học của bạn..."
+            tx("Đang tải lịch học của bạn...")
           ) : !view.plan ? (
-            "Tạo kế hoạch ôn thi đầu tiên để AI xếp lịch học cho bạn."
+            tx("Tạo kế hoạch ôn thi đầu tiên để AI xếp lịch học cho bạn.")
           ) : todayParts.length > 0 ? (
             <>
-              Hôm nay có <b className="text-[var(--sp-pink-dark)]">{todayParts.join(", ")}</b>
-              {openMinutes > 0 && `, khoảng ${minutesText}`}. Làm xong là Pilot cho bạn nghỉ!
+
+              {tx("Hôm nay có")} <b className="text-[var(--sp-pink-dark)]">{todayParts.join(", ")}</b>
+              {openMinutes > 0 && tx(", khoảng {0}", [minutesText])}{tx(". Làm xong là Pilot cho bạn nghỉ!")}
             </>
           ) : allDone ? (
             <>
-              Bạn đã <b className="text-[var(--sp-pink-dark)]">xong hết việc hôm nay</b>. Tối nay nghỉ ngơi, mai mình ôn tiếp nhé!
+
+              {tx("Bạn đã")} <b className="text-[var(--sp-pink-dark)]">{tx("xong hết việc hôm nay")}</b>{tx(". Tối nay nghỉ ngơi, mai mình ôn tiếp nhé!")}
             </>
           ) : (
-            "Hôm nay không có lịch học hay lịch ôn. Nghỉ ngơi hoặc xem lại bài cũ nhé."
+            tx("Hôm nay không có lịch học hay lịch ôn. Nghỉ ngơi hoặc xem lại bài cũ nhé.")
           )}
         </p>
       </section>
@@ -291,7 +297,8 @@ export default function Home() {
         <p role="alert" className="rounded-2xl border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-4 py-3 text-sm font-medium text-[var(--sp-pink-dark)]">
           {error}{" "}
           <button type="button" onClick={() => void refreshDashboard()} className="font-bold underline underline-offset-2">
-            Thử lại
+
+            {tx("Thử lại")}
           </button>
         </p>
       )}
@@ -314,9 +321,9 @@ export default function Home() {
 
       <HomePilot
         hidden={pilotRest}
-        sign={loading ? "…" : open.length ? `${open.length} việc` : allDone ? "Xong!" : "Nghỉ!"}
+        sign={loading ? "…" : open.length ? tx("{0} việc", [open.length]) : allDone ? "Xong!" : tx("Nghỉ!")}
         lines={pilotLines}
-        alert={view.overdue ? `Bài “${view.overdue.name}” quá hạn từ ${dayMonth(view.overdue.dateKey)} rồi… ôn liền nha!` : null}
+        alert={view.overdue ? tx("Bài “{0}” quá hạn từ {1} rồi… ôn liền nha!", [view.overdue.name, dayMonth(view.overdue.dateKey)]) : null}
         celebrate={allDone}
       />
     </div>
@@ -376,7 +383,7 @@ type WeekDay = { key: string; label: string; learn: number; learnDone: number; r
 function buildView(data: Dashboard, todayKey: string) {
   const topicById = new Map(data.topics.map((topic) => [topic.id, topic]));
   const subjectName = (plan?: ExamPlan) =>
-    data.subjects.find((subject) => subject.id === plan?.subject_id)?.name || plan?.title || "Kế hoạch ôn thi";
+    data.subjects.find((subject) => subject.id === plan?.subject_id)?.name || plan?.title || tx("Kế hoạch ôn thi");
 
   // Kế hoạch đang chạy: ngày thi gần nhất chưa qua
   const upcomingPlans = data.plans
@@ -401,7 +408,7 @@ function buildView(data: Dashboard, todayKey: string) {
     const topic = topicById.get(String(session.topic_id));
     const key = chapterKeyOf(topic);
     if (chapters.some((chapter) => chapter.key === key)) continue;
-    const full = String(topic?.hierarchy || "").split(">")[0].trim() || (topic ? getMainTopicTitle(topic.name) : "Nội dung khác");
+    const full = String(topic?.hierarchy || "").split(">")[0].trim() || (topic ? getMainTopicTitle(topic.name) : tx("Nội dung khác"));
     const match = full.match(CHAPTER_PREFIX);
     chapters.push({
       key,
@@ -411,10 +418,10 @@ function buildView(data: Dashboard, todayKey: string) {
   }
   const byChapter = chapters.length >= 2;
   const chapterOf = (key: string) => chapters.find((chapter) => chapter.key === key);
-  const nameOf = (session?: StudySession) => getMainTopicTitle(topicById.get(String(session?.topic_id))?.name || "Bài học");
+  const nameOf = (session?: StudySession) => getMainTopicTitle(topicById.get(String(session?.topic_id))?.name || tx("Bài học"));
   const titleOf = (session?: StudySession) => {
     const chapter = chapterOf(chapterKeyOf(topicById.get(String(session?.topic_id))));
-    return `${byChapter && chapter ? `Chương ${chapter.no} · ` : ""}${nameOf(session)}`;
+    return `${byChapter && chapter ? tx("Chương {0} · ", [chapter.no]) : ""}${nameOf(session)}`;
   };
 
   // Điểm mới nhất của từng buổi học (bài gốc hoặc kiểm tra lại)
@@ -438,7 +445,7 @@ function buildView(data: Dashboard, todayKey: string) {
         .reverse()
         .find((quiz) => quiz.is_retake && quiz.study_session_id === sessionId && quiz.review_status !== "completed") || null;
     if (!retake) {
-      return { dateKey: null, rank: 3, tone: "muted", text: "Chưa có bài ôn cho bài này", label: "Xem lại bài", href: materialsHref(sessionId, "revisit"), retake };
+      return { dateKey: null, rank: 3, tone: "muted", text: tx("Chưa có bài ôn cho bài này"), label: tx("Xem lại bài"), href: materialsHref(sessionId, "revisit"), retake };
     }
     if (!retake.review_date) {
       const attemptId = latestBySession.get(sessionId)?.attemptId;
@@ -446,22 +453,22 @@ function buildView(data: Dashboard, todayKey: string) {
         dateKey: null,
         rank: 1,
         tone: "pink",
-        text: "Chưa chọn ngày ôn",
-        label: "Chọn ngày ôn",
+        text: tx("Chưa chọn ngày ôn"),
+        label: tx("Chọn ngày ôn"),
         href: attemptId ? `/quiz-results/${attemptId}` : materialsHref(sessionId, "review"),
         retake,
       };
     }
     const dateKey = retake.review_date.slice(0, 10);
     const go = retake.is_unlocked
-      ? { label: "Làm bài ôn", href: `/quizzes/${retake.id}` }
-      : { label: "Vào ôn", href: materialsHref(sessionId, "review") };
-    if (dateKey > todayKey) return { dateKey, rank: 2, tone: "amber", text: `Ôn ${dayPhrase(dateKey, todayKey)}`, ...go, retake };
+      ? { label: tx("Làm bài ôn"), href: `/quizzes/${retake.id}` }
+      : { label: tx("Vào ôn"), href: materialsHref(sessionId, "review") };
+    if (dateKey > todayKey) return { dateKey, rank: 2, tone: "amber", text: tx("Ôn {0}", [dayPhrase(dateKey, todayKey)]), ...go, retake };
     return {
       dateKey,
       rank: 0,
       tone: "red",
-      text: dateKey === todayKey ? "Ôn hôm nay" : `Quá hạn từ ${dayMonth(dateKey)}`,
+      text: dateKey === todayKey ? tx("Ôn hôm nay") : tx("Quá hạn từ {0}", [dayMonth(dateKey)]),
       ...go,
       retake,
     };
@@ -500,28 +507,28 @@ function buildView(data: Dashboard, todayKey: string) {
       })
       .filter((group) => group.average !== null && group.average < MASTERY_SCORE && group.weakOnes.length > 0)
       .sort((a, b) => (a.average as number) - (b.average as number));
-    weakCount = `${groups.length} chương`;
+    weakCount = tx("{0} chương", [groups.length]);
     weak = groups.slice(0, 2).map(({ chapter, weakOnes, total, average }, index) => {
       const weakest = weakOnes[0];
       return {
         key: chapter.key,
-        kicker: `Chương ${chapter.no} · Ưu tiên ${index + 1}`,
+        kicker: tx("Chương {0} · Ưu tiên {1}", [chapter.no, index + 1]),
         title: chapter.title,
         percent: average as number,
-        text: `${weakOnes.length}/${total} bài dưới ${MASTERY_SCORE}% · yếu nhất: ${weakest.name} (${weakest.percent}%)`,
+        text: tx("{0}/{1} bài dưới {2}% · yếu nhất: {3} ({4}%)", [weakOnes.length, total, MASTERY_SCORE, weakest.name, weakest.percent]),
         tone: weakest.review.tone,
         label: weakest.review.label,
         href: weakest.review.href,
       };
     });
   } else {
-    weakCount = `${weakLessons.length} bài`;
+    weakCount = tx("{0} bài", [weakLessons.length]);
     weak = weakLessons.slice(0, 3).map((lesson, index) => ({
       key: lesson.sessionId,
-      kicker: `Ưu tiên ${index + 1}`,
+      kicker: tx("Ưu tiên {0}", [index + 1]),
       title: lesson.title,
       percent: lesson.percent,
-      text: lesson.review.retake?.is_unlocked && lesson.review.rank === 0 ? `${lesson.review.text} · bài kiểm tra lại đã mở` : lesson.review.text,
+      text: lesson.review.retake?.is_unlocked && lesson.review.rank === 0 ? tx("{0} · bài kiểm tra lại đã mở", [lesson.review.text]) : lesson.review.text,
       tone: lesson.review.tone,
       label: lesson.review.label,
       href: lesson.review.href,
@@ -534,21 +541,21 @@ function buildView(data: Dashboard, todayKey: string) {
     const { review } = lesson;
     if (review.rank === 0) {
       const isRetake = Boolean(review.retake?.is_unlocked);
-      const when = review.dateKey === todayKey ? "hẹn hôm nay" : `quá hạn từ ${dayMonth(review.dateKey as string)}`;
+      const when = review.dateKey === todayKey ? tx("hẹn hôm nay") : tx("quá hạn từ {0}", [dayMonth(review.dateKey as string)]);
       today.push({
         key: `review-${lesson.sessionId}`,
         kind: isRetake ? "retake" : "review",
         name: lesson.name,
         title: lesson.title,
-        chip: `${isRetake ? "Kiểm tra lại" : "Ôn lại"} · ${when}`,
+        chip: `${isRetake ? tx("Kiểm tra lại") : tx("Ôn lại")} · ${when}`,
         note: isRetake
-          ? `Lần trước ${lesson.percent}% · làm đạt ${MASTERY_SCORE}% là xong phần này`
-          : `Lần trước ${lesson.percent}% · ôn xong sẽ mở bài kiểm tra lại`,
+          ? tx("Lần trước {0}% · làm đạt {1}% là xong phần này", [lesson.percent, MASTERY_SCORE])
+          : tx("Lần trước {0}% · ôn xong sẽ mở bài kiểm tra lại", [lesson.percent]),
         minutes: Number((isRetake ? review.retake?.time_limit_minutes : lesson.session?.duration_minutes) || 15),
         done: false,
         urgent: true,
         href: review.href,
-        action: isRetake ? "Làm bài" : "Vào ôn",
+        action: isRetake ? tx("Làm bài") : tx("Vào ôn"),
       });
     } else if (review.rank === 1) {
       today.push({
@@ -556,13 +563,13 @@ function buildView(data: Dashboard, todayKey: string) {
         kind: "pick",
         name: lesson.name,
         title: lesson.title,
-        chip: "Chưa chọn ngày ôn",
-        note: `Lần trước ${lesson.percent}% · chọn ngày để Pilot xếp lịch ôn`,
+        chip: tx("Chưa chọn ngày ôn"),
+        note: tx("Lần trước {0}% · chọn ngày để Pilot xếp lịch ôn", [lesson.percent]),
         minutes: 0,
         done: false,
         urgent: true,
         href: review.href,
-        action: "Chọn ngày",
+        action: tx("Chọn ngày"),
       });
     }
   }
@@ -574,13 +581,13 @@ function buildView(data: Dashboard, todayKey: string) {
       kind: "lesson",
       name: nameOf(session),
       title: titleOf(session),
-      chip: done ? "Đã học" : "Học mới",
-      note: done ? "Đã xong buổi học này" : "Đọc tóm tắt, trả lời câu hỏi rồi làm bài kiểm tra",
+      chip: done ? tx("Đã học") : tx("Học mới"),
+      note: done ? tx("Đã xong buổi học này") : tx("Đọc tóm tắt, trả lời câu hỏi rồi làm bài kiểm tra"),
       minutes: Number(session.duration_minutes || 0),
       done,
       urgent: false,
       href: materialsHref(session.id),
-      action: done ? "Xem lại" : "Bắt đầu",
+      action: done ? tx("Xem lại") : tx("Bắt đầu"),
     });
   }
 
@@ -638,10 +645,10 @@ function buildView(data: Dashboard, todayKey: string) {
     nearest: !nearestKey
       ? null
       : nearestKey < todayKey
-        ? { text: "Quá hạn", hot: true }
+        ? { text: tx("Quá hạn"), hot: true }
         : nearestKey === todayKey
-          ? { text: "Hôm nay", hot: true }
-          : { text: daysBetween(todayKey, nearestKey) === 1 ? "Ngày mai" : dayMonth(nearestKey), hot: false },
+          ? { text: tx("Hôm nay"), hot: true }
+          : { text: daysBetween(todayKey, nearestKey) === 1 ? tx("Ngày mai") : dayMonth(nearestKey), hot: false },
     overdue: overdueLesson ? { name: overdueLesson.name, dateKey: overdueLesson.review.dateKey as string } : null,
     today,
     upcoming,
@@ -661,20 +668,22 @@ function PlanHero({ view, percent, loading }: { view: View; percent: number; loa
     <section className="relative rounded-[28px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-purple)] p-6 text-white shadow-[6px_6px_0_var(--sp-pink)] sm:p-8">
       {!plan ? (
         <div className="relative max-w-lg">
-          <p className="sp-accent text-[18px] text-[#ffd3e2]">Bắt đầu thôi</p>
+          <p className="sp-accent text-[18px] text-[#ffd3e2]">{tx("Bắt đầu thôi")}</p>
           <h2 className="mt-1 text-[28px] font-extrabold leading-tight text-white">
-            {loading ? "Đang tải kế hoạch..." : "Bạn chưa có kế hoạch ôn thi"}
+            {loading ? tx("Đang tải kế hoạch...") : tx("Bạn chưa có kế hoạch ôn thi")}
           </h2>
           {!loading && (
             <>
               <p className="mt-2 text-[15px] leading-6 text-white/80">
-                Tải tài liệu lên, chọn ngày thi. AI sẽ chia bài và xếp lịch học từng ngày cho bạn.
+
+                {tx("Tải tài liệu lên, chọn ngày thi. AI sẽ chia bài và xếp lịch học từng ngày cho bạn.")}
               </p>
               <Link
                 href="/study-plans#create-plan"
                 className="sp-btn mt-5 border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] px-5 py-3 text-[15px] text-[var(--sp-purple-deep)] shadow-[3px_3px_0_var(--sp-pink)]"
               >
-                Tạo kế hoạch đầu tiên
+
+                {tx("Tạo kế hoạch đầu tiên")}
                 <IconArrowRight size={16} />
               </Link>
             </>
@@ -701,33 +710,33 @@ function PlanHero({ view, percent, loading }: { view: View; percent: number; loa
             <span className="absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-[34px] font-black leading-none">{percent}%</span>
               <span className="mt-1 text-[13px] text-white/75">
-                {view.completedSessions}/{view.totalSessions} buổi
-              </span>
+                {tx("{0}/{1} buổi", [view.completedSessions, view.totalSessions])}</span>
             </span>
           </div>
 
           <div className="min-w-0">
             <p className="sp-accent text-[18px] text-[#ffd3e2]">
-              Kế hoạch đang chạy
-              {view.otherPlans > 0 && <span className="ml-2 text-[14px] text-white/60">· +{view.otherPlans} kế hoạch khác</span>}
+
+              {tx("Kế hoạch đang chạy")}
+              {view.otherPlans > 0 && <span className="ml-2 text-[14px] text-white/60">{tx("· +{0} kế hoạch khác", [view.otherPlans])}</span>}
             </p>
             <h2 className="truncate text-[30px] font-extrabold leading-tight text-white">{view.planName}</h2>
 
             <dl className="mt-3 grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-[repeat(4,max-content)]">
               <div>
-                <dt className="text-[13px] text-white/70">Ngày thi</dt>
+                <dt className="text-[13px] text-white/70">{tx("Ngày thi")}</dt>
                 <dd className="text-[20px] font-extrabold">{view.examKey ? formatDay(view.examKey) : "—"}</dd>
               </div>
               <div>
-                <dt className="text-[13px] text-white/70">Còn lại</dt>
-                <dd className="text-[20px] font-extrabold">{view.daysLeft === null ? "—" : `${view.daysLeft} ngày`}</dd>
+                <dt className="text-[13px] text-white/70">{tx("Còn lại")}</dt>
+                <dd className="text-[20px] font-extrabold">{view.daysLeft === null ? "—" : tx("{0} ngày", [view.daysLeft])}</dd>
               </div>
               <div>
-                <dt className="text-[13px] text-white/70">Cần ôn</dt>
-                <dd className="text-[20px] font-extrabold">{view.reviewCount} bài</dd>
+                <dt className="text-[13px] text-white/70">{tx("Cần ôn")}</dt>
+                <dd className="text-[20px] font-extrabold">{tx("{0} bài", [view.reviewCount])}</dd>
               </div>
               <div>
-                <dt className="text-[13px] text-white/70">Ôn gần nhất</dt>
+                <dt className="text-[13px] text-white/70">{tx("Ôn gần nhất")}</dt>
                 <dd className={`text-[20px] font-extrabold ${view.nearest?.hot ? "text-[#ffd76e]" : ""}`}>{view.nearest?.text || "—"}</dd>
               </div>
             </dl>
@@ -736,7 +745,8 @@ function PlanHero({ view, percent, loading }: { view: View; percent: number; loa
               href={`/study-plans/${plan.id}`}
               className="sp-btn mt-5 border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] px-5 py-2.5 text-[15px] text-[var(--sp-purple-deep)] shadow-[3px_3px_0_var(--sp-pink)] hover:brightness-105"
             >
-              Xem kế hoạch chi tiết
+
+              {tx("Xem kế hoạch chi tiết")}
               <IconArrowRight size={16} />
             </Link>
           </div>
@@ -787,30 +797,32 @@ function TodayCard({
       <div className="flex items-end justify-between gap-3">
         <div>
           <p className="sp-accent text-[17px] text-[var(--sp-pink)]">
-            {allDone ? "Xong hết việc hôm nay" : openCount > 0 ? `${openCount} việc · ${minutesText}` : "Lịch hôm nay"}
+            {allDone ? tx("Xong hết việc hôm nay") : openCount > 0 ? tx("{0} việc · {1}", [openCount, minutesText]) : tx("Lịch hôm nay")}
           </p>
-          <h2 className="text-[22px] text-[var(--sp-ink)]">Hôm nay học gì?</h2>
+          <h2 className="text-[22px] text-[var(--sp-ink)]">{tx("Hôm nay học gì?")}</h2>
         </div>
         {view.plan && (
           <Link href={`/study-plans/${view.plan.id}`} className="flex items-center gap-1 text-sm font-bold text-[var(--sp-peri-dark)] hover:underline">
-            Cả lịch
+
+            {tx("Cả lịch")}
             <IconArrowRight size={15} />
           </Link>
         )}
       </div>
 
       {loading ? (
-        <LoadingMascot bare className="mt-5" text="Đang xếp lịch hôm nay…" sub="Pilot đang xem hôm nay bạn cần học gì." />
+        <LoadingMascot bare className="mt-5" text={tx("Đang xếp lịch hôm nay…")} sub={tx("Pilot đang xem hôm nay bạn cần học gì.")} />
       ) : view.today.length === 0 ? (
         <div className="mt-5 flex flex-col items-center rounded-2xl border-2 border-dashed border-[var(--sp-line)] px-5 py-8 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]">
             <IconCheck size={22} />
           </span>
-          <p className="mt-3 font-bold text-[var(--sp-ink)]">Hôm nay là ngày nghỉ</p>
-          <p className="mt-1 text-sm text-[var(--sp-muted)]">Không có buổi học hay buổi ôn nào hẹn hôm nay.</p>
+          <p className="mt-3 font-bold text-[var(--sp-ink)]">{tx("Hôm nay là ngày nghỉ")}</p>
+          <p className="mt-1 text-sm text-[var(--sp-muted)]">{tx("Không có buổi học hay buổi ôn nào hẹn hôm nay.")}</p>
           <Link href={view.materialsHref} className="sp-btn sp-btn-secondary mt-4 px-4 py-2 text-sm">
             <IconBook size={15} />
-            Mở tài liệu học tập
+
+            {tx("Mở tài liệu học tập")}
           </Link>
         </div>
       ) : (
@@ -828,7 +840,7 @@ function TodayCard({
               >
                 <div className="border-r-2 border-dashed border-black/10 pr-3 text-center">
                   <p className="text-[24px] font-black leading-none text-[var(--sp-purple)]">{item.minutes || "–"}</p>
-                  <p className="mt-0.5 text-[12px] text-[var(--sp-muted)]">phút</p>
+                  <p className="mt-0.5 text-[12px] text-[var(--sp-muted)]">{tx("phút")}</p>
                 </div>
                 <div className="min-w-0">
                   <span className={`sp-chip flex w-fit items-center gap-1 bg-white ${style.chip}`}>
@@ -862,23 +874,26 @@ function TodayCard({
             {dayMonth(upcoming.dateKey)}
           </p>
           <p className="min-w-0">
-            <b className="text-[var(--sp-ink)]">Sắp tới:</b>{" "}
+            <b className="text-[var(--sp-ink)]">{tx("Sắp tới:")}</b>{" "}
             {upcoming.reviews.length > 0 && (
               <>
-                ôn <b className="text-[var(--sp-ink)]">{upcoming.reviews.slice(0, 2).join(" và ")}</b>
-                {upcoming.reviews.length > 2 && ` và ${upcoming.reviews.length - 2} bài khác`}
+
+                {tx("ôn")} <b className="text-[var(--sp-ink)]">{upcoming.reviews.slice(0, 2).join(tx(" và "))}</b>
+                {upcoming.reviews.length > 2 && tx(" và {0} bài khác", [upcoming.reviews.length - 2])}
               </>
             )}
             {upcoming.reviews.length > 0 && upcoming.lessons.length > 0 && "; "}
             {upcoming.lessons.length > 0 && (
               <>
-                học <b className="text-[var(--sp-ink)]">{upcoming.lessons.slice(0, 2).join(" và ")}</b>
+
+                {tx("học")} <b className="text-[var(--sp-ink)]">{upcoming.lessons.slice(0, 2).join(tx(" và "))}</b>
               </>
             )}
           </p>
           {view.plan && (
             <Link href={`/study-plans/${view.plan.id}`} className="col-span-2 text-sm font-bold text-[var(--sp-peri-dark)] hover:underline sm:col-span-1 sm:text-right">
-              Xem lịch ôn →
+
+              {tx("Xem lịch ôn →")}
             </Link>
           )}
         </div>
@@ -888,10 +903,9 @@ function TodayCard({
       {view.plan && (
         <div className="mt-6 border-t-2 border-dashed border-[var(--sp-line)] pt-5">
           <div className="flex items-center justify-between gap-3">
-            <p className="font-bold text-[var(--sp-ink)]">Tuần này</p>
+            <p className="font-bold text-[var(--sp-ink)]">{tx("Tuần này")}</p>
             <p className="text-[13px] text-[var(--sp-muted)]">
-              {learnDone}/{learnTotal} buổi học xong · {reviewTotal} buổi ôn
-            </p>
+              {tx("{0}/{1} buổi học xong · {2} buổi ôn", [learnDone, learnTotal, reviewTotal])}</p>
           </div>
           <div className="mt-3 grid grid-cols-7 gap-1.5 sm:gap-2.5">
             {view.week.map((day) => {
@@ -918,27 +932,28 @@ function TodayCard({
                   </p>
                   <div
                     className={`mt-1.5 flex h-[60px] flex-col items-center justify-center gap-0.5 rounded-[14px] text-[12px] font-extrabold leading-tight sm:h-[66px] sm:text-[12.5px] ${tone}`}
-                    title={`${day.learn ? `${day.learnDone}/${day.learn} buổi học xong` : "Không có buổi học"}${day.reviews ? ` · ${day.reviews} buổi ôn` : ""}`}
+                    title={`${day.learn ? tx("{0}/{1} buổi học xong", [day.learnDone, day.learn]) : tx("Không có buổi học")}${day.reviews ? tx(" · {0} buổi ôn", [day.reviews]) : ""}`}
                   >
                     {empty ? (
-                      "Nghỉ"
+                      tx("Nghỉ")
                     ) : (
                       <>
                         {day.learn > 0 &&
                           (learnAllDone ? (
                             <span className="flex items-center gap-1">
                               <IconCheck size={13} />
-                              Học
+
+                              {tx("Học")}
                             </span>
                           ) : (
                             <span>
-                              {day.learnDone}/{day.learn} học
-                            </span>
+                              {tx("{0}/{1} học", [day.learnDone, day.learn])}</span>
                           ))}
                         {day.reviews > 0 && (
                           <span className="flex items-center gap-1">
                             <IconRepeat size={12} />
-                            Ôn {day.reviews}
+
+                            {tx("Ôn")} {day.reviews}
                           </span>
                         )}
                       </>
@@ -951,15 +966,18 @@ function TodayCard({
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[12.5px] text-[var(--sp-muted)]">
             <span className="flex items-center gap-1.5">
               <i className="h-2.5 w-2.5 rounded-[3px] bg-[var(--sp-peri)]" />
-              Buổi học
+
+              {tx("Buổi học")}
             </span>
             <span className="flex items-center gap-1.5">
               <i className="h-2.5 w-2.5 rounded-[3px] bg-[var(--sp-pink-line)]" />
-              Buổi ôn đã hẹn
+
+              {tx("Buổi ôn đã hẹn")}
             </span>
             <span className="flex items-center gap-1.5">
               <i className="h-2.5 w-2.5 rounded-[3px] bg-[var(--sp-red)]" />
-              Hôm nay
+
+              {tx("Hôm nay")}
             </span>
           </div>
         </div>
@@ -982,8 +1000,8 @@ function WeakCard({ view, loading }: { view: View; loading: boolean }) {
     <section className="rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-white p-5 shadow-[5px_5px_0_var(--sp-pink)] sm:p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Lưu ý điểm yếu</p>
-          <h2 className="text-[22px] text-[var(--sp-ink)]">Cần ôn lại thêm</h2>
+          <p className="sp-accent text-[17px] text-[var(--sp-pink)]">{tx("Lưu ý điểm yếu")}</p>
+          <h2 className="text-[22px] text-[var(--sp-ink)]">{tx("Cần ôn lại thêm")}</h2>
         </div>
         {loading ? (
           <IconAlert size={20} className="mt-1 text-[var(--sp-ink)]" />
@@ -996,8 +1014,7 @@ function WeakCard({ view, loading }: { view: View; loading: boolean }) {
         <div className="mt-4 h-[84px] animate-pulse rounded-2xl bg-[var(--sp-surface-2)]" />
       ) : view.weak.length === 0 ? (
         <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-4 text-sm font-semibold text-emerald-800">
-          Chưa có phần nào dưới {MASTERY_SCORE}%. Giữ phong độ nhé!
-        </p>
+          {tx("Chưa có phần nào dưới {0}%. Giữ phong độ nhé!", [MASTERY_SCORE])}</p>
       ) : (
         <>
           <ul className="mt-4 space-y-3">
@@ -1034,10 +1051,10 @@ function WeakCard({ view, loading }: { view: View; loading: boolean }) {
           </ul>
           <Link href="/weak-areas" className="mt-3.5 block text-center text-[14px] font-bold text-[var(--sp-peri-dark)] hover:underline">
             {view.byChapter
-              ? "Xem chi tiết từng chương ở Đánh giá năng lực →"
+              ? tx("Xem chi tiết từng chương ở Đánh giá năng lực →")
               : view.weakTotal > view.weak.length
-                ? `Xem cả ${view.weakTotal} bài ở Đánh giá năng lực →`
-                : "Xem ở Đánh giá năng lực →"}
+                ? tx("Xem cả {0} bài ở Đánh giá năng lực →", [view.weakTotal])
+                : tx("Xem ở Đánh giá năng lực →")}
           </Link>
         </>
       )}
@@ -1050,8 +1067,8 @@ function WeakCard({ view, loading }: { view: View; loading: boolean }) {
 function QuickLinks() {
   return (
     <section>
-      <p className="sp-accent text-[17px] text-[var(--sp-pink)]">Đi nhanh tới</p>
-      <h2 className="text-[22px] text-[var(--sp-ink)]">Truy cập nhanh</h2>
+      <p className="sp-accent text-[17px] text-[var(--sp-pink)]">{tx("Đi nhanh tới")}</p>
+      <h2 className="text-[22px] text-[var(--sp-ink)]">{tx("Truy cập nhanh")}</h2>
       <div className="mt-3 grid grid-cols-2 gap-3.5 md:grid-cols-4">
         {QUICK_LINKS.map((item) => {
           const Icon = item.icon;
@@ -1068,7 +1085,8 @@ function QuickLinks() {
               <span className="mt-3 text-[15px] font-bold leading-snug text-[var(--sp-ink)]">{item.title}</span>
               <span className="mt-1 flex-1 text-[13px] leading-5 text-[var(--sp-muted)]">{item.text}</span>
               <span className="mt-3 flex items-center gap-1 text-[13px] font-bold text-[var(--sp-peri-dark)]">
-                Mở
+
+                {tx("Mở")}
                 <IconArrowRight size={14} className="transition group-hover:translate-x-1" />
               </span>
             </Link>
@@ -1082,10 +1100,10 @@ function QuickLinks() {
 /* ================= Góc đọc của Pilot ================= */
 
 const PILOT_TIPS = [
-  "Ôn lại trong vòng 24 giờ sau khi học giúp bạn nhớ lâu hơn nhiều so với học dồn trước ngày thi.",
-  "Tự trả lời câu hỏi trước khi xem đáp án giúp nhớ chắc hơn đọc lại nhiều lần.",
-  "Học 15–25 phút rồi nghỉ 5 phút, não sẽ đỡ mệt hơn.",
-  "Câu sai là món quà: xem lời giải thích ngay sau khi làm bài.",
+  tx("Ôn lại trong vòng 24 giờ sau khi học giúp bạn nhớ lâu hơn nhiều so với học dồn trước ngày thi."),
+  tx("Tự trả lời câu hỏi trước khi xem đáp án giúp nhớ chắc hơn đọc lại nhiều lần."),
+  tx("Học 15–25 phút rồi nghỉ 5 phút, não sẽ đỡ mệt hơn."),
+  tx("Câu sai là món quà: xem lời giải thích ngay sau khi làm bài."),
 ];
 
 function PilotNook() {
@@ -1093,19 +1111,20 @@ function PilotNook() {
   return (
     <section className="relative hidden min-h-[300px] flex-1 rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-lav)] bg-[radial-gradient(#d5ddf8_1.2px,transparent_1.2px)] bg-[length:18px_18px] shadow-[6px_6px_0_var(--sp-yellow)] lg:block">
       <div className="absolute left-5 top-4">
-        <p className="sp-accent text-[15px] text-[var(--sp-pink)]">Góc nhỏ</p>
-        <p className="font-bold text-[var(--sp-ink)]">Góc đọc của Pilot</p>
-        <p className="text-[12.5px] text-[var(--sp-muted)]">Chạm vào Pilot thử xem!</p>
+        <p className="sp-accent text-[15px] text-[var(--sp-pink)]">{tx("Góc nhỏ")}</p>
+        <p className="font-bold text-[var(--sp-ink)]">{tx("Góc đọc của Pilot")}</p>
+        <p className="text-[12.5px] text-[var(--sp-muted)]">{tx("Chạm vào Pilot thử xem!")}</p>
       </div>
       <div className="absolute inset-x-5 top-[92px] rounded-2xl border-2 border-[var(--sp-purple-deep)] bg-white px-3.5 py-3 shadow-[3px_3px_0_var(--sp-pink-line)]">
-        <p className="text-[13.5px] font-bold text-[var(--sp-ink)]">💡 Mẹo của Pilot</p>
+        <p className="text-[13.5px] font-bold text-[var(--sp-ink)]">{tx("💡 Mẹo của Pilot")}</p>
         <p className="mt-1 text-[13px] leading-[1.45] text-[var(--sp-text-2)]">{PILOT_TIPS[tip]}</p>
         <button
           type="button"
           onClick={() => setTip((value) => (value + 1) % PILOT_TIPS.length)}
           className="mt-2 text-[12.5px] font-extrabold text-[var(--sp-peri-dark)] hover:underline"
         >
-          Mẹo khác →
+
+          {tx("Mẹo khác →")}
         </button>
       </div>
       <svg className="absolute bottom-[18px] left-[22px]" width="96" height="70" viewBox="0 0 96 70" aria-hidden="true">

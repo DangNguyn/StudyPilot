@@ -1,6 +1,7 @@
 
 "use client";
 
+import { currentLocale, tx } from "@/lib/i18n";
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { SmartLoading } from "@/components/loading-play";
@@ -153,7 +154,7 @@ export default function ReviewPlanPage() {
 
       if (!response.ok) {
         throw new Error(
-          data.detail || "Không thể ghi nhận thời gian ôn tập."
+          data.detail || tx("Không thể ghi nhận thời gian ôn tập.")
         );
       }
 
@@ -163,7 +164,7 @@ export default function ReviewPlanPage() {
       setActivityError(
         err instanceof Error
           ? err.message
-          : "Không thể cập nhật thời gian ôn tập."
+          : tx("Không thể cập nhật thời gian ôn tập.")
       );
     }
   }, [reviewPlanId]);
@@ -188,7 +189,7 @@ export default function ReviewPlanPage() {
 
         if (!startResponse.ok) {
           throw new Error(
-            startData.detail || "Không thể bắt đầu phiên học bổ trợ."
+            startData.detail || tx("Không thể bắt đầu phiên học bổ trợ.")
           );
         }
 
@@ -204,7 +205,7 @@ export default function ReviewPlanPage() {
 
         if (!materialResponse.ok) {
           throw new Error(
-            materialData.detail || "Không thể tải nội dung học bổ trợ."
+            materialData.detail || tx("Không thể tải nội dung học bổ trợ.")
           );
         }
 
@@ -220,7 +221,7 @@ export default function ReviewPlanPage() {
           setError(
             err instanceof Error
               ? err.message
-              : "Đã xảy ra lỗi khi tải trang học bổ trợ."
+              : tx("Đã xảy ra lỗi khi tải trang học bổ trợ.")
           );
         }
       } finally {
@@ -269,7 +270,7 @@ export default function ReviewPlanPage() {
 
       if (!response.ok) {
         throw new Error(
-          data.detail || "Không thể hoàn thành lộ trình học bổ trợ."
+          data.detail || tx("Không thể hoàn thành lộ trình học bổ trợ.")
         );
       }
 
@@ -278,7 +279,7 @@ export default function ReviewPlanPage() {
       setActivityError(
         err instanceof Error
           ? err.message
-          : "Đã xảy ra lỗi khi hoàn thành lộ trình."
+          : tx("Đã xảy ra lỗi khi hoàn thành lộ trình.")
       );
     } finally {
       setCompleting(false);
@@ -289,10 +290,10 @@ export default function ReviewPlanPage() {
     return (
       <main className="min-h-screen bg-[#EEF1FD] px-6 py-16">
         <SmartLoading
-          text="Đang chuẩn bị nội dung học bổ trợ…"
-          sub="Pilot đang gom lại phần bạn làm sai lần trước."
-          stages={["Tìm câu sai", "Gom kiến thức", "Soạn nội dung", "Sẵn sàng"]}
-          continueLabel="Vào học bổ trợ"
+          text={tx("Đang chuẩn bị nội dung học bổ trợ…")}
+          sub={tx("Pilot đang gom lại phần bạn làm sai lần trước.")}
+          stages={[tx("Tìm câu sai"), tx("Gom kiến thức"), tx("Soạn nội dung"), tx("Sẵn sàng")]}
+          continueLabel={tx("Vào học bổ trợ")}
           done={!loading}
           onHoldChange={setHoldLoading}
         />
@@ -305,7 +306,8 @@ export default function ReviewPlanPage() {
       <main className="min-h-screen bg-[#EEF1FD] px-6 py-16">
         <div className="mx-auto max-w-3xl rounded-3xl bg-[#FFFFFF] p-8 shadow-sm">
           <h1 className="text-xl font-bold text-[#C42A63]">
-            Không thể tải nội dung học bổ trợ
+
+            {tx("Không thể tải nội dung học bổ trợ")}
           </h1>
 
           <p className="mt-3 text-gray-700">{error}</p>
@@ -314,7 +316,8 @@ export default function ReviewPlanPage() {
             onClick={() => router.back()}
             className="mt-6 rounded-xl bg-[#4A1068] px-5 py-3 font-semibold text-white"
           >
-            Quay lại
+
+            {tx("Quay lại")}
           </button>
         </div>
       </main>
@@ -334,17 +337,18 @@ export default function ReviewPlanPage() {
             onClick={() => router.back()}
             className="mb-5 text-sm font-semibold text-[#4566D1] hover:underline"
           >
-            ← Quay lại kết quả bài kiểm tra
+
+            {tx("← Quay lại kết quả bài kiểm tra")}
           </button>
 
           <p className="text-sm font-semibold uppercase tracking-wider text-[#4566D1]">
-            {requiresRetake ? "Khu vực ôn tập" : "Lộ trình học bổ trợ"}
+            {requiresRetake ? tx("Khu vực ôn tập") : tx("Lộ trình học bổ trợ")}
           </p>
 
           <h1 className="mt-2 text-2xl font-bold text-[#24123A] md:text-3xl">
             {requiresRetake
-              ? "Ôn tập kiến thức chưa vững"
-              : "Củng cố kiến thức"}
+              ? tx("Ôn tập kiến thức chưa vững")
+              : tx("Củng cố kiến thức")}
           </h1>
 
           <p className="mt-3 text-gray-600">
@@ -353,12 +357,13 @@ export default function ReviewPlanPage() {
 
           <div className="mt-5 rounded-2xl bg-[#EEF1FD] p-4">
             <p className="text-sm font-semibold text-[#24123A]">
-              Nội dung cần củng cố
+
+              {tx("Nội dung cần củng cố")}
             </p>
 
             <p className="mt-1 text-lg font-bold text-[#24123A]">
               {getMainTopicTitle(
-                material.topic_name || "Kiến thức của bài học"
+                material.topic_name || tx("Kiến thức của bài học")
               )}
             </p>
 
@@ -375,12 +380,13 @@ export default function ReviewPlanPage() {
           <section className="space-y-5">
             <div>
               <h2 className="text-xl font-bold text-[#24123A]">
-                Nội dung học bổ trợ do AI đề xuất
+
+                {tx("Nội dung học bổ trợ do AI đề xuất")}
               </h2>
 
               <p className="mt-1 text-sm text-gray-500">
-                Các nội dung được lựa chọn dựa trên những kiến thức bạn
-                chưa trả lời chính xác trong bài kiểm tra.
+
+                {tx("Các nội dung được lựa chọn dựa trên những kiến thức bạn chưa trả lời chính xác trong bài kiểm tra.")}
               </p>
             </div>
 
@@ -397,7 +403,7 @@ export default function ReviewPlanPage() {
                     <h3 className="text-lg font-bold text-[#24123A]">
                       {index + 1}.{" "}
                       {getMainTopicTitle(
-                        item.topic_name || "Kiến thức cần củng cố"
+                        item.topic_name || tx("Kiến thức cần củng cố")
                       )}
                     </h3>
 
@@ -411,15 +417,14 @@ export default function ReviewPlanPage() {
                   <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-[#4566D1]">
                     {item.scheduled_date && (
                       <span className="rounded-full bg-[#EEF1FD] px-3 py-1 capitalize">
-                        Ôn lại:{" "}
-                        {new Date(
+                        {tx("Ôn lại:{0}{1}", [" ", new Date(
                           `${item.scheduled_date}T00:00:00`
-                        ).toLocaleDateString("vi-VN", {
+                        ).toLocaleDateString(currentLocale(), {
                           weekday: "long",
                           day: "2-digit",
                           month: "2-digit",
                           year: "numeric",
-                        })}
+                        })])}
                       </span>
                     )}
                     {item.hierarchy && (
@@ -432,7 +437,8 @@ export default function ReviewPlanPage() {
                   {supplemental?.learning_objective && (
                     <div className="mt-4 rounded-2xl bg-[#EEF1FD] p-4">
                       <p className="text-sm font-bold text-[#24123A]">
-                        Mục tiêu học tập
+
+                        {tx("Mục tiêu học tập")}
                       </p>
 
                       <p className="mt-2 text-sm leading-7 text-gray-700">
@@ -461,7 +467,8 @@ export default function ReviewPlanPage() {
                       {item.source_content && (
                         <div className="mt-4 rounded-2xl bg-[#EEF1FD] p-4">
                           <p className="text-sm font-bold text-[#24123A]">
-                            Nội dung tham khảo
+
+                            {tx("Nội dung tham khảo")}
                           </p>
                           <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-gray-700">
                             {item.source_content}
@@ -474,7 +481,8 @@ export default function ReviewPlanPage() {
                   {item.recommendation && (
                     <div className="mt-5 border-t border-[#ECE6EF] pt-4">
                       <p className="text-sm font-bold text-[#24123A]">
-                        Gợi ý cải thiện
+
+                        {tx("Gợi ý cải thiện")}
                       </p>
                       <p className="mt-2 text-sm leading-7 text-gray-700">
                         {item.recommendation}
@@ -485,12 +493,13 @@ export default function ReviewPlanPage() {
                   {item.scheduled_date && (
                     <div className="mt-4 rounded-2xl bg-[#EEF1FD] p-4">
                       <p className="text-sm font-bold text-[#24123A]">
-                        Lịch ôn tập đề xuất
+
+                        {tx("Lịch ôn tập đề xuất")}
                       </p>
                       <p className="mt-1 text-sm leading-7 text-gray-700">
-                        Ôn nội dung này vào ngày{" "}
-                        <strong>{item.scheduled_date}</strong>, là ngày
-                        đang trống trong lịch học chính của bạn.
+
+                        {tx("Ôn nội dung này vào ngày")}{" "}
+                        <strong>{item.scheduled_date}</strong>{tx(", là ngày đang trống trong lịch học chính của bạn.")}
                       </p>
                     </div>
                   )}
@@ -505,11 +514,13 @@ export default function ReviewPlanPage() {
           <section className="space-y-5">
             <div>
               <h2 className="text-xl font-bold text-[#24123A]">
-                Tài liệu gốc tham khảo
+
+                {tx("Tài liệu gốc tham khảo")}
               </h2>
 
               <p className="mt-1 text-sm text-gray-500">
-                Nội dung được trích xuất từ buổi học đã làm bài kiểm tra.
+
+                {tx("Nội dung được trích xuất từ buổi học đã làm bài kiểm tra.")}
               </p>
             </div>
 
@@ -520,7 +531,7 @@ export default function ReviewPlanPage() {
               >
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <h3 className="font-bold text-[#24123A]">
-                    Phần {index + 1}
+                    {tx("Phần {0}", [index + 1])}
                   </h3>
 
                   <div className="flex gap-2 text-xs">
@@ -531,7 +542,7 @@ export default function ReviewPlanPage() {
                     )}
 
                     <span className="rounded-full bg-[#EEF1FD] px-3 py-1 text-gray-600">
-                      Nội dung {chunk.chunk_index + 1}
+                      {tx("Nội dung {0}", [chunk.chunk_index + 1])}
                     </span>
                   </div>
                 </div>
@@ -550,12 +561,13 @@ export default function ReviewPlanPage() {
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
               <div>
                 <h2 className="text-lg font-bold text-[#24123A]">
-                  Thời gian ôn tập
+
+                  {tx("Thời gian ôn tập")}
                 </h2>
 
                 <p className="mt-1 text-sm text-gray-500">
-                  Bạn có thể làm bài kiểm tra lại ngay sau khi xem nội dung
-                  ôn tập.
+
+                  {tx("Bạn có thể làm bài kiểm tra lại ngay sau khi xem nội dung ôn tập.")}
                 </p>
               </div>
 
@@ -565,7 +577,8 @@ export default function ReviewPlanPage() {
                 </p>
 
                 <p className="mt-1 text-sm text-gray-500">
-                  phút đã ôn
+
+                  {tx("phút đã ôn")}
                 </p>
               </div>
             </div>
@@ -579,17 +592,17 @@ export default function ReviewPlanPage() {
 
             <div className="mt-4 flex items-center justify-between text-sm">
               <span className="text-gray-500">
-                {Math.round(progress)}% hoàn thành
-              </span>
+                {tx("{0}% hoàn thành", [Math.round(progress)])}</span>
 
               <span className="font-semibold text-[#4566D1]">
-                Đã sẵn sàng làm bài kiểm tra lại
+
+                {tx("Đã sẵn sàng làm bài kiểm tra lại")}
               </span>
             </div>
 
             <p className="mt-4 text-xs leading-5 text-gray-500">
-              Thời gian chỉ được ghi nhận khi trang ôn tập đang hiển thị.
-              Hãy đọc và ôn lại nội dung trước khi tiếp tục.
+
+              {tx("Thời gian chỉ được ghi nhận khi trang ôn tập đang hiển thị. Hãy đọc và ôn lại nội dung trước khi tiếp tục.")}
             </p>
           </section>
         )}
@@ -606,11 +619,13 @@ export default function ReviewPlanPage() {
             isEligible ? (
               <>
                 <h2 className="text-xl font-bold text-[#24123A]">
-                  Bạn đã xem nội dung ôn tập!
+
+                  {tx("Bạn đã xem nội dung ôn tập!")}
                 </h2>
 
                 <p className="mt-2 text-sm text-gray-600">
-                  Bạn có thể tiếp tục làm bài kiểm tra lại.
+
+                  {tx("Bạn có thể tiếp tục làm bài kiểm tra lại.")}
                 </p>
 
                 <button
@@ -618,54 +633,61 @@ export default function ReviewPlanPage() {
                   disabled={!material.retake_quiz_id}
                   className="mt-6 rounded-2xl bg-[#4A1068] px-8 py-4 font-bold text-white transition hover:bg-[#4566D1] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Bắt đầu Quiz ôn tập lại →
+
+                  {tx("Bắt đầu Quiz ôn tập lại →")}
                 </button>
               </>
             ) : (
               <>
                 <h2 className="text-xl font-bold text-[#24123A]">
-                  Hãy tiếp tục ôn tập nhé!
+
+                  {tx("Hãy tiếp tục ôn tập nhé!")}
                 </h2>
 
                 <p className="mt-2 text-sm text-gray-600">
-                  Bài kiểm tra lại sẽ được mở sau khi nội dung ôn tập
-                  được tải xong.
+
+                  {tx("Bài kiểm tra lại sẽ được mở sau khi nội dung ôn tập được tải xong.")}
                 </p>
 
                 <button
                   disabled
                   className="mt-6 cursor-not-allowed rounded-2xl bg-gray-300 px-8 py-4 font-bold text-gray-600"
                 >
-                  Chưa sẵn sàng
+
+                  {tx("Chưa sẵn sàng")}
                 </button>
               </>
             )
           ) : completed ? (
             <>
               <h2 className="text-xl font-bold text-[#24123A]">
-                Bạn đã hoàn thành lộ trình học bổ trợ!
+
+                {tx("Bạn đã hoàn thành lộ trình học bổ trợ!")}
               </h2>
 
               <p className="mt-2 text-sm text-gray-600">
-                Hãy tiếp tục học các nội dung tiếp theo để củng cố kiến thức.
+
+                {tx("Hãy tiếp tục học các nội dung tiếp theo để củng cố kiến thức.")}
               </p>
 
               <button
                 onClick={() => router.push("/quizzes")}
                 className="mt-6 rounded-2xl bg-[#4A1068] px-8 py-4 font-bold text-white transition hover:bg-[#4566D1]"
               >
-                Quay lại danh sách bài kiểm tra →
+
+                {tx("Quay lại danh sách bài kiểm tra →")}
               </button>
             </>
           ) : (
             <>
               <h2 className="text-xl font-bold text-[#24123A]">
-                Hoàn thành nội dung học bổ trợ
+
+                {tx("Hoàn thành nội dung học bổ trợ")}
               </h2>
 
               <p className="mt-2 text-sm text-gray-600">
-                Sau khi đọc và nắm được các kiến thức trên, bạn có thể
-                xác nhận hoàn thành lộ trình.
+
+                {tx("Sau khi đọc và nắm được các kiến thức trên, bạn có thể xác nhận hoàn thành lộ trình.")}
               </p>
 
               <button
@@ -674,8 +696,8 @@ export default function ReviewPlanPage() {
                 className="mt-6 rounded-2xl bg-[#4A1068] px-8 py-4 font-bold text-white transition hover:bg-[#4566D1] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {completing
-                  ? "Đang cập nhật..."
-                  : "Hoàn thành học bổ trợ ✓"}
+                  ? tx("Đang cập nhật...")
+                  : tx("Hoàn thành học bổ trợ ✓")}
               </button>
             </>
           )}

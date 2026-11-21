@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 /*
  * Trang Tài liệu học tập mở theo 3 chế độ (từ lịch tháng):
  * - learn: học như bình thường (không có khối riêng);
@@ -33,7 +34,7 @@ type AttemptResult = {
 async function list<T>(url: string): Promise<T[]> {
   const response = await fetch(url, { cache: "no-store" });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.detail || "Không thể tải dữ liệu.");
+  if (!response.ok) throw new Error(data?.detail || tx("Không thể tải dữ liệu."));
   return Array.isArray(data?.data) ? data.data : [];
 }
 
@@ -67,14 +68,14 @@ export function useSessionQuizResult(planId: string | undefined, sessionId: stri
         }
         const response = await fetch(`${API_URL}/api/quiz-attempts/${attempt.attempt_id}/result`, { cache: "no-store" });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data?.detail || "Không thể tải kết quả bài kiểm tra.");
+        if (!response.ok) throw new Error(data?.detail || tx("Không thể tải kết quả bài kiểm tra."));
         if (!cancelled) setState({ result: { ...data, attempt_id: attempt.attempt_id }, loading: false, error: "" });
       } catch (error) {
         if (!cancelled) {
           setState({
             result: null,
             loading: false,
-            error: error instanceof Error ? error.message : "Không thể tải kết quả bài kiểm tra.",
+            error: error instanceof Error ? error.message : tx("Không thể tải kết quả bài kiểm tra."),
           });
         }
       }
@@ -109,7 +110,7 @@ export function SessionModeBanner({
   if (mode === "review") {
     return (
       <section className="rounded-[20px] border-2 border-[var(--sp-pink)] bg-[var(--sp-pink-bg)] px-5 py-4 shadow-[4px_4px_0_var(--sp-pink-line)]">
-        <p className="sp-accent text-[var(--sp-pink-dark)]">Buổi ôn lại</p>
+        <p className="sp-accent text-[var(--sp-pink-dark)]">{tx("Buổi ôn lại")}</p>
         <p className="flex items-center gap-2 text-lg font-extrabold text-[var(--sp-ink)]">
           <IconRepeat size={18} className="shrink-0 text-[var(--sp-pink-dark)]" />
           {topicTitle}
@@ -117,16 +118,17 @@ export function SessionModeBanner({
         <ul className="mt-1.5 space-y-0.5 text-sm text-[var(--sp-text-2)]">
           {percent !== null && (
             <li>
-              Lần kiểm tra trước: {result?.correct_count}/{result?.total_questions} câu ({percent}%)
-            </li>
+              {tx("Lần kiểm tra trước: {0}/{1} câu ({2}%)", [result?.correct_count, result?.total_questions, percent])}</li>
           )}
-          <li>Đọc lại tóm tắt, trả lời phần Tự kiểm tra nhanh bên phải để mở bài kiểm tra lại.</li>
+          <li>{tx("Đọc lại tóm tắt, trả lời phần Tự kiểm tra nhanh bên phải để mở bài kiểm tra lại.")}</li>
           <li>
-            Bài kiểm tra lại:{" "}
+
+            {tx("Bài kiểm tra lại:")}{" "}
             {percent !== null && percent < 50
-              ? "trắc nghiệm kết hợp điền khuyết (vì lần trước dưới 50%)"
-              : "trắc nghiệm"}
-            . Cần đạt từ 80%.
+              ? tx("trắc nghiệm kết hợp điền khuyết (vì lần trước dưới 50%)")
+              : tx("trắc nghiệm")}
+
+            {tx(". Cần đạt từ 80%.")}
           </li>
         </ul>
       </section>
@@ -136,17 +138,18 @@ export function SessionModeBanner({
   return (
     <section className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border-2 border-[var(--sp-purple)] bg-[var(--sp-lav)] px-5 py-4 shadow-[4px_4px_0_var(--sp-lav-line)]">
       <div className="min-w-0">
-        <p className="sp-accent text-[var(--sp-pink)]">Xem lại buổi đã học</p>
+        <p className="sp-accent text-[var(--sp-pink)]">{tx("Xem lại buổi đã học")}</p>
         <p className="text-lg font-extrabold text-[var(--sp-ink)]">{topicTitle}</p>
         <p className="text-sm text-[var(--sp-text-2)]">
           {percent !== null
-            ? `Bài kiểm tra: ${result?.correct_count}/${result?.total_questions} câu (${percent}%).`
-            : "Ôn lại tóm tắt và câu hỏi lồng của buổi này."}
+            ? tx("Bài kiểm tra: {0}/{1} câu ({2}%).", [result?.correct_count, result?.total_questions, percent])
+            : tx("Ôn lại tóm tắt và câu hỏi lồng của buổi này.")}
         </p>
       </div>
       {percent !== null && result && (
         <Link href={`/quiz-results/${result.attempt_id}`} className="sp-btn sp-btn-primary px-4 py-2.5 text-sm">
-          Xem câu sai
+
+          {tx("Xem câu sai")}
         </Link>
       )}
     </section>

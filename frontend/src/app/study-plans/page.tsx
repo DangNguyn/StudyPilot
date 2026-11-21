@@ -1,5 +1,6 @@
 "use client";
 
+import { currentLocale, tx } from "@/lib/i18n";
 import {
   useCallback,
   useEffect,
@@ -59,7 +60,7 @@ function StepHead({
 }
 
 /* Màn chờ khi tạo kế hoạch: 4 bước, suy ra từ dòng trạng thái đang chạy */
-const PLAN_STAGES = ["Tải tài liệu lên", "AI đọc & chia chương", "Xếp lịch học", "Tạo bài kiểm tra"];
+const PLAN_STAGES = [tx("Tải tài liệu lên"), tx("AI đọc & chia chương"), tx("Xếp lịch học"), tx("Tạo bài kiểm tra")];
 function planStage(step: string) {
   const text = step.toLowerCase();
   if (/môn học|chuẩn bị|tải tài liệu/.test(text)) return 0;
@@ -116,13 +117,13 @@ const ALLOWED_EXTENSIONS = [
 ];
 
 const WEEKDAY_NAMES = [
-  "Thứ 2",
-  "Thứ 3",
-  "Thứ 4",
-  "Thứ 5",
-  "Thứ 6",
-  "Thứ 7",
-  "Chủ nhật",
+  tx("Thứ 2"),
+  tx("Thứ 3"),
+  tx("Thứ 4"),
+  tx("Thứ 5"),
+  tx("Thứ 6"),
+  tx("Thứ 7"),
+  tx("Chủ nhật"),
 ];
 
 type StudyWeek = {
@@ -186,7 +187,7 @@ async function readApiResponse<T>(
   } catch {
     throw new Error(
       response.ok
-        ? "Backend trả về dữ liệu không hợp lệ."
+        ? tx("Backend trả về dữ liệu không hợp lệ.")
         : fallback
     );
   }
@@ -317,7 +318,7 @@ export default function StudyPlansPage() {
       const response = await fetch(`${API_URL}/api/exam-plans`);
       const result = await readApiResponse<ExamPlan>(
         response,
-        "Không thể tải danh sách kế hoạch."
+        tx("Không thể tải danh sách kế hoạch.")
       );
 
       const plans = getDataList(result);
@@ -329,7 +330,7 @@ export default function StudyPlansPage() {
       setPlanError(
         error instanceof Error
           ? error.message
-          : "Đã xảy ra lỗi khi tải kế hoạch."
+          : tx("Đã xảy ra lỗi khi tải kế hoạch.")
       );
 
       return [];
@@ -356,7 +357,7 @@ export default function StudyPlansPage() {
 
           const result = await readApiResponse<Topic>(
             response,
-            `Không thể tải chủ đề của kế hoạch ${plan.title}.`
+            tx("Không thể tải chủ đề của kế hoạch {0}.", [plan.title])
           );
 
           // Gắn mã kế hoạch để biết chủ đề thuộc môn nào
@@ -369,7 +370,7 @@ export default function StudyPlansPage() {
 
       setAllTopics(topicResponses.flat());
     } catch (error) {
-      console.error("Lỗi tải danh sách chủ đề:", error);
+      console.error(tx("Lỗi tải danh sách chủ đề:"), error);
     }
   }, [examPlans]);
 
@@ -385,7 +386,7 @@ export default function StudyPlansPage() {
 
       const result = await readApiResponse<StudySession>(
         response,
-        "Không thể tải lịch học."
+        tx("Không thể tải lịch học.")
       );
 
       setStudySessions(getDataList(result));
@@ -393,7 +394,7 @@ export default function StudyPlansPage() {
       setSessionError(
         error instanceof Error
           ? error.message
-          : "Đã xảy ra lỗi khi tải lịch học."
+          : tx("Đã xảy ra lỗi khi tải lịch học.")
       );
     } finally {
       setIsLoadingSessions(false);
@@ -427,7 +428,7 @@ export default function StudyPlansPage() {
 
       const result = await readApiResponse<Topic>(
         response,
-        "Không thể tải danh sách chủ đề."
+        tx("Không thể tải danh sách chủ đề.")
       );
 
       setPlanTopics(getDataList(result));
@@ -435,7 +436,7 @@ export default function StudyPlansPage() {
       setTopicError(
         error instanceof Error
           ? error.message
-          : "Đã xảy ra lỗi khi tải chủ đề."
+          : tx("Đã xảy ra lỗi khi tải chủ đề.")
       );
     } finally {
       setIsLoadingTopics(false);
@@ -463,7 +464,7 @@ export default function StudyPlansPage() {
       });
       const result = await readApiResponse<OutlineChapter>(
         response,
-        "Chưa nhận diện được chương của tài liệu."
+        tx("Chưa nhận diện được chương của tài liệu.")
       );
       if (requestId !== outlineRequestRef.current) return;
 
@@ -483,7 +484,7 @@ export default function StudyPlansPage() {
         message:
           error instanceof Error
             ? error.message
-            : "Chưa nhận diện được chương của tài liệu.",
+            : tx("Chưa nhận diện được chương của tài liệu."),
       });
       setFocusChapters(new Set());
     }
@@ -504,15 +505,15 @@ export default function StudyPlansPage() {
       .slice(file.name.lastIndexOf("."));
 
     if (!ALLOWED_EXTENSIONS.includes(extension)) {
-      return "Định dạng tài liệu không được hỗ trợ. Vui lòng chọn PDF, DOC, DOCX, PPT hoặc PPTX.";
+      return tx("Định dạng tài liệu không được hỗ trợ. Vui lòng chọn PDF, DOC, DOCX, PPT hoặc PPTX.");
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      return "Tài liệu vượt quá giới hạn 50 MB.";
+      return tx("Tài liệu vượt quá giới hạn 50 MB.");
     }
 
     if (file.size === 0) {
-      return "Tài liệu đang trống. Vui lòng chọn file khác.";
+      return tx("Tài liệu đang trống. Vui lòng chọn file khác.");
     }
 
     return null;
@@ -556,7 +557,7 @@ export default function StudyPlansPage() {
 
   function formatDate(dateValue: string): string {
     return new Date(`${dateValue}T00:00:00`).toLocaleDateString(
-      "vi-VN"
+      currentLocale()
     );
   }
 
@@ -583,10 +584,10 @@ export default function StudyPlansPage() {
       Math.min(Number(studyDays), weekDates.length)
     ) {
       setFeedback(
-        `Tuần này chỉ được chọn tối đa ${Math.min(
+        tx("Tuần này chỉ được chọn tối đa {0} ngày học.", [Math.min(
           Number(studyDays),
           weekDates.length
-        )} ngày học.`
+        )])
         ,
         "error"
       );
@@ -652,7 +653,7 @@ export default function StudyPlansPage() {
     setSelectedStudyDates(nextDates);
     setFeedback(
       skippedWeeks > 0
-        ? `Có ${skippedWeeks} tuần đã đủ ${studyDays} ngày nên chưa thêm được thứ này. Bỏ bớt một ngày ở tuần đó nếu muốn đổi.`
+        ? tx("Có {0} tuần đã đủ {1} ngày nên chưa thêm được thứ này. Bỏ bớt một ngày ở tuần đó nếu muốn đổi.", [skippedWeeks, studyDays])
         : "",
       skippedWeeks > 0 ? "error" : "info"
     );
@@ -667,7 +668,7 @@ export default function StudyPlansPage() {
     );
 
     if (selectedStudyDates.length !== expectedDates) {
-      return `Vui lòng chọn đủ ngày học cho từng tuần (${expectedDates} ngày).`;
+      return tx("Vui lòng chọn đủ ngày học cho từng tuần ({0} ngày).", [expectedDates]);
     }
 
     for (const week of weeks) {
@@ -679,7 +680,7 @@ export default function StudyPlansPage() {
         datesInWeek.length !==
         Math.min(Number(studyDays), week.dates.length)
       ) {
-        return `Tuần ${week.weekNumber} chưa được chọn đủ ngày học.`;
+        return tx("Tuần {0} chưa được chọn đủ ngày học.", [week.weekNumber]);
       }
     }
 
@@ -693,12 +694,12 @@ export default function StudyPlansPage() {
     e.preventDefault();
 
     if (!subjectName.trim()) {
-      setFeedback("Vui lòng nhập tên môn học.", "error");
+      setFeedback(tx("Vui lòng nhập tên môn học."), "error");
       return;
     }
 
     if (!examDate) {
-      setFeedback("Vui lòng chọn ngày thi.", "error");
+      setFeedback(tx("Vui lòng chọn ngày thi."), "error");
       return;
     }
 
@@ -706,7 +707,7 @@ export default function StudyPlansPage() {
 
     if (examDate <= currentToday) {
       setToday(currentToday);
-      setFeedback("Ngày thi phải sau ngày hôm nay.", "error");
+      setFeedback(tx("Ngày thi phải sau ngày hôm nay."), "error");
       return;
     }
 
@@ -721,8 +722,8 @@ export default function StudyPlansPage() {
       setIsScheduleTableExpanded(true);
       setIsScheduleDialogOpen(true);
       setFeedback(
-        "Ngày học đã chọn bị cũ hoặc nằm ngoài khoảng thời gian. "
-          + "Vui lòng chọn lại ngày học từ hôm nay đến trước ngày thi.",
+        tx("Ngày học đã chọn bị cũ hoặc nằm ngoài khoảng thời gian. ")
+          + tx("Vui lòng chọn lại ngày học từ hôm nay đến trước ngày thi."),
         "error"
       );
       return;
@@ -738,7 +739,7 @@ export default function StudyPlansPage() {
 
     if (!selectedFile) {
       setFeedback(
-        "Vui lòng tải tài liệu ôn tập lên trước khi tạo kế hoạch.",
+        tx("Vui lòng tải tài liệu ôn tập lên trước khi tạo kế hoạch."),
         "error"
       );
       return;
@@ -760,21 +761,21 @@ export default function StudyPlansPage() {
 
     if (planMode === "focus") {
       if (outline.status === "loading") {
-        setFeedback("AI đang nhận diện chương, vui lòng chờ vài giây rồi bấm lại.", "info");
+        setFeedback(tx("AI đang nhận diện chương, vui lòng chờ vài giây rồi bấm lại."), "info");
         return;
       }
 
       if (outline.status !== "done") {
         setFeedback(
-          "Chưa nhận diện được chương nên chưa chia theo trọng tâm được. "
-            + "Hãy bấm \"Thử lại\" hoặc chọn \"Theo chương\".",
+          tx("Chưa nhận diện được chương nên chưa chia theo trọng tâm được. ")
+            + tx("Hãy bấm \"Thử lại\" hoặc chọn \"Theo chương\"."),
           "error"
         );
         return;
       }
 
       if (focusChapters.size === 0) {
-        setFeedback("Hãy chọn ít nhất 1 chương trọng tâm.", "error");
+        setFeedback(tx("Hãy chọn ít nhất 1 chương trọng tâm."), "error");
         return;
       }
     }
@@ -785,9 +786,9 @@ export default function StudyPlansPage() {
 
     setIsSubmitting(true);
     setFeedback("");
-    setSubmissionStep("Đang tạo môn học và kế hoạch...");
+    setSubmissionStep(tx("Đang tạo môn học và kế hoạch..."));
 
-    let currentStep = "Tạo môn học";
+    let currentStep = tx("Tạo môn học");
 
     try {
       // 1. Tạo môn học.
@@ -809,24 +810,24 @@ export default function StudyPlansPage() {
       const subjectResult =
         await readApiResponse<Record<string, unknown>>(
           subjectResponse,
-          "Không thể tạo môn học."
+          tx("Không thể tạo môn học.")
         );
 
       const subject = getDataRecord(
         subjectResult,
-        "Không nhận được dữ liệu môn học từ Backend."
+        tx("Không nhận được dữ liệu môn học từ Backend.")
       );
 
       const subjectId = subject.id;
 
       if (typeof subjectId !== "string" || !subjectId) {
         throw new Error(
-          "Backend không trả về ID môn học hợp lệ."
+          tx("Backend không trả về ID môn học hợp lệ.")
         );
       }
 
       // 2. Tạo kế hoạch ôn thi.
-      currentStep = "Tạo kế hoạch ôn thi";
+      currentStep = tx("Tạo kế hoạch ôn thi");
 
       const planResponse = await fetch(
         `${API_URL}/api/exam-plans`,
@@ -837,7 +838,7 @@ export default function StudyPlansPage() {
           },
           body: JSON.stringify({
             subject_id: subjectId,
-            title: `Ôn thi ${subjectName.trim()}`,
+            title: tx("Ôn thi {0}", [subjectName.trim()]),
             exam_date: examDate,
             daily_available_minutes: Number(dailyHours) * 60,
             study_days_per_week: Number(studyDays),
@@ -848,25 +849,25 @@ export default function StudyPlansPage() {
       const planResult =
         await readApiResponse<ExamPlan>(
           planResponse,
-          "Không thể tạo kế hoạch ôn thi."
+          tx("Không thể tạo kế hoạch ôn thi.")
         );
 
       const createdPlan = getDataRecord(
         planResult,
-        "Không nhận được dữ liệu kế hoạch từ Backend."
+        tx("Không nhận được dữ liệu kế hoạch từ Backend.")
       );
 
       if (!createdPlan.id) {
         throw new Error(
-          "Backend không trả về ID kế hoạch hợp lệ."
+          tx("Backend không trả về ID kế hoạch hợp lệ.")
         );
       }
 
       const planId = createdPlan.id;
 
       // 3. Chuẩn bị tài liệu.
-      currentStep = "Chuẩn bị tài liệu";
-      setSubmissionStep("Đang chuẩn bị tài liệu...");
+      currentStep = tx("Chuẩn bị tài liệu");
+      setSubmissionStep(tx("Đang chuẩn bị tài liệu..."));
 
       const formData = new FormData();
       formData.append("exam_plan_id", planId);
@@ -874,8 +875,8 @@ export default function StudyPlansPage() {
       formData.append("file", selectedFile);
 
       // 4. Tải tài liệu lên.
-      currentStep = "Tải tài liệu lên hệ thống";
-      setSubmissionStep("Đang tải tài liệu lên hệ thống...");
+      currentStep = tx("Tải tài liệu lên hệ thống");
+      setSubmissionStep(tx("Đang tải tài liệu lên hệ thống..."));
 
       const uploadResponse = await fetch(
         `${API_URL}/api/study-materials/upload`,
@@ -888,12 +889,12 @@ export default function StudyPlansPage() {
       const uploadResult =
         await readApiResponse<Record<string, unknown>>(
           uploadResponse,
-          "Không thể tải tài liệu lên."
+          tx("Không thể tải tài liệu lên.")
         );
 
       const uploadedMaterial = getDataRecord(
         uploadResult,
-        "Không nhận được dữ liệu tài liệu từ Backend."
+        tx("Không nhận được dữ liệu tài liệu từ Backend.")
       );
 
       const materialId = uploadedMaterial.id;
@@ -903,13 +904,13 @@ export default function StudyPlansPage() {
         !materialId
       ) {
         throw new Error(
-          "Backend không trả về ID tài liệu hợp lệ."
+          tx("Backend không trả về ID tài liệu hợp lệ.")
         );
       }
 
       // 5. Xử lý nội dung tài liệu.
-      currentStep = "Xử lý nội dung tài liệu";
-      setSubmissionStep("Đang đọc và chia nhỏ nội dung tài liệu...");
+      currentStep = tx("Xử lý nội dung tài liệu");
+      setSubmissionStep(tx("Đang đọc và chia nhỏ nội dung tài liệu..."));
 
       const processResponse = await fetch(
         `${API_URL}/api/study-materials/${materialId}/process`,
@@ -920,12 +921,12 @@ export default function StudyPlansPage() {
 
       await readApiResponse(
         processResponse,
-        "Không thể xử lý tài liệu."
+        tx("Không thể xử lý tài liệu.")
       );
 
       // 6. Phân tích tài liệu bằng AI.
-      currentStep = "Phân tích tài liệu bằng AI";
-      setSubmissionStep("AI đang phân tích và chia chương/mục...");
+      currentStep = tx("Phân tích tài liệu bằng AI");
+      setSubmissionStep(tx("AI đang phân tích và chia chương/mục..."));
 
       const analyzeResponse = await fetch(
         `${API_URL}/api/study-materials/${materialId}/analyze`,
@@ -936,13 +937,13 @@ export default function StudyPlansPage() {
 
       await readApiResponse(
         analyzeResponse,
-        "Không thể phân tích tài liệu bằng AI."
+        tx("Không thể phân tích tài liệu bằng AI.")
       );
 
-      
+
       // 7. Tạo lịch học tự động.
-      currentStep = "Tạo lịch học tự động";
-      setSubmissionStep("Đang tạo lịch học theo ngày đã chọn...");
+      currentStep = tx("Tạo lịch học tự động");
+      setSubmissionStep(tx("Đang tạo lịch học theo ngày đã chọn..."));
 
       const scheduleResponse = await fetch(
         `${API_URL}/api/exam-plans/${planId}/generate-schedule`,
@@ -965,12 +966,12 @@ export default function StudyPlansPage() {
 
       await readApiResponse(
         scheduleResponse,
-        "Không thể tạo lịch học tự động."
+        tx("Không thể tạo lịch học tự động.")
       );
 
       // 8. Lấy danh sách buổi học đã được lưu vào database.
-      currentStep = "Lấy danh sách buổi học";
-      setSubmissionStep("Đang lưu các buổi học vào kế hoạch...");
+      currentStep = tx("Lấy danh sách buổi học");
+      setSubmissionStep(tx("Đang lưu các buổi học vào kế hoạch..."));
 
       const sessionsResponse = await fetch(
         `${API_URL}/api/study-sessions?exam_plan_id=${encodeURIComponent(planId)}`
@@ -979,7 +980,7 @@ export default function StudyPlansPage() {
       const sessionsResult =
         await readApiResponse<Record<string, unknown>>(
           sessionsResponse,
-          "Không thể lấy danh sách buổi học vừa tạo."
+          tx("Không thể lấy danh sách buổi học vừa tạo.")
         );
 
       const sessionsData = sessionsResult.data;
@@ -989,13 +990,13 @@ export default function StudyPlansPage() {
         sessionsData.length === 0
       ) {
         throw new Error(
-          "Lịch học đã được tạo nhưng không tìm thấy buổi học trong hệ thống."
+          tx("Lịch học đã được tạo nhưng không tìm thấy buổi học trong hệ thống.")
         );
       }
 
       // 9. Tạo tuần tự để tránh gửi nhiều yêu cầu AI cùng lúc.
-      currentStep = "Tạo các bài kiểm tra";
-      setSubmissionStep("Đang tạo các bài kiểm tra liên kết...");
+      currentStep = tx("Tạo các bài kiểm tra");
+      setSubmissionStep(tx("Đang tạo các bài kiểm tra liên kết..."));
 
       const quizFailures: string[] = [];
 
@@ -1004,12 +1005,12 @@ export default function StudyPlansPage() {
         const sessionId = sessionRecord.id;
 
         if (typeof sessionId !== "string" || !sessionId) {
-          quizFailures.push(`Buổi học thứ ${index + 1} không có ID hợp lệ.`);
+          quizFailures.push(tx("Buổi học thứ {0} không có ID hợp lệ.", [index + 1]));
           continue;
         }
 
         setSubmissionStep(
-          `Đang tạo bài kiểm tra ${index + 1}/${sessionsData.length}...`
+          tx("Đang tạo bài kiểm tra {0}/{1}...", [index + 1, sessionsData.length])
         );
 
         let quizCreated = false;
@@ -1027,9 +1028,9 @@ export default function StudyPlansPage() {
                 body: JSON.stringify({
                   material_id: materialId,
                   study_session_id: sessionId,
-                  title: `Bài kiểm tra buổi học ${index + 1}`,
+                  title: tx("Bài kiểm tra buổi học {0}", [index + 1]),
                   description:
-                    "Bài kiểm tra được tạo tự động từ nội dung bài học tương ứng.",
+                    tx("Bài kiểm tra được tạo tự động từ nội dung bài học tương ứng."),
                   number_of_questions: 10,
                   time_limit_minutes: 15,
                 }),
@@ -1038,14 +1039,14 @@ export default function StudyPlansPage() {
 
             await readApiResponse(
               quizResponse,
-              `Không thể tạo bài kiểm tra cho buổi học thứ ${index + 1}.`
+              tx("Không thể tạo bài kiểm tra cho buổi học thứ {0}.", [index + 1])
             );
             quizCreated = true;
           } catch (error) {
             lastQuizError =
               error instanceof Error
                 ? error.message
-                : `Không thể tạo bài kiểm tra cho buổi học thứ ${index + 1}.`;
+                : tx("Không thể tạo bài kiểm tra cho buổi học thứ {0}.", [index + 1]);
           }
         }
 
@@ -1056,14 +1057,14 @@ export default function StudyPlansPage() {
 
       if (quizFailures.length > 0) {
         throw new Error(
-          `Chưa tạo được ${quizFailures.length}/${sessionsData.length} bài kiểm tra. ` +
+          tx("Chưa tạo được {0}/{1} bài kiểm tra. ", [quizFailures.length, sessionsData.length]) +
             quizFailures[0]
         );
       }
 
       // 10. Cập nhật danh sách kế hoạch.
-      currentStep = "Cập nhật dữ liệu";
-      setSubmissionStep("Đang cập nhật giao diện...");
+      currentStep = tx("Cập nhật dữ liệu");
+      setSubmissionStep(tx("Đang cập nhật giao diện..."));
 
       await loadExamPlans();
 
@@ -1075,7 +1076,7 @@ export default function StudyPlansPage() {
 
       // 13. Thông báo hoàn tất toàn bộ quy trình.
       setFeedback(
-        `Đã tạo xong kế hoạch ôn thi! AI đã xử lý tài liệu và tạo ${sessionsData.length} buổi học.`,
+        tx("Đã tạo xong kế hoạch ôn thi! AI đã xử lý tài liệu và tạo {0} buổi học.", [sessionsData.length]),
         "success"
       );
 
@@ -1098,10 +1099,10 @@ export default function StudyPlansPage() {
       const errorMessage =
         error instanceof Error
           ? error.message
-          : "Đã xảy ra lỗi không xác định.";
+          : tx("Đã xảy ra lỗi không xác định.");
 
       setFeedback(
-        `Không thể hoàn thành bước "${currentStep}". ${errorMessage}`,
+        tx("Không thể hoàn thành bước \"{0}\". {1}", [currentStep, errorMessage]),
         "error"
       );
 
@@ -1121,13 +1122,13 @@ export default function StudyPlansPage() {
   function getSessionStatus(status: string) {
     switch (status) {
       case "scheduled":
-        return "Đã lên lịch";
+        return tx("Đã lên lịch");
       case "in_progress":
-        return "Đang học";
+        return tx("Đang học");
       case "completed":
-        return "Đã hoàn thành";
+        return tx("Đã hoàn thành");
       case "missed":
-        return "Đã bỏ lỡ";
+        return tx("Đã bỏ lỡ");
       default:
         return status;
     }
@@ -1155,7 +1156,7 @@ export default function StudyPlansPage() {
       (item) => item.id === topicId
     );
 
-    return topic?.name || "Chủ đề chưa xác định";
+    return topic?.name || tx("Chủ đề chưa xác định");
   }
 
   // Sắp xếp buổi học theo thời gian.
@@ -1202,7 +1203,7 @@ export default function StudyPlansPage() {
       week.days.push({
         dateKey,
         label: new Date(`${dateKey}T00:00:00`).toLocaleDateString(
-          "vi-VN",
+          currentLocale(),
           {
             weekday: "long",
             day: "2-digit",
@@ -1247,44 +1248,47 @@ export default function StudyPlansPage() {
     outline.status === "done" ? (
       <span className="flex items-center gap-1 font-semibold text-emerald-700">
         <IconCheck size={15} />
-        AI nhận diện {outline.chapters.length} chương
+
+        {tx("AI nhận diện")} {outline.chapters.length}  {tx("chương")}
       </span>
     ) : outline.status === "loading" ? (
       <span className="flex items-center gap-1.5 font-semibold text-[var(--sp-peri-dark)]">
         <Sparkle size={13} className="sp-twinkle text-[var(--sp-pink)]" />
-        AI đang nhận diện chương…
+
+        {tx("AI đang nhận diện chương…")}
       </span>
     ) : outline.status === "error" ? (
       <span className="font-semibold text-[var(--sp-amber-dark)]">
-        Chưa nhận diện trước được chương — AI sẽ chia khi tạo kế hoạch
+
+        {tx("Chưa nhận diện trước được chương — AI sẽ chia khi tạo kế hoạch")}
       </span>
     ) : undefined;
 
   const workflowSteps = [
     {
       number: "01",
-      title: "Mục tiêu",
-      detail: subjectName.trim() || "Nhập môn học và ngày thi",
+      title: tx("Mục tiêu"),
+      detail: subjectName.trim() || tx("Nhập môn học và ngày thi"),
       complete: Boolean(subjectName.trim() && examDate),
     },
     {
       number: "02",
-      title: "Lịch học",
+      title: tx("Lịch học"),
       detail: isScheduleConfirmed
-        ? `${selectedStudyDates.length} ngày đã chọn`
-        : "Chọn ngày học trong tuần",
+        ? tx("{0} ngày đã chọn", [selectedStudyDates.length])
+        : tx("Chọn ngày học trong tuần"),
       complete: isScheduleConfirmed,
     },
     {
       number: "03",
-      title: "Tài liệu",
-      detail: selectedFile?.name || "Tải tài liệu ôn tập",
+      title: tx("Tài liệu"),
+      detail: selectedFile?.name || tx("Tải tài liệu ôn tập"),
       complete: Boolean(selectedFile),
     },
     {
       number: "04",
-      title: "Tạo kế hoạch",
-      detail: "AI chia chương và tạo bài kiểm tra",
+      title: tx("Tạo kế hoạch"),
+      detail: tx("AI chia chương và tạo bài kiểm tra"),
       complete: false,
     },
   ];
@@ -1298,14 +1302,14 @@ export default function StudyPlansPage() {
       {(isSubmitting || createdHref) && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-[rgba(36,18,58,0.45)] px-4 py-10 backdrop-blur-[2px]">
           <LoadingPlay
-            kicker="AI đang dựng kế hoạch ôn thi cho bạn"
-            title={submissionStep || "Đang tạo kế hoạch…"}
-            doneTitle="Kế hoạch đã sẵn sàng"
+            kicker={tx("AI đang dựng kế hoạch ôn thi cho bạn")}
+            title={submissionStep || tx("Đang tạo kế hoạch…")}
+            doneTitle={tx("Kế hoạch đã sẵn sàng")}
             stages={PLAN_STAGES}
             stage={planStage(submissionStep)}
             expectedSeconds={90}
             done={Boolean(createdHref)}
-            continueLabel="Xem kế hoạch"
+            continueLabel={tx("Xem kế hoạch")}
             onPlayingChange={(playing) => {
               playingWhileWaiting.current = playing;
               if (!playing && createdHref) router.push(createdHref);
@@ -1331,15 +1335,15 @@ export default function StudyPlansPage() {
           {/* --- Cột trái: mục tiêu + lịch học --- */}
           <div className="space-y-6 p-5 sm:p-7">
             <div>
-              <StepHead number={1} title="Mục tiêu" done={workflowSteps[0].complete}>
+              <StepHead number={1} title={tx("Mục tiêu")} done={workflowSteps[0].complete}>
                 {daysToExam !== null && daysToExam > 0 && (
                   <span className="rounded-full bg-[var(--sp-pink-bg)] px-2.5 py-0.5 text-xs font-bold text-[var(--sp-pink-dark)]">
-                    còn {daysToExam} ngày
-                  </span>
+                    {tx("còn {0} ngày", [daysToExam])}</span>
                 )}
               </StepHead>
               <label htmlFor="subject-name" className="mb-1.5 block text-[13px] font-bold text-[var(--sp-text-2)]">
-                Tên môn học <span className="text-[var(--sp-pink)]">*</span>
+
+                {tx("Tên môn học")} <span className="text-[var(--sp-pink)]">*</span>
               </label>
               <input
                 id="subject-name"
@@ -1347,13 +1351,14 @@ export default function StudyPlansPage() {
                 required
                 value={subjectName}
                 onChange={(e) => setSubjectName(e.target.value)}
-                placeholder="Ví dụ: Kinh tế vi mô"
+                placeholder={tx("Ví dụ: Kinh tế vi mô")}
                 className="h-[46px] w-full rounded-xl border-2 border-[var(--sp-line)] bg-white px-4 text-sm text-[var(--sp-ink)] outline-none transition placeholder:text-[var(--sp-soft)] focus:border-[var(--sp-peri)]"
               />
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="exam-date" className="mb-1.5 block text-[13px] font-bold text-[var(--sp-text-2)]">
-                    Ngày thi <span className="text-[var(--sp-pink)]">*</span>
+
+                    {tx("Ngày thi")} <span className="text-[var(--sp-pink)]">*</span>
                   </label>
                   <input
                     id="exam-date"
@@ -1367,7 +1372,8 @@ export default function StudyPlansPage() {
                 </div>
                 <div>
                   <label htmlFor="daily-hours" className="mb-1.5 block text-[13px] font-bold text-[var(--sp-text-2)]">
-                    Học mỗi ngày
+
+                    {tx("Học mỗi ngày")}
                   </label>
                   <select
                     id="daily-hours"
@@ -1377,8 +1383,7 @@ export default function StudyPlansPage() {
                   >
                     {["1", "2", "3", "4", "5", "6"].map((hours) => (
                       <option key={hours} value={hours}>
-                        {hours} giờ / ngày
-                      </option>
+                        {tx("{0} giờ / ngày", [hours])}</option>
                     ))}
                   </select>
                 </div>
@@ -1386,8 +1391,8 @@ export default function StudyPlansPage() {
             </div>
 
             <div>
-              <StepHead number={2} title="Lịch học" done={workflowSteps[1].complete}>
-                <span className="text-[12.5px] font-semibold text-[var(--sp-muted)]">Bấm số ngày để chọn ngày cụ thể</span>
+              <StepHead number={2} title={tx("Lịch học")} done={workflowSteps[1].complete}>
+                <span className="text-[12.5px] font-semibold text-[var(--sp-muted)]">{tx("Bấm số ngày để chọn ngày cụ thể")}</span>
               </StepHead>
               <div className="grid grid-cols-7 gap-1.5">
                 {["1", "2", "3", "4", "5", "6", "7"].map((day) => (
@@ -1397,7 +1402,7 @@ export default function StudyPlansPage() {
                     aria-pressed={studyDays === day && isScheduleConfirmed}
                     onClick={() => {
                       if (!examDate) {
-                        setFeedback("Chọn ngày thi trước rồi mới chọn ngày học nhé.", "error");
+                        setFeedback(tx("Chọn ngày thi trước rồi mới chọn ngày học nhé."), "error");
                         return;
                       }
                       setStudyDays(day);
@@ -1413,15 +1418,13 @@ export default function StudyPlansPage() {
                         : "border-[var(--sp-line)] bg-white text-[var(--sp-muted)] hover:border-[var(--sp-lav-line)]"
                     }`}
                   >
-                    {day} ngày
-                  </button>
+                    {tx("{0} ngày", [day])}</button>
                 ))}
               </div>
               {isScheduleConfirmed && (
                 <p className="mt-2.5 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border-2 border-[var(--sp-lav-line)] bg-[var(--sp-lav)] px-3 py-2 text-[13px] font-bold text-[var(--sp-text-2)]">
                   <span className="truncate">
-                    ✓ {selectedStudyDates.length} ngày học: {[...selectedStudyDates].sort().slice(0, 4).map(shortStudyDay).join(", ")}
-                    {selectedStudyDates.length > 4 ? "…" : ""}
+                    {tx("✓ {0} ngày học: {1}{2}", [selectedStudyDates.length, [...selectedStudyDates].sort().slice(0, 4).map(shortStudyDay).join(", "), selectedStudyDates.length > 4 ? "…" : ""])}
                   </span>
                   <button
                     type="button"
@@ -1431,7 +1434,8 @@ export default function StudyPlansPage() {
                     }}
                     className="text-[var(--sp-peri-dark)] underline underline-offset-2"
                   >
-                    Sửa
+
+                    {tx("Sửa")}
                   </button>
                 </p>
               )}
@@ -1441,7 +1445,7 @@ export default function StudyPlansPage() {
           {/* --- Cột phải: tài liệu + cách chia --- */}
           <div className="space-y-6 border-t-2 border-dashed border-[var(--sp-line)] p-5 sm:p-7 lg:border-l-2 lg:border-t-0">
             <div>
-              <StepHead number={3} title="Tài liệu" done={workflowSteps[2].complete} />
+              <StepHead number={3} title={tx("Tài liệu")} done={workflowSteps[2].complete} />
               <MaterialDropzone
                 compact
                 file={selectedFile}
@@ -1460,7 +1464,7 @@ export default function StudyPlansPage() {
             </div>
 
             <div>
-              <StepHead number={4} title="Cách chia kế hoạch" done={modeReady && workflowSteps[2].complete} />
+              <StepHead number={4} title={tx("Cách chia kế hoạch")} done={modeReady && workflowSteps[2].complete} />
               <PlanModeCards compact mode={planMode} onChange={setPlanMode} />
               {planMode === "focus" && (
                 <div className="mt-3">
@@ -1496,10 +1500,10 @@ export default function StudyPlansPage() {
           <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_260px]">
             <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-[13px] font-bold">
               {[
-                { label: "Môn học & ngày thi", done: workflowSteps[0].complete },
-                { label: "Ngày học", done: workflowSteps[1].complete },
-                { label: "Tài liệu", done: workflowSteps[2].complete },
-                { label: "Cách chia", done: modeReady },
+                { label: tx("Môn học & ngày thi"), done: workflowSteps[0].complete },
+                { label: tx("Ngày học"), done: workflowSteps[1].complete },
+                { label: tx("Tài liệu"), done: workflowSteps[2].complete },
+                { label: tx("Cách chia"), done: modeReady },
               ].map((item) => (
                 <li key={item.label} className={`flex items-center gap-1.5 ${item.done ? "text-emerald-700" : "text-[var(--sp-soft)]"}`}>
                   {item.done ? <IconCheck size={14} /> : <span className="h-3 w-3 rounded-full border-2 border-current" />}
@@ -1514,7 +1518,8 @@ export default function StudyPlansPage() {
               className="sp-btn sp-btn-primary h-[46px] w-full justify-center text-[15px] disabled:cursor-not-allowed disabled:border-[#b8b2c8] disabled:bg-[#c9c4d6] disabled:shadow-none"
             >
               <Sparkle size={16} />
-              Xem kế hoạch dự kiến
+
+              {tx("Xem kế hoạch dự kiến")}
             </button>
           </div>
         </div>

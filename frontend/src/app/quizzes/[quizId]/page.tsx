@@ -1,5 +1,6 @@
 "use client";
 
+import { tx } from "@/lib/i18n";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { SmartLoading } from "@/components/loading-play";
@@ -60,7 +61,7 @@ function getOptionEntries(options: QuizQuestion["options"]): [string, string][] 
   return Object.entries(options).map(([key, value]) => [key, typeof value === "string" ? value : String(value)]);
 }
 
-const DIFFICULTY = ["", "Nhận biết", "Nhận biết", "Thông hiểu", "Vận dụng", "Vận dụng cao"];
+const DIFFICULTY = ["", tx("Nhận biết"), tx("Nhận biết"), tx("Thông hiểu"), tx("Vận dụng"), tx("Vận dụng cao")];
 
 /* Tách phần tình huống (các câu dẫn) khỏi câu hỏi chính (câu có dấu "?") */
 function splitQuestion(text: string) {
@@ -152,11 +153,11 @@ export default function QuizTakingPage() {
         const startResponse = await fetch(`${API_URL}/api/quizzes/${quizId}/start`, { method: "POST" });
         const startData = await startResponse.json();
         if (startedQuizIdRef.current !== quizId) return;
-        if (!startResponse.ok) throw new Error(startData.detail || "Không thể bắt đầu bài kiểm tra.");
+        if (!startResponse.ok) throw new Error(startData.detail || tx("Không thể bắt đầu bài kiểm tra."));
 
         const receivedAttemptId = String(startData.attempt_id || "").trim();
         if (!receivedAttemptId || receivedAttemptId === "null") {
-          throw new Error("Không thể tạo lượt làm bài hợp lệ. Vui lòng tải lại trang.");
+          throw new Error(tx("Không thể tạo lượt làm bài hợp lệ. Vui lòng tải lại trang."));
         }
 
         setAttemptId(receivedAttemptId);
@@ -166,7 +167,7 @@ export default function QuizTakingPage() {
         const questionResponse = await fetch(`${API_URL}/api/quizzes/${quizId}/questions`);
         const questionData = await questionResponse.json();
         if (startedQuizIdRef.current !== quizId) return;
-        if (!questionResponse.ok) throw new Error(questionData.detail || "Không thể tải câu hỏi.");
+        if (!questionResponse.ok) throw new Error(questionData.detail || tx("Không thể tải câu hỏi."));
 
         // Xáo trộn thứ tự câu; giữ nguyên thứ tự A–D để chữ cái khớp với trang kết quả
         setQuestions(shuffleArray<QuizQuestion>((questionData.data || []) as QuizQuestion[]));
@@ -177,7 +178,7 @@ export default function QuizTakingPage() {
         }
       } catch (err) {
         if (startedQuizIdRef.current !== quizId) return;
-        setError(err instanceof Error ? err.message : "Đã xảy ra lỗi khi tải bài kiểm tra.");
+        setError(err instanceof Error ? err.message : tx("Đã xảy ra lỗi khi tải bài kiểm tra."));
       } finally {
         if (startedQuizIdRef.current === quizId) setLoading(false);
       }
@@ -211,7 +212,7 @@ export default function QuizTakingPage() {
         body: JSON.stringify({ question_id: question.id, selected_answer: answer }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Không thể lưu câu trả lời.");
+      if (!response.ok) throw new Error(data.detail || tx("Không thể lưu câu trả lời."));
     } catch (err) {
       setAnswers((current) => {
         const next = { ...current };
@@ -219,7 +220,7 @@ export default function QuizTakingPage() {
         else next[question.id] = previous;
         return next;
       });
-      setError(err instanceof Error ? err.message : "Không thể lưu câu trả lời.");
+      setError(err instanceof Error ? err.message : tx("Không thể lưu câu trả lời."));
     } finally {
       setSaving(false);
     }
@@ -239,8 +240,8 @@ export default function QuizTakingPage() {
         const missing = questions.length - answeredCount;
         const confirmed = window.confirm(
           missing > 0
-            ? `Bạn còn ${missing} câu chưa trả lời. Vẫn nộp bài?`
-            : "Bạn chắc chắn muốn nộp bài?"
+            ? tx("Bạn còn {0} câu chưa trả lời. Vẫn nộp bài?", [missing])
+            : tx("Bạn chắc chắn muốn nộp bài?")
         );
         if (!confirmed) return;
       }
@@ -253,7 +254,7 @@ export default function QuizTakingPage() {
         if (!submitCompletedRef.current) {
           const response = await fetch(`${API_URL}/api/quiz-attempts/${attemptId}/submit`, { method: "POST" });
           const data = await response.json();
-          if (!response.ok) throw new Error(data.detail || "Không thể nộp bài.");
+          if (!response.ok) throw new Error(data.detail || tx("Không thể nộp bài."));
           submitCompletedRef.current = true;
         }
         setFinished(true);
@@ -271,7 +272,7 @@ export default function QuizTakingPage() {
         } catch {
           /* giữ lỗi gốc */
         }
-        setError(err instanceof Error ? err.message : "Không thể nộp bài.");
+        setError(err instanceof Error ? err.message : tx("Không thể nộp bài."));
         if (remainingSeconds !== null && remainingSeconds <= 0) setRemainingSeconds(null);
       } finally {
         submitStartedRef.current = false;
@@ -303,10 +304,10 @@ export default function QuizTakingPage() {
   if (loading || holdLoading) {
     return (
       <SmartLoading
-        text="Đang chuẩn bị bài kiểm tra…"
-        sub="Pilot đang xáo câu hỏi, chuẩn bị bút nhé!"
-        stages={["Tải đề", "Xếp câu hỏi", "Hẹn giờ", "Sẵn sàng"]}
-        continueLabel="Vào làm bài"
+        text={tx("Đang chuẩn bị bài kiểm tra…")}
+        sub={tx("Pilot đang xáo câu hỏi, chuẩn bị bút nhé!")}
+        stages={[tx("Tải đề"), tx("Xếp câu hỏi"), tx("Hẹn giờ"), tx("Sẵn sàng")]}
+        continueLabel={tx("Vào làm bài")}
         done={!loading}
         onHoldChange={setHoldLoading}
       />
@@ -318,7 +319,8 @@ export default function QuizTakingPage() {
       <div className="sp-card mx-auto max-w-3xl p-8 text-center">
         <p className="font-semibold text-[var(--sp-pink-dark)]">{error}</p>
         <Link href="/quizzes" className="sp-btn sp-btn-primary mt-5 px-5 py-2.5 text-sm">
-          Về Kiểm tra kiến thức
+
+          {tx("Về Kiểm tra kiến thức")}
         </Link>
       </div>
     );
@@ -327,14 +329,15 @@ export default function QuizTakingPage() {
   const currentQuestion = questions[currentIndex];
 
   if (!currentQuestion) {
-    return <div className="sp-card mx-auto max-w-3xl p-8 text-center text-[var(--sp-muted)]">Bài này chưa có câu hỏi.</div>;
+    return <div className="sp-card mx-auto max-w-3xl p-8 text-center text-[var(--sp-muted)]">{tx("Bài này chưa có câu hỏi.")}</div>;
   }
 
   if (finished) {
     return (
       <div className="sp-card mx-auto max-w-3xl p-10 text-center text-[var(--sp-muted)]">
         <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-        Đã nộp bài, đang chấm điểm...
+
+        {tx("Đã nộp bài, đang chấm điểm...")}
       </div>
     );
   }
@@ -342,9 +345,9 @@ export default function QuizTakingPage() {
   const total = questions.length;
   const choiceCount = questions.filter((question) => question.question_type !== "fill_blank").length;
   const fillCount = total - choiceCount;
-  const typeSummary = fillCount === 0 ? `${total} câu trắc nghiệm` : `${choiceCount} trắc nghiệm · ${fillCount} điền khuyết`;
+  const typeSummary = fillCount === 0 ? tx("{0} câu trắc nghiệm", [total]) : tx("{0} trắc nghiệm · {1} điền khuyết", [choiceCount, fillCount]);
   const displayTitle = overview?.context.topic_name ? getMainTopicTitle(overview.context.topic_name) : getMainTopicTitle(title);
-  const kind = overview?.is_retake ? "Kiểm tra lại" : "Kiểm tra kiến thức";
+  const kind = overview?.is_retake ? tx("Kiểm tra lại") : tx("Kiểm tra kiến thức");
   const tag = tagById.get(currentQuestion.id);
   const isFlagged = flagged.has(currentQuestion.id);
   const { context: stem, question: ask } = splitQuestion(currentQuestion.question_text);
@@ -362,22 +365,22 @@ export default function QuizTakingPage() {
       groups.push({
         icon: <IconTarget size={16} />,
         tone: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]",
-        title: `Câu ${compactNumbers(weak)} · phần yếu`,
-        text: "Phần bạn làm sai ở lần trước",
+        title: tx("Câu {0} · phần yếu", [compactNumbers(weak)]),
+        text: tx("Phần bạn làm sai ở lần trước"),
       });
     }
     if (rest.length) {
       groups.push({
         icon: <IconBook size={16} />,
         tone: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]",
-        title: `Câu ${compactNumbers(rest)}`,
-        text: "Phần còn lại của bài học",
+        title: tx("Câu {0}", [compactNumbers(rest)]),
+        text: tx("Phần còn lại của bài học"),
       });
     }
   } else if (overview) {
     const byPage = new Map<string, number[]>();
     for (const item of numbered) {
-      const key = item.tag?.page ? `Trang ${item.tag.page}` : "Nội dung bài học";
+      const key = item.tag?.page ? `Trang ${item.tag.page}` : tx("Nội dung bài học");
       byPage.set(key, [...(byPage.get(key) || []), item.number]);
     }
     Array.from(byPage.entries())
@@ -387,7 +390,7 @@ export default function QuizTakingPage() {
         groups.push({
           icon: <IconBook size={16} />,
           tone: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]",
-          title: `Câu ${compactNumbers(numbers)}`,
+          title: tx("Câu {0}", [compactNumbers(numbers)]),
           text: `${page}${overview.context.chapter ? ` · ${overview.context.chapter}` : ""}`,
         })
       );
@@ -396,10 +399,10 @@ export default function QuizTakingPage() {
   groups.push({
     icon: <IconFlag size={16} />,
     tone: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]",
-    title: flaggedNumbers.length ? `${flaggedNumbers.length} câu đã đánh dấu` : "Chưa đánh dấu câu nào",
+    title: flaggedNumbers.length ? tx("{0} câu đã đánh dấu", [flaggedNumbers.length]) : tx("Chưa đánh dấu câu nào"),
     text: flaggedNumbers.length
-      ? `Câu ${compactNumbers(flaggedNumbers)}, xem lại trước khi nộp`
-      : "Bấm \"Đánh dấu xem lại\" với câu bạn còn phân vân",
+      ? tx("Câu {0}, xem lại trước khi nộp", [compactNumbers(flaggedNumbers)])
+      : tx("Bấm \"Đánh dấu xem lại\" với câu bạn còn phân vân"),
   });
 
   const isLast = currentIndex === total - 1;
@@ -411,14 +414,15 @@ export default function QuizTakingPage() {
         <div className="flex min-w-0 flex-1 items-center gap-4">
           <Link href="/quizzes" className="sp-btn sp-btn-secondary shrink-0 px-4 py-2.5 text-sm">
             <IconChevronLeft size={16} />
-            Thoát
+
+            {tx("Thoát")}
           </Link>
           <div className="min-w-0">
             <h1 className="truncate text-[19px] font-extrabold leading-tight text-[var(--sp-purple)] sm:text-[22px]">
               {kind} · {displayTitle}
             </h1>
             <p className="mt-0.5 truncate text-[13px] text-[var(--sp-muted)]">
-              {[overview?.context.subject_name, typeSummary, "chỉ gồm phần đã học"].filter(Boolean).join(" · ")}
+              {[overview?.context.subject_name, typeSummary, tx("chỉ gồm phần đã học")].filter(Boolean).join(" · ")}
             </p>
           </div>
         </div>
@@ -426,10 +430,9 @@ export default function QuizTakingPage() {
         <div className="flex items-center gap-4">
           <div className="min-w-0 flex-1 lg:w-[260px] lg:flex-none">
             <div className="flex justify-between text-[13px] font-semibold text-[var(--sp-text-2)]">
-              <span>Đã trả lời</span>
+              <span>{tx("Đã trả lời")}</span>
               <span className="font-bold text-[var(--sp-ink)]">
-                {answeredCount} / {total} câu
-              </span>
+                {tx("{0} / {1} câu", [answeredCount, total])}</span>
             </div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--sp-surface-2)]">
               <div
@@ -466,7 +469,7 @@ export default function QuizTakingPage() {
                 {remainingSeconds !== null ? formatClock(remainingSeconds) : "∞"}
               </span>
               <span className="block text-[11px] text-white/75">
-                {timeLimit ? `còn lại / ${formatClock(timeLimit * 60)}` : "không giới hạn"}
+                {timeLimit ? tx("còn lại / {0}", [formatClock(timeLimit * 60)]) : tx("không giới hạn")}
               </span>
             </span>
           </div>
@@ -478,13 +481,14 @@ export default function QuizTakingPage() {
         <section className="sp-card flex min-h-[540px] flex-col p-5 sm:p-8">
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="mr-1 flex items-baseline gap-1 text-[var(--sp-pink)]">
-              <span className="text-[34px] font-black leading-none">Câu {currentIndex + 1}</span>
+              <span className="text-[34px] font-black leading-none">{tx("Câu {0}", [currentIndex + 1])}</span>
               <span className="text-[18px] font-bold text-[var(--sp-muted)]">/ {total}</span>
             </h2>
             {tag?.weak && (
               <span className="sp-chip flex items-center gap-1 bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]">
                 <IconTarget size={13} />
-                Phần yếu{tag.page ? ` · trang ${tag.page}` : ""}
+
+                {tx("Phần yếu")}{tag.page ? ` · trang ${tag.page}` : ""}
               </span>
             )}
             {!tag?.weak && tag?.page && (
@@ -509,7 +513,7 @@ export default function QuizTakingPage() {
               }`}
             >
               <IconFlag size={15} />
-              {isFlagged ? "Đã đánh dấu" : "Đánh dấu xem lại"}
+              {isFlagged ? tx("Đã đánh dấu") : tx("Đánh dấu xem lại")}
             </button>
           </div>
 
@@ -523,7 +527,7 @@ export default function QuizTakingPage() {
 
           {currentQuestion.question_type === "fill_blank" ? (
             <div className="mt-5">
-              <p className="text-[13px] text-[var(--sp-muted)]">Nhập câu trả lời rồi bấm Lưu (hoặc Enter).</p>
+              <p className="text-[13px] text-[var(--sp-muted)]">{tx("Nhập câu trả lời rồi bấm Lưu (hoặc Enter).")}</p>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                 <input
                   value={
@@ -538,7 +542,7 @@ export default function QuizTakingPage() {
                     if (event.key === "Enter" && value) void handleSelectAnswer(value);
                   }}
                   disabled={submitting}
-                  placeholder="Câu trả lời của bạn..."
+                  placeholder={tx("Câu trả lời của bạn...")}
                   className="min-w-0 flex-1 rounded-2xl border-2 border-[var(--sp-line)] bg-white px-4 py-3.5 text-[15px] text-[var(--sp-ink)] outline-none transition placeholder:text-[var(--sp-soft)] focus:border-[var(--sp-peri)]"
                 />
                 <button
@@ -548,19 +552,19 @@ export default function QuizTakingPage() {
                   className="sp-btn sp-btn-primary justify-center px-5 py-3 text-sm disabled:opacity-50"
                 >
                   <IconCheck size={15} />
-                  Lưu câu trả lời
+
+                  {tx("Lưu câu trả lời")}
                 </button>
               </div>
               {typeof answers[currentQuestion.id] === "string" && answers[currentQuestion.id] && (
                 <p className="mt-2 text-[13px] font-semibold text-emerald-700">
-                  Đã lưu: “{answers[currentQuestion.id] as string}”
-                </p>
+                  {tx("Đã lưu: “{0}”", [answers[currentQuestion.id] as string])}</p>
               )}
             </div>
           ) : (
             <div className="mt-5 space-y-3">
               {currentQuestion.question_type === "multiple_choice" && (
-                <p className="text-[13px] text-[var(--sp-muted)]">Có thể chọn nhiều đáp án.</p>
+                <p className="text-[13px] text-[var(--sp-muted)]">{tx("Có thể chọn nhiều đáp án.")}</p>
               )}
               {getOptionEntries(currentQuestion.options).map(([key, optionText], index) => {
                 const currentAnswer = answers[currentQuestion.id];
@@ -618,11 +622,13 @@ export default function QuizTakingPage() {
               className="sp-btn sp-btn-secondary px-4 py-2.5 text-sm disabled:opacity-40"
             >
               <IconChevronLeft size={16} />
-              Câu trước
+
+              {tx("Câu trước")}
             </button>
             <p className="hidden flex-1 items-center gap-1.5 text-[13px] text-[var(--sp-muted)] sm:flex">
               <IconInfo size={15} />
-              Đáp án và giải thích hiện sau khi nộp bài
+
+              {tx("Đáp án và giải thích hiện sau khi nộp bài")}
             </p>
             {isLast ? (
               <button
@@ -632,7 +638,7 @@ export default function QuizTakingPage() {
                 className="sp-btn ml-auto bg-[var(--sp-purple)] px-5 py-2.5 text-sm text-white hover:bg-[var(--sp-purple-deep)] disabled:opacity-50"
               >
                 <IconCheck size={16} />
-                {submitting ? "Đang nộp..." : "Nộp bài"}
+                {submitting ? tx("Đang nộp...") : tx("Nộp bài")}
               </button>
             ) : (
               <button
@@ -641,7 +647,8 @@ export default function QuizTakingPage() {
                 onClick={() => setCurrentIndex((index) => index + 1)}
                 className="sp-btn sp-btn-primary ml-auto px-5 py-2.5 text-sm"
               >
-                Câu tiếp
+
+                {tx("Câu tiếp")}
                 <IconChevronRight size={16} />
               </button>
             )}
@@ -651,8 +658,8 @@ export default function QuizTakingPage() {
         {/* ---------- Cột phải ---------- */}
         <aside className="space-y-5 lg:sticky lg:top-6">
           <section className="sp-card p-5">
-            <p className="sp-accent text-[16px] text-[var(--sp-pink)]">Bấm số để chuyển câu</p>
-            <h3 className="text-[19px] text-[var(--sp-ink)]">Danh sách câu hỏi</h3>
+            <p className="sp-accent text-[16px] text-[var(--sp-pink)]">{tx("Bấm số để chuyển câu")}</p>
+            <h3 className="text-[19px] text-[var(--sp-ink)]">{tx("Danh sách câu hỏi")}</h3>
             <div className="mt-4 grid grid-cols-5 gap-2 lg:grid-cols-4">
               {questions.map((question, index) => {
                 const answer = answers[question.id];
@@ -663,9 +670,7 @@ export default function QuizTakingPage() {
                     key={question.id}
                     type="button"
                     onClick={() => setCurrentIndex(index)}
-                    aria-label={`Câu ${index + 1}${answered ? ", đã trả lời" : ", chưa trả lời"}${
-                      flagged.has(question.id) ? ", đã đánh dấu" : ""
-                    }${current ? ", đang làm" : ""}`}
+                    aria-label={tx("Câu {0}{1}{2}{3}", [index + 1, answered ? tx(", đã trả lời") : tx(", chưa trả lời"), flagged.has(question.id) ? tx(", đã đánh dấu") : "", current ? tx(", đang làm") : ""])}
                     className={`relative flex h-12 items-center justify-center rounded-xl border-2 text-[17px] font-extrabold transition ${
                       current
                         ? "border-[var(--sp-purple-deep)] bg-[var(--sp-pink)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)]"
@@ -685,25 +690,29 @@ export default function QuizTakingPage() {
             <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-[13px] text-[var(--sp-text-2)]">
               <span className="flex items-center gap-1.5">
                 <span className="h-3.5 w-3.5 rounded bg-[var(--sp-peri)]" />
-                Đã trả lời
+
+                {tx("Đã trả lời")}
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="h-3.5 w-3.5 rounded border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-pink)]" />
-                Đang làm
+
+                {tx("Đang làm")}
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="h-3.5 w-3.5 rounded border-2 border-[var(--sp-line)] bg-white" />
-                Chưa làm
+
+                {tx("Chưa làm")}
               </span>
               <span className="flex items-center gap-1.5">
                 <Sparkle size={13} className="text-[var(--sp-yellow)]" />
-                Đánh dấu
+
+                {tx("Đánh dấu")}
               </span>
             </div>
           </section>
 
           <section className="sp-card p-5">
-            <h3 className="text-[19px] text-[var(--sp-ink)]">Bài này gồm</h3>
+            <h3 className="text-[19px] text-[var(--sp-ink)]">{tx("Bài này gồm")}</h3>
             <ul className="mt-3 space-y-3.5">
               {groups.map((group) => (
                 <li key={group.title} className="flex gap-3">
@@ -724,7 +733,7 @@ export default function QuizTakingPage() {
               className="sp-btn mt-6 w-full justify-center bg-[var(--sp-purple)] py-3.5 text-[16px] text-white hover:bg-[var(--sp-purple-deep)] disabled:opacity-60"
             >
               <IconCheck size={17} />
-              {submitting ? "Đang nộp bài..." : "Nộp bài"}
+              {submitting ? tx("Đang nộp bài...") : tx("Nộp bài")}
             </button>
           </section>
         </aside>
