@@ -33,6 +33,7 @@
   --sp-yellow: #f6c343;
   --sp-amber-dark: #9a6400;
   --sp-amber-bg: #fff5d6;
+  --sp-amber-line: #f3dc9b;
   /* Ôn lại mức khẩn (trễ lịch ôn, để quá lâu, sát ngày thi) */
   --sp-red: #d93a3a;
   --sp-red-dark: #a82424;
@@ -703,6 +704,7 @@ html.dark {
 
   --sp-amber-dark: #f3c460;
   --sp-amber-bg: #3a2e12;
+  --sp-amber-line: #6b5420;
   --sp-red-dark: #ff8a8a;
   --sp-red-bg: #3d1717;
   --sp-red-line: #6e2a2a;

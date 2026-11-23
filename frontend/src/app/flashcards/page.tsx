@@ -80,7 +80,8 @@ function getFlashcardPoints(content: string): string[] {
     .map((line) => line.replace(/^\s*[-*•]\s*/, "").trim())
     .filter(Boolean);
   if (lines.length > 1) return lines.slice(0, 3);
-  return content
+  // Một ý: vẫn bỏ "- " / "•" ở đầu, chấm tròn vàng đã thay cho gạch đầu dòng
+  return (lines[0] || "")
     .split(/(?<=[.!?])\s+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean)

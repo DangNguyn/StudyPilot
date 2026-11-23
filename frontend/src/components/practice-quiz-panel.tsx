@@ -203,14 +203,14 @@ export default function PracticeQuizPanel({
             return (
               <span
                 key={item.key}
-                className={`h-1 flex-1 rounded-full transition-colors ${
+                className={`h-[7px] flex-1 rounded-full transition-colors ${
                   result
                     ? result.correct
                       ? "bg-emerald-500"
                       : "bg-[var(--sp-pink)]"
                     : itemIndex === index
                       ? "bg-[var(--sp-peri)]"
-                      : "bg-white"
+                      : "bg-[var(--sp-line)]"
                 }`}
               />
             );
@@ -292,9 +292,9 @@ export default function PracticeQuizPanel({
             <p className="truncate text-[11px] font-bold uppercase tracking-wide text-[var(--sp-muted)]">
               {tx("Mục {0} · {1}", [current.sectionNumber, current.sectionHeading])}
             </p>
-            <p className="mt-1 text-justify text-[14.5px] font-bold leading-6 text-[var(--sp-ink)]">{renderText(current.question)}</p>
+            <p className="mt-1.5 text-[15.5px] font-bold leading-[1.55] text-[var(--sp-purple)]">{renderText(current.question)}</p>
 
-            <div className="mt-3 space-y-2" role="radiogroup" aria-label={tx("Các lựa chọn")}>
+            <div className="mt-3.5 space-y-2.5" role="radiogroup" aria-label={tx("Các lựa chọn")}>
               {current.options.map((option, optionIndex) => {
                 const selected = (answer ? answer.choice : choice) === optionIndex;
                 const isCorrect = optionIndex === current.correct_index;
@@ -316,25 +316,25 @@ export default function PracticeQuizPanel({
                     aria-checked={selected}
                     disabled={Boolean(answer)}
                     onClick={() => setChoice(optionIndex)}
-                    className={`flex w-full items-center gap-2.5 rounded-xl border-2 px-2.5 py-2 text-left text-[13.5px] font-medium leading-5 transition ${
+                    className={`flex w-full items-center gap-2.5 rounded-[14px] border-2 px-3 py-2.5 text-left text-[14px] font-medium leading-5 transition ${
                       state === "correct"
                         ? "border-emerald-500 bg-emerald-50 text-emerald-900"
                         : state === "wrong"
                           ? "border-[var(--sp-pink)] bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
                           : state === "selected"
-                            ? "border-[var(--sp-purple)] bg-white text-[var(--sp-ink)] shadow-[3px_3px_0_var(--sp-lav-line)]"
-                            : "border-[var(--sp-line)] bg-white text-[var(--sp-ink)] hover:border-[var(--sp-lav-line)] disabled:hover:border-[var(--sp-line)]"
+                            ? "border-[var(--sp-purple-deep)] bg-[var(--sp-lav)] text-[var(--sp-ink)] shadow-[3px_3px_0_var(--sp-peri)]"
+                            : "border-[var(--sp-line)] bg-[var(--sp-surface)] text-[var(--sp-text-2)] enabled:hover:translate-x-0.5 enabled:hover:border-[var(--sp-lav-line)]"
                     }`}
                   >
                     <span
-                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-extrabold ${
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border-2 text-xs font-extrabold ${
                         state === "correct"
-                          ? "bg-emerald-500 text-white"
+                          ? "border-emerald-500 bg-emerald-500 text-white"
                           : state === "wrong"
-                            ? "bg-[var(--sp-pink)] text-white"
+                            ? "border-[var(--sp-pink)] bg-[var(--sp-pink)] text-white"
                             : state === "selected"
-                              ? "bg-[var(--sp-peri)] text-white"
-                              : "bg-[var(--sp-surface-2)] text-[var(--sp-text-2)]"
+                              ? "border-[var(--sp-purple-deep)] bg-[var(--sp-peri)] text-white"
+                              : "border-[var(--sp-line)] text-[var(--sp-muted)]"
                       }`}
                     >
                       {state === "correct" ? <IconCheck size={13} /> : state === "wrong" ? <IconX size={13} /> : LETTERS[optionIndex]}
@@ -351,7 +351,7 @@ export default function PracticeQuizPanel({
                 className={`sp-task-expand mt-3 rounded-xl border-2 px-3 py-2.5 text-justify ${
                   answer.correct
                     ? "border-emerald-200 bg-emerald-50"
-                    : "border-[var(--sp-pink-line)] bg-white"
+                    : "border-dashed border-[var(--sp-peri)] bg-[var(--sp-surface)]"
                 }`}
               >
                 {answer.correct ? (

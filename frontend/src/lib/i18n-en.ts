@@ -1685,4 +1685,17 @@ export const EN: Record<string, string> = {
   "Tài liệu tiếng Anh vẫn dùng được: AI đọc bản gốc rồi viết tóm tắt và câu hỏi bằng tiếng Việt.": "English documents still work: AI reads the original and writes summaries and questions in Vietnamese.",
   "Mọi nội dung AI viết cho kế hoạch này sẽ bằng tiếng Anh, kể cả khi tài liệu là tiếng Việt.": "Everything AI writes for this plan will be in English, even if the document is in Vietnamese.",
   "Đáp án được chấp nhận": "Accepted answers",
+  // Khoá ngày học, ghi nhớ nhanh
+  "Ghi nhớ nhanh": "Quick notes",
+  "Câu hỏi của ngày này hiện lại khi bạn bấm Xem lại kiến thức.": "This day's questions come back when you press Review the lesson.",
+  "Câu hỏi mở cùng nội dung của ngày này.": "Questions unlock together with this day's content.",
+  "Học xong và nộp bài kiểm tra ngày này để mở ngày sau": "Finish this day and submit its quiz to unlock the next day",
+  "Bạn đã học xong Ngày {0}": "You've finished Day {0}",
+  "Ngày {0} chưa mở": "Day {0} is locked",
+  "{0}. Nội dung đã được cất gọn để bạn tập trung vào bài đang học.": "{0}. This content is tucked away so you can focus on your current lesson.",
+  "Học xong và nộp bài kiểm tra của ngày trước để mở nội dung ngày này.": "Finish the previous day and submit its quiz to unlock this day.",
+  "Thời lượng": "Duration",
+  "Đang học: Ngày {0}. Trả lời phần tự kiểm tra rồi nộp bài kiểm tra của ngày đó để mở tiếp.": "Now studying: Day {0}. Answer the self-check, then submit that day's quiz to unlock the next one.",
+  "Xem lại kiến thức": "Review the lesson",
+  "Học tiếp Ngày {0}": "Continue Day {0}",
 };
