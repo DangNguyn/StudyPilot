@@ -241,9 +241,10 @@ export function SmartLoading({
       document.body.appendChild(clone);
       const box = canvas.getBoundingClientRect();
       // nội dung bên trong đã ở vị trí cuối, chỉ khung ngoài đang nở chiều cao
-      const size = 70;
+      // khớp vị trí xuất phát của Pilot trong RunnerGame (p.x = 64, cao 40)
+      const size = PILOT_RUN_SIZE;
       const toLeft = box.left + 64 - size * 0.24;
-      const toTop = box.top + (box.height - 38) - size * 0.86;
+      const toTop = box.top + (box.height - 38) - 40 - size * 0.24;
       const peak = Math.min(pilot.top, toTop) - 70;
       const mid = (pilot.width + size) / 2;
       clone.animate(
@@ -517,6 +518,7 @@ type Obstacle = { kind: "books" | "clock" | "grade"; x: number; w: number; h: nu
 type Star = { x: number; y: number; got?: boolean };
 
 const BEST_KEY = "sp-runner-best";
+const PILOT_RUN_SIZE = 66;
 const readBest = () => {
   try {
     return Number(localStorage.getItem(BEST_KEY)) || 0;
@@ -546,6 +548,7 @@ function RunnerGame({
     hooks.current = { onStart, pauseText };
   }, [onStart, pauseText]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const runnerRef = useRef<HTMLDivElement>(null);
   const scoreRef = useRef<HTMLSpanElement>(null);
   const [best, setBest] = useState(readBest);
   const [overlay, setOverlay] = useState<{ title: string; text: string; label: string } | null>({
@@ -610,48 +613,15 @@ function RunnerGame({
       ctx.strokeStyle = "#33094a";
       ctx.stroke();
     };
+    // Pilot là SVG thật (mặc bộ đồ đã lưu) đặt đè lên canvas; thân sách 104 đơn vị khớp hộp va chạm p.w
     const drawPilot = (g: number) => {
-      const x = p.x;
-      const y = g - p.h + p.y;
-      const step = p.onGround ? Math.sin(p.leg) * 5 : 3;
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "#33094a";
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(x + 11, y + p.h - 3);
-      ctx.lineTo(x + 11 + step, y + p.h + 6);
-      ctx.moveTo(x + 23, y + p.h - 3);
-      ctx.lineTo(x + 23 - step, y + p.h + 6);
-      ctx.stroke();
-      box(x, y, p.w, p.h - 2, 8, "#5b2a86");
-      box(x, y, 7, p.h - 2, 4, "#4a1068");
-      ctx.beginPath();
-      ctx.moveTo(x + 4, y + 2);
-      ctx.quadraticCurveTo(x + 17, y - 14, x + 31, y + 2);
-      ctx.closePath();
-      ctx.fillStyle = "#e0457b";
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#fff";
-      ctx.beginPath();
-      ctx.ellipse(x + 15, y + 13, 4.5, 5.5, 0, 0, Math.PI * 2);
-      ctx.ellipse(x + 26, y + 13, 4.5, 5.5, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 1.6;
-      ctx.stroke();
-      ctx.fillStyle = "#24123a";
-      ctx.beginPath();
-      ctx.arc(x + 16.5, y + 14, 2.2, 0, Math.PI * 2);
-      ctx.arc(x + 27.5, y + 14, 2.2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#e0457b";
-      ctx.fillRect(x + 7, y + 24, p.w - 7, 5);
-      ctx.beginPath();
-      ctx.moveTo(x + 7, y + 26);
-      ctx.lineTo(x - 8, y + 22 + Math.sin(p.leg * 1.5) * 3);
-      ctx.lineTo(x - 6, y + 31);
-      ctx.closePath();
-      ctx.fill();
+      const runner = runnerRef.current;
+      if (!runner) return;
+      const k = PILOT_RUN_SIZE / 200;
+      const bounce = p.onGround ? -Math.abs(Math.sin(p.leg)) * 3 : 0;
+      const tilt = p.onGround ? Math.sin(p.leg) * 4 : -8;
+      runner.style.visibility = alive ? "visible" : "hidden";
+      runner.style.transform = `translate(${p.x - 48 * k}px, ${g - p.h + p.y - 48 * k + bounce}px) rotate(${tilt}deg)`;
     };
     const drawObstacle = (o: Obstacle, g: number) => {
       const y = g - o.h;
@@ -719,7 +689,7 @@ function RunnerGame({
       ctx.setLineDash([]);
       for (const star of stars) drawStar(star.x, g - star.y);
       for (const obstacle of obstacles) drawObstacle(obstacle, g);
-      if (alive) drawPilot(g);
+      drawPilot(g);
     };
 
     const gameOver = () => {
@@ -856,6 +826,9 @@ function RunnerGame({
         onPointerDown={() => engine.current?.jump()}
         aria-label={tx("Game Pilot chạy deadline: bấm hoặc nhấn phím cách để nhảy")}
       />
+      <div ref={runnerRef} className="pointer-events-none absolute left-0 top-0 origin-[50%_85%] will-change-transform" aria-hidden="true">
+        <PilotMascot size={PILOT_RUN_SIZE} className="sp-pilot-still" />
+      </div>
       <div className="absolute right-3.5 top-3 flex gap-2">
         <span className="rounded-full border-2 border-[var(--sp-purple-deep)] bg-white px-3 py-0.5 text-[13px] font-extrabold shadow-[2px_2px_0_var(--sp-purple-deep)]">
           <span ref={scoreRef}>0</span>

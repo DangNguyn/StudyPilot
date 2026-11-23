@@ -1749,4 +1749,9 @@ export const EN: Record<string, string> = {
   "Gửi thử": "Send a test",
   "Xem trước email sẽ trông thế nào.": "Preview what the email looks like.",
   "Phần còn yếu": "Weak spots",
+  "Đang nộp bài và chấm điểm…": "Submitting and grading…",
+  "Pilot đang chấm từng câu, chờ mình xíu nhé!": "Pilot is grading each question, hang on a sec!",
+  "Chấm điểm": "Grading",
+  "Phân tích câu sai": "Reviewing mistakes",
+  "Soạn bài ôn lại": "Building a retake",
 };
