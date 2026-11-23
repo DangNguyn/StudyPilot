@@ -1,7 +1,8 @@
 "use client";
 
 import { tx } from "@/lib/i18n";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { PilotGlasses, PilotHat, PilotHeld, PilotScarf, coverColors, usePilotOutfit, type PilotOutfit } from "@/components/pilot-wear";
 import { IconBook, IconCheck, IconPlay } from "@/components/icons";
 
 /*
@@ -38,11 +39,22 @@ export function PilotMascot({
   size = 200,
   interactive = false,
   onPoke,
+  outfit: outfitOverride,
+  happy = false,
+  className = "",
 }: {
   size?: number;
   interactive?: boolean;
   onPoke?: (event: React.MouseEvent<SVGSVGElement>) => void;
+  /* Bộ đồ để mặc thử (Nhà của Pilot); bỏ trống thì mặc bộ đã lưu của tài khoản */
+  outfit?: PilotOutfit;
+  happy?: boolean;
+  className?: string;
 }) {
+  const savedOutfit = usePilotOutfit();
+  const outfit = outfitOverride ?? savedOutfit;
+  const cover = coverColors(outfit);
+  const uid = useId().replace(/:/g, "");
   const ref = useRef<SVGSVGElement>(null);
   const [eye, setEye] = useState({ x: 0, y: 0 });
   const [jumping, setJumping] = useState(false);
@@ -71,7 +83,7 @@ export function PilotMascot({
       height={size}
       role={interactive ? "button" : "img"}
       aria-label={interactive ? tx("Pilot, linh vật StudyPilot. Bấm để Pilot nhảy") : tx("Pilot, linh vật StudyPilot")}
-      className={`sp-pilot ${interactive ? "cursor-pointer" : ""} ${jumping ? "sp-pilot-jump" : ""}`}
+      className={`sp-pilot ${interactive ? "cursor-pointer" : ""} ${jumping ? "sp-pilot-jump" : ""} ${className}`}
       onClick={(event) => {
         if (!interactive) return;
         setJumping(false);
@@ -82,13 +94,12 @@ export function PilotMascot({
     >
       <ellipse cx="100" cy="186" rx="56" ry="8" fill="#33094a" opacity=".12" />
       <g className="sp-pilot-body">
-        <rect x="48" y="48" width="104" height="126" rx="22" fill="#5b2a86" stroke="#33094a" strokeWidth="4" />
-        <rect x="48" y="48" width="18" height="126" rx="9" fill="#4a1068" stroke="#33094a" strokeWidth="4" />
+        <rect x="48" y="48" width="104" height="126" rx="22" fill={cover.main} stroke="#33094a" strokeWidth="4" />
+        <rect x="48" y="48" width="18" height="126" rx="9" fill={cover.spine} stroke="#33094a" strokeWidth="4" />
         {[72, 100, 128, 156].map((y) => (
           <circle key={y} cx="57" cy={y} r="3.5" fill="#f6c343" />
         ))}
-        <path d="M62 54 Q100 14 140 54 Z" fill="#e0457b" stroke="#33094a" strokeWidth="4" strokeLinejoin="round" />
-        <rect x="80" y="40" width="40" height="13" rx="6.5" fill="#bfe3ff" stroke="#33094a" strokeWidth="3.5" />
+        <PilotHat outfit={outfit} />
         <g className="sp-pilot-blink">
           <ellipse cx="88" cy="86" rx="11" ry="13" fill="#fff" stroke="#33094a" strokeWidth="3" />
           <ellipse cx="122" cy="86" rx="11" ry="13" fill="#fff" stroke="#33094a" strokeWidth="3" />
@@ -97,17 +108,14 @@ export function PilotMascot({
         </g>
         <ellipse cx="78" cy="106" rx="7" ry="4" fill="#ff8fb6" opacity=".7" />
         <ellipse cx="132" cy="106" rx="7" ry="4" fill="#ff8fb6" opacity=".7" />
-        {jumping ? (
+        {jumping || happy ? (
           <path d="M94 102 Q105 118 116 102 Z" fill="#33094a" />
         ) : (
           <path d="M96 104 Q105 112 114 104" fill="none" stroke="#33094a" strokeWidth="3.5" strokeLinecap="round" />
         )}
-        <path d="M66 118 Q105 132 146 118 L146 128 Q105 142 66 128 Z" fill="#e0457b" stroke="#33094a" strokeWidth="3.5" strokeLinejoin="round" />
-        <path d="M136 126 l16 22 l-14 -2 z" fill="#e0457b" stroke="#33094a" strokeWidth="3" strokeLinejoin="round" />
-        <g className="sp-pilot-page">
-          <rect x="80" y="134" width="40" height="30" rx="4" fill="#fff" stroke="#33094a" strokeWidth="3" />
-          <path d="M86 143 h28 M86 150 h22 M86 157 h26" stroke="#d5ddf8" strokeWidth="3" strokeLinecap="round" />
-        </g>
+        <PilotGlasses outfit={outfit} />
+        <PilotScarf outfit={outfit} uid={uid} />
+        <PilotHeld outfit={outfit} pageClassName="sp-pilot-page" />
       </g>
     </svg>
   );

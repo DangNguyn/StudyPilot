@@ -785,3 +785,106 @@ html.sp-theme-fade *::before,
 html.sp-theme-fade *::after {
   transition: background-color 0.45s ease, color 0.45s ease, border-color 0.45s ease, fill 0.45s ease !important;
 }
+
+/* ================= Nền chuyển động (study-backdrop.tsx) ================= */
+/* Khi bật nền động, lưới chấm của body nhường cho lớp nền trôi */
+html.sp-bg-live body { background-image: none; }
+.sp-bg-desk {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  background-image: radial-gradient(var(--sp-paper-dot) 1.2px, transparent 1.2px);
+  background-size: 24px 24px;
+  animation: sp-bg-grid 40s linear infinite;
+}
+@keyframes sp-bg-grid { to { background-position: 240px 240px; } }
+.sp-bg-doodle {
+  position: absolute;
+  opacity: 0.5;
+  animation: sp-bg-float var(--d, 18s) ease-in-out infinite;
+  animation-delay: var(--dl, 0s);
+}
+.sp-bg-chip {
+  position: absolute;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--sp-pink-dark);
+  background: var(--sp-surface);
+  border: 2px solid var(--sp-pink-line);
+  border-radius: 10px;
+  padding: 4px 10px;
+  opacity: 0.7;
+  animation: sp-bg-float 22s ease-in-out infinite;
+  animation-delay: var(--dl, 0s);
+}
+@keyframes sp-bg-float {
+  0%, 100% { transform: translate(0, 0) rotate(var(--r, 0deg)); }
+  33% { transform: translate(14px, -22px) rotate(calc(var(--r, 0deg) + 8deg)); }
+  66% { transform: translate(-10px, -8px) rotate(calc(var(--r, 0deg) - 6deg)); }
+}
+html.dark .sp-bg-doodle { opacity: 0.22; }
+html.dark .sp-bg-chip { opacity: 0.45; }
+
+.sp-bg-strip {
+  position: fixed;
+  left: 272px;
+  right: 0;
+  bottom: 0;
+  height: 88px;
+  z-index: 5;
+  pointer-events: none;
+  display: none;
+  background: color-mix(in srgb, var(--sp-paper) 92%, transparent);
+  backdrop-filter: blur(4px);
+  border-top: 2px dashed var(--sp-lav-line);
+}
+@media (min-width: 1024px) { .sp-bg-strip { display: block; } }
+.sp-route { fill: none; stroke: var(--sp-lav-line); stroke-width: 4; stroke-dasharray: 2 14; stroke-linecap: round; }
+.sp-route-done { fill: none; stroke: var(--sp-peri); stroke-width: 4; stroke-dasharray: 2 14; stroke-linecap: round; opacity: 0.6; }
+.sp-route-cp { fill: var(--sp-surface); stroke: var(--sp-lav-line); stroke-width: 3; }
+.sp-route-cp.is-done { fill: var(--sp-peri); stroke: var(--sp-purple-deep); }
+.sp-route-cp.is-exam { fill: var(--sp-yellow); stroke: #33094a; }
+.sp-route-label { font-size: 12px; font-weight: 800; fill: var(--sp-muted); }
+.sp-route-flag { font-size: 13px; font-weight: 800; fill: var(--sp-pink-dark); }
+.sp-route-plane { animation: sp-route-bob 2.4s ease-in-out infinite; }
+@keyframes sp-route-bob { 50% { transform: translateY(-6px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-bg-desk, .sp-bg-doodle, .sp-bg-chip, .sp-route-plane { animation: none; }
+}
+
+/* ================= Nhà của Pilot (pilot-house.tsx) ================= */
+.sp-pilot-still * { animation: none !important; }
+.sp-house-room { background: #fdf3e4; min-height: 260px; }
+.sp-house-wall { position: absolute; inset: 0 0 34% 0; background-color: #efe6ff; background-image: radial-gradient(#ddd0fb 2px, transparent 2px); background-size: 26px 26px; transition: background-color 0.4s; }
+.sp-house-floor { position: absolute; inset: 66% 0 0 0; background: repeating-linear-gradient(90deg, #e9c99c 0 58px, #e2bf8f 58px 60px); border-top: 3px solid #33094a; }
+.sp-house-window { position: absolute; left: 8%; top: 17%; width: 120px; height: 110px; border: 3px solid #33094a; border-radius: 60px 60px 10px 10px; overflow: hidden; background: linear-gradient(#9ec5ff, #d7e8ff); transition: background 0.4s; }
+.sp-house-window::before, .sp-house-window::after { content: ""; position: absolute; background: #33094a; }
+.sp-house-window::before { left: 50%; top: 0; bottom: 0; width: 3px; transform: translateX(-50%); }
+.sp-house-window::after { top: 55%; left: 0; right: 0; height: 3px; }
+.sp-house-window span { position: absolute; right: 14px; top: 16px; width: 26px; height: 26px; border-radius: 99px; background: #f6c343; transition: 0.4s; }
+.sp-house-room.is-night .sp-house-window { background: linear-gradient(#2b2258, #4b3b8f); }
+.sp-house-room.is-night .sp-house-window span { background: #fff8d0; box-shadow: inset -7px -3px 0 0 #4b3b8f; }
+.sp-house-room.is-night .sp-house-wall { background-color: #cbbdee; }
+.sp-house-dim { position: absolute; inset: 0; background: rgba(30, 20, 70, 0.18); opacity: 0; transition: 0.4s; pointer-events: none; }
+.sp-house-room.is-night .sp-house-dim { opacity: 1; }
+.sp-house-shelf { position: absolute; right: 8%; top: 20%; width: 150px; }
+.sp-house-shelf i { display: block; width: 14px; border: 2.5px solid #33094a; border-bottom: 0; border-radius: 3px 3px 0 0; }
+.sp-house-board { height: 9px; border: 3px solid #33094a; border-radius: 4px; background: #c98d4f; }
+.sp-house-frame { position: absolute; right: 13%; top: 42%; width: 66px; height: 50px; border: 3px solid #33094a; background: #fff; border-radius: 6px; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #c42a63; transform: rotate(3deg); }
+.sp-house-lamp { position: absolute; left: 9%; bottom: 28%; width: 40px; }
+.sp-house-plant { position: absolute; right: 7%; bottom: 26%; width: 52px; }
+.sp-house-rug { position: absolute; left: 50%; bottom: 6%; width: 62%; height: 15%; transform: translateX(-50%); border-radius: 50%; background: #fdedf3; border: 3px solid #e0457b; box-shadow: inset 0 0 0 8px #fff, inset 0 0 0 11px #f6c6d7; }
+.sp-house-stage { position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%); border: 0; background: none; padding: 0; cursor: pointer; z-index: 2; }
+.sp-house-bubble { position: absolute; right: 52%; bottom: 50%; z-index: 4; white-space: nowrap; background: #fff; border: 2px solid #33094a; border-radius: 16px; padding: 8px 14px; font-weight: 700; font-size: 13.5px; color: #4a1068; box-shadow: 3px 3px 0 #33094a; animation: sp-house-say 0.25s ease-out both; }
+@keyframes sp-house-say { from { opacity: 0; transform: translateY(6px); } }
+
+/* Thẻ Nhà của Pilot ở thanh bên */
+.sp-house-card { background: linear-gradient(180deg, #dfe7ff 0 70%, #f3d9a8 70%); }
+.sp-house-card:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--sp-pink); }
+.sp-house-cloud { position: absolute; height: 11px; border-radius: 99px; background: #fff; opacity: 0.9; }
+.sp-house-peek { animation: sp-house-peek 3.6s ease-in-out infinite; }
+@keyframes sp-house-peek { 50% { transform: translateY(-4px) rotate(-3deg); } }
+@media (prefers-reduced-motion: reduce) { .sp-house-peek { animation: none; } }

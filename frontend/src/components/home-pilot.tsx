@@ -1,7 +1,8 @@
 "use client";
 
 import { tx } from "@/lib/i18n";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { PilotGlasses, PilotHat, PilotHeld, PilotScarf, coverColors, usePilotOutfit } from "@/components/pilot-wear";
 
 /*
  * Pilot ở trang chủ: đậu ở các ô có data-pilot-perch, tự bay sang chỗ khác,
@@ -74,6 +75,9 @@ export function HomePilot({
   celebrate?: boolean;
   hidden: boolean;
 }) {
+  const outfit = usePilotOutfit();
+  const cover = coverColors(outfit);
+  const uid = useId().replace(/:/g, "");
   const rootRef = useRef<HTMLDivElement>(null);
   const moveRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -397,13 +401,12 @@ export function HomePilot({
             <path className="b-leg" d="M116 172 v24 h8" />
           </g>
           <g className="b-body">
-            <rect x="48" y="48" width="104" height="126" rx="22" fill="#5b2a86" stroke="#33094a" strokeWidth="4" />
-            <rect x="48" y="48" width="18" height="126" rx="9" fill="#4a1068" stroke="#33094a" strokeWidth="4" />
+            <rect x="48" y="48" width="104" height="126" rx="22" fill={cover.main} stroke="#33094a" strokeWidth="4" />
+            <rect x="48" y="48" width="18" height="126" rx="9" fill={cover.spine} stroke="#33094a" strokeWidth="4" />
             {[72, 100, 128, 156].map((y) => (
               <circle key={y} cx="57" cy={y} r="3.5" fill="#f6c343" />
             ))}
-            <path d="M62 54 Q100 14 140 54 Z" fill="#e0457b" strokeWidth="4" {...stroke} />
-            <rect x="80" y="40" width="40" height="13" rx="6.5" fill="#bfe3ff" stroke="#33094a" strokeWidth="3.5" />
+            <PilotHat outfit={outfit} />
 
             {/* Mắt */}
             <g className="mv m-idle m-shy m-pout m-worried">
@@ -439,15 +442,11 @@ export function HomePilot({
               <path d="M101 106 q4 12 9 0" fill="#ff8fb6" stroke="#33094a" strokeWidth="2.5" />
             </g>
 
-            {/* Khăn */}
-            <path d="M66 118 Q105 132 146 118 L146 128 Q105 142 66 128 Z" fill="#e0457b" strokeWidth="3.5" {...stroke} />
-            <path d="M136 126 l16 22 l-14 -2 z" fill="#e0457b" strokeWidth="3" {...stroke} />
+            <PilotGlasses outfit={outfit} />
+            <PilotScarf outfit={outfit} uid={uid} />
 
             <g className="b-page">
-              <g className="b-page-flip">
-                <rect x="80" y="134" width="40" height="30" rx="4" fill="#fff" stroke="#33094a" strokeWidth="3" />
-                <path d="M86 143 h28 M86 150 h22 M86 157 h26" stroke="#d5ddf8" strokeWidth="3" strokeLinecap="round" />
-              </g>
+              <PilotHeld outfit={outfit} pageClassName="b-page-flip" />
             </g>
             <g className="b-arm">
               <path d="M150 120 q22 8 26 30" fill="none" strokeWidth="6" {...stroke} />

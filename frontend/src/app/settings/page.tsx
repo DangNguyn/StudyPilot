@@ -1,5 +1,6 @@
 "use client";
 
+import { setBgMotion, useBgMotion } from "@/lib/bg-motion";
 import { applyLanguage, currentLang, tx } from "@/lib/i18n";
 import { useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@/components/auth-provider";
@@ -84,6 +85,7 @@ export default function SettingsPage() {
   const [name, setName] = useState(savedName);
   const [reminder, setReminder] = useState<Reminder>(savedReminder);
   const [language, setLanguage] = useState(savedLanguage);
+  const bgMotion = useBgMotion();
   const savedTheme: Theme = meta.sp_theme === "dark" ? "dark" : "light";
   const [theme, setThemeState] = useState<Theme>(() => (typeof document === "undefined" ? savedTheme : currentTheme()));
   // Xem trước ngay khi gạt công tắc; bấm Lưu để giữ cho các lần đăng nhập sau
@@ -197,6 +199,13 @@ export default function SettingsPage() {
               description={tx("Chuyển sang nền tối, đỡ mỏi mắt khi học ban đêm.")}
               checked={theme === "dark"}
               onChange={(dark) => setTheme(dark ? "dark" : "light")}
+            />
+            <div className="my-5 border-t border-[var(--sp-line)]" />
+            <ToggleRow
+              title={tx("Hiệu ứng nền")}
+              description={tx("Đồ dùng học tập trôi nhẹ trên nền và đường bay tới ngày thi ở chân màn hình.")}
+              checked={bgMotion}
+              onChange={setBgMotion}
             />
           </SettingsCard>
 
