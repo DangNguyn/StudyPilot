@@ -889,3 +889,7 @@ html.dark .sp-bg-chip { opacity: 0.55; background: transparent; }
 .sp-house-peek { animation: sp-house-peek 3.6s ease-in-out infinite; }
 @keyframes sp-house-peek { 50% { transform: translateY(-4px) rotate(-3deg); } }
 @media (prefers-reduced-motion: reduce) { .sp-house-peek { animation: none; } }
+
+/* Tô dòng liên quan trong popup xem nhanh bài học */
+.sp-hl { background: linear-gradient(transparent 45%, #ffe58a 45%); color: var(--sp-ink); font-weight: 700; }
+html.dark .sp-hl { background: linear-gradient(transparent 45%, #6b5420 45%); }
