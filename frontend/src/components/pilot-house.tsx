@@ -17,6 +17,9 @@ import {
 import { IconCheck, IconLock, IconMoon, IconX } from "@/components/icons";
 import { isUnlocked, pilotProgress, type PilotProgress } from "@/lib/pilot-progress";
 
+/* Trang khác (vd Cài đặt) mở nhà bằng window.dispatchEvent(new Event(OPEN_PILOT_HOUSE_EVENT)) */
+export const OPEN_PILOT_HOUSE_EVENT = "sp-open-pilot-house";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 const PRAISE = [

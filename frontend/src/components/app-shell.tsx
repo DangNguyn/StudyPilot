@@ -7,7 +7,7 @@ import { useCurrentUserName } from "@/lib/current-user";
 import UserAvatar from "@/components/user-avatar";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import PilotHouse from "@/components/pilot-house";
+import PilotHouse, { OPEN_PILOT_HOUSE_EVENT } from "@/components/pilot-house";
 import StudyBackdrop from "@/components/study-backdrop";
 import { PilotMascot } from "@/components/loading-play";
 import { useBgMotion } from "@/lib/bg-motion";
@@ -372,6 +372,11 @@ function SignedInShell({
   const bgMotion = useBgMotion();
   const closeHouse = useCallback(() => setHouseOpen(false), []);
   const openHouse = useCallback(() => setHouseOpen(true), []);
+
+  useEffect(() => {
+    window.addEventListener(OPEN_PILOT_HOUSE_EVENT, openHouse);
+    return () => window.removeEventListener(OPEN_PILOT_HOUSE_EVENT, openHouse);
+  }, [openHouse]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("sp-bg-live", bgMotion);

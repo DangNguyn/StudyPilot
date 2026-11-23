@@ -8,6 +8,8 @@ import { IconAlert, IconBell, IconX, Sparkle } from "@/components/icons";
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
+export type NotificationSettings = Settings;
+
 type Settings = {
   email: string | null;
   verified: boolean;
@@ -21,6 +23,10 @@ type Settings = {
 };
 
 type Notice = { tone: "ok" | "error"; text: string } | null;
+
+export async function notificationRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  return request<T>(path, init);
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}/api/notifications${path}`, {

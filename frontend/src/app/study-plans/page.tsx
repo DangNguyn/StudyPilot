@@ -10,6 +10,7 @@ import {
   type FormEvent,
 } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth-provider";
 import { getMainTopicTitle } from "@/lib/content-titles";
 import StudyDayPicker from "@/components/study-day-picker";
 import PlanOverviewCards from "@/components/plan-overview-cards";
@@ -267,7 +268,11 @@ export default function StudyPlansPage() {
 
   // Cách chia kế hoạch + AI nhận diện chương ngay khi chọn tài liệu
   const [planMode, setPlanMode] = useState<PlanMode>("chapter");
-  const [contentLanguage, setContentLanguage] = useState<ContentLanguage>("vi");
+  const { user } = useAuth();
+  // Mặc định theo Cài đặt → Giao diện & ngôn ngữ, vẫn đổi được cho từng kế hoạch
+  const [contentLanguage, setContentLanguage] = useState<ContentLanguage>(
+    user?.user_metadata?.sp_content_language === "en" ? "en" : "vi",
+  );
   const [outline, setOutline] = useState<OutlineState>({ status: "idle" });
   const [focusChapters, setFocusChapters] = useState<Set<number>>(new Set());
   const outlineRequestRef = useRef(0);
