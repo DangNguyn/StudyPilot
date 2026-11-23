@@ -788,7 +788,8 @@ html.sp-theme-fade *::after {
 
 /* ================= Nền chuyển động (study-backdrop.tsx) ================= */
 /* Khi bật nền động, lưới chấm của body nhường cho lớp nền trôi */
-html.sp-bg-live body { background-image: none; }
+/* body trong suốt để lớp nền (z-index -1) nằm trên màu giấy của html, không bị nền body che */
+html.sp-bg-live body { background: transparent; }
 .sp-bg-desk {
   position: fixed;
   inset: 0;
