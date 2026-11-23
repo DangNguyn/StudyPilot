@@ -147,6 +147,60 @@ export function CreatePlanHero({ steps, ready = false }: { steps: CreateStep[]; 
 
 /* ---------- Thẻ chọn cách chia kế hoạch ---------- */
 
+export type ContentLanguage = "vi" | "en";
+
+/* Ngôn ngữ AI viết tóm tắt, câu hỏi, bài ôn, giải thích cho kế hoạch */
+export function ContentLanguagePicker({ value, onChange }: { value: ContentLanguage; onChange: (value: ContentLanguage) => void }) {
+  const options: { value: ContentLanguage; code: string; title: string; text: string; tone: string }[] = [
+    { value: "vi", code: "VI", title: "Tiếng Việt", text: tx("Thuật ngữ giữ tiếng Anh trong ngoặc"), tone: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]" },
+    { value: "en", code: "EN", title: "English", text: tx("Toàn bộ nội dung bằng tiếng Anh"), tone: "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]" },
+  ];
+  return (
+    <div className="mt-4">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <p className="text-[14px] font-bold text-[var(--sp-ink)]">{tx("Ngôn ngữ nội dung")}</p>
+        <p className="text-[12.5px] text-[var(--sp-muted)]">{tx("Tóm tắt, câu hỏi, bài ôn, giải thích")}</p>
+      </div>
+      <div role="radiogroup" aria-label={tx("Ngôn ngữ nội dung")} className="grid gap-3 sm:grid-cols-2">
+        {options.map((option) => {
+          const active = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onChange(option.value)}
+              className={`flex items-center gap-3 rounded-2xl border-2 px-3.5 py-3 text-left transition ${
+                active
+                  ? "border-[var(--sp-purple-deep)] bg-[var(--sp-lav)] shadow-[3px_3px_0_var(--sp-peri)]"
+                  : "border-[var(--sp-line)] bg-[var(--sp-surface)] hover:border-[var(--sp-lav-line)]"
+              }`}
+            >
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border-2 border-[var(--sp-purple-deep)] text-[13px] font-extrabold ${option.tone}`}>
+                {option.code}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[15px] font-bold text-[var(--sp-ink)]">{option.title}</span>
+                <span className="block text-[12.5px] leading-snug text-[var(--sp-muted)]">{option.text}</span>
+              </span>
+              <span
+                aria-hidden="true"
+                className={`ml-auto h-5 w-5 shrink-0 rounded-full border-2 ${active ? "border-[var(--sp-peri)] bg-[radial-gradient(var(--sp-peri)_45%,transparent_50%)]" : "border-[var(--sp-soft)]"}`}
+              />
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[12.5px] leading-snug text-[var(--sp-muted)]">
+        {value === "vi"
+          ? tx("Tài liệu tiếng Anh vẫn dùng được: AI đọc bản gốc rồi viết tóm tắt và câu hỏi bằng tiếng Việt.")
+          : tx("Mọi nội dung AI viết cho kế hoạch này sẽ bằng tiếng Anh, kể cả khi tài liệu là tiếng Việt.")}
+      </p>
+    </div>
+  );
+}
+
 export function PlanModeCards({
   mode,
   onChange,

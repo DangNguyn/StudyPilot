@@ -8,10 +8,22 @@ load_dotenv()
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
-# Có thể đổi model trong file .env, ví dụ:
-# CLAUDE_MODEL=claude-opus-5-5 (chất lượng cao hơn, chi phí cao hơn)
-# CLAUDE_MODEL=claude-haiku-5-5 (nhanh và rẻ hơn)
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
+# Hai mức model, đổi trong file .env:
+# CLAUDE_MODEL_HEAVY: việc nặng, chạy một lần mỗi tài liệu (nhận diện chương, viết tóm tắt)
+# CLAUDE_MODEL_LIGHT: việc lặp lại hằng ngày (câu hỏi lồng, quiz, kiểm tra lại, đánh giá, mindmap)
+# CLAUDE_MODEL cũ vẫn được đọc làm model nặng cho tương thích.
+CLAUDE_MODEL_HEAVY = os.getenv("CLAUDE_MODEL_HEAVY") or os.getenv("CLAUDE_MODEL") or "claude-sonnet-5-5"
+CLAUDE_MODEL_LIGHT = os.getenv("CLAUDE_MODEL_LIGHT") or "claude-haiku-5-5"
+CLAUDE_MODEL = CLAUDE_MODEL_HEAVY
+
+
+def model_for(tier: str) -> str:
+    return CLAUDE_MODEL_LIGHT if tier == "light" else CLAUDE_MODEL_HEAVY
+
+
+def _effort(tier: str) -> dict:
+    # Việc nhẹ suy nghĩ ít: rẻ hơn và không ăn hết max_tokens vào phần suy nghĩ
+    return {"effort": "low"} if tier == "light" else {}
 
 _client = None
 _client_lock = threading.Lock()
@@ -128,6 +140,7 @@ def generate_structured(
     max_tokens: int = 8000,
     tool_name: str = "",
     tool_description: str = "",
+    tier: str = "heavy",
 ) -> dict:
     """
     Gọi Claude với Structured Outputs (output_config.format = json_schema)
@@ -140,7 +153,7 @@ def generate_structured(
     client = _get_client()
 
     response = client.messages.create(
-        model=CLAUDE_MODEL,
+        model=model_for(tier),
         max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": prompt}],
@@ -148,7 +161,8 @@ def generate_structured(
             "format": {
                 "type": "json_schema",
                 "schema": _prepare_schema(input_schema),
-            }
+            },
+            **_effort(tier),
         },
     )
 
@@ -170,3 +184,26 @@ def generate_structured(
         raise ValueError("Claude không trả về dữ liệu.")
 
     return _parse_json_text(text)
+
+
+def generate_claude_text(prompt: str, *, tier: str = "light", system: str = "", max_tokens: int = 16000) -> str:
+    """Gọi Claude trả về văn bản thô (dùng cho các prompt tự yêu cầu JSON)."""
+    response = _get_client().messages.create(
+        model=model_for(tier),
+        max_tokens=max_tokens,
+        system=system or "Bạn là trợ lý AI của StudyPilot, chuyên hỗ trợ sinh viên học tập.",
+        messages=[{"role": "user", "content": prompt}],
+        output_config=_effort(tier),
+    )
+    if response.stop_reason == "max_tokens":
+        raise ClaudeOutputTruncated("Claude trả về kết quả quá dài và bị cắt ngang.")
+    if response.stop_reason == "refusal":
+        raise ValueError("Claude từ chối xử lý yêu cầu này.")
+    text = "".join(
+        getattr(block, "text", "")
+        for block in response.content
+        if getattr(block, "type", None) == "text"
+    )
+    if not text.strip():
+        raise ValueError("Claude không trả về dữ liệu.")
+    return text

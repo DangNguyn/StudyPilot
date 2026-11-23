@@ -1,7 +1,11 @@
 "use client";
 
+import { setBgMotion, useBgMotion } from "@/lib/bg-motion";
 import { applyLanguage, currentLang, tx } from "@/lib/i18n";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { usePilotRest } from "@/components/home-pilot";
+import { OPEN_PILOT_HOUSE_EVENT } from "@/components/pilot-house";
+import { notificationRequest, type NotificationSettings } from "@/components/notification-settings";
 import { useAuth } from "@/components/auth-provider";
 import AvatarCropper from "@/components/avatar-cropper";
 import UserAvatar from "@/components/user-avatar";
@@ -9,11 +13,8 @@ import {
   IconBell,
   IconCheck,
   IconChevronDown,
-  IconChevronRight,
-  IconClock,
   IconEye,
   IconEyeOff,
-  IconGlobe,
   IconIdCard,
   IconImage,
   IconLock,
@@ -38,24 +39,7 @@ const PRESET_AVATARS = [
   { src: "/avatars/girl.png", label: tx("Bạn nữ đeo tai nghe") },
   { src: "/avatars/boy.png", label: tx("Bạn nam tóc đen") },
 ];
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-// Lưu giờ nhắc + bật/tắt sang backend gửi thông báo (cùng dữ liệu với nút chuông)
-async function syncReminder(reminder: { enabled: boolean; hour: number }, email: string) {
-  try {
-    await fetch(`${API_URL}/api/notifications/settings`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email || undefined, enabled: reminder.enabled, daily_hour: reminder.hour }),
-    });
-  } catch {
-    /* backend chưa chạy: vẫn giữ lựa chọn trong tài khoản */
-  }
-}
-
-const REMINDER_HOURS = Array.from({ length: 17 }, (_, index) => index + 5); // 05:00 → 21:00
-
-type Reminder = { enabled: boolean; hour: number };
 type Toast = { tone: "ok" | "error"; text: string } | null;
 
 function storageErrorMessage(error: unknown) {
@@ -74,33 +58,19 @@ export default function SettingsPage() {
   const savedName = useCurrentUserName();
   const savedAvatar = useCurrentUserAvatar();
   const meta = user?.user_metadata || {};
-  const savedReminder: Reminder = {
-    enabled: meta.sp_reminder?.enabled ?? true,
-    hour: Number(meta.sp_reminder?.hour ?? 19),
-  };
   const savedLanguage = String(meta.sp_language || currentLang());
+  const savedContentLanguage = meta.sp_content_language === "en" ? "en" : "vi";
   const provider = String(user?.app_metadata?.provider || "email");
+  // Có mật khẩu: tài khoản đăng ký bằng email, hoặc đã tạo mật khẩu ở trang này
+  const hasPassword = Boolean(user?.identities?.some((identity) => identity.provider === "email") || meta.sp_has_password);
 
   const [name, setName] = useState(savedName);
-  const [reminder, setReminder] = useState<Reminder>(savedReminder);
-  const [language, setLanguage] = useState(savedLanguage);
-  const savedTheme: Theme = meta.sp_theme === "dark" ? "dark" : "light";
-  const [theme, setThemeState] = useState<Theme>(() => (typeof document === "undefined" ? savedTheme : currentTheme()));
-  // Xem trước ngay khi gạt công tắc; bấm Lưu để giữ cho các lần đăng nhập sau
-  const setTheme = (next: Theme) => {
-    setThemeState(next);
-    applyTheme(next);
-  };
-  const [saving, setSaving] = useState(false);
+  const bgMotion = useBgMotion();
+  const [pilotRest, setPilotRest] = usePilotRest();
+  const [theme, setThemeState] = useState<Theme>(() => (typeof document === "undefined" ? "light" : currentTheme()));
+  const [savingName, setSavingName] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
   const toastTimer = useRef<number | null>(null);
-
-  const dirty =
-    name.trim() !== savedName ||
-    reminder.enabled !== savedReminder.enabled ||
-    reminder.hour !== savedReminder.hour ||
-    theme !== savedTheme ||
-    language !== savedLanguage;
 
   function showToast(next: Toast) {
     setToast(next);
@@ -108,150 +78,202 @@ export default function SettingsPage() {
     toastTimer.current = window.setTimeout(() => setToast(null), 3500);
   }
 
-  async function saveAll() {
-    const client = getAuthClient();
-    if (!client || saving) return;
+  // Tuỳ chọn giao diện / ngôn ngữ lưu ngay khi đổi, không cần bấm Lưu
+  async function saveMeta(data: Record<string, unknown>) {
+    const { error } = (await getAuthClient()?.auth.updateUser({ data })) || {};
+    if (error) showToast({ tone: "error", text: authErrorMessage(error) });
+    return !error;
+  }
+
+  function setTheme(next: Theme) {
+    setThemeState(next);
+    applyTheme(next);
+    void saveMeta({ sp_theme: next });
+  }
+
+  async function setLanguage(next: string) {
+    if (next === savedLanguage) return;
+    if (await saveMeta({ sp_language: next })) {
+      showToast({ tone: "ok", text: tx("Đã đổi ngôn ngữ, trang sẽ tải lại.") });
+      window.setTimeout(() => applyLanguage(next === "en" ? "en" : "vi"), 600);
+    }
+  }
+
+  async function saveName() {
     const cleanName = name.trim().replace(/\s+/g, " ");
     if (cleanName.length < 2) {
       showToast({ tone: "error", text: tx("Tên cần ít nhất 2 ký tự.") });
       return;
     }
-    setSaving(true);
-    const { error } = await client.auth.updateUser({
-      data: { sp_name: cleanName, sp_reminder: reminder, sp_language: language, sp_theme: theme },
-    });
-    // Đồng bộ nhắc nhở với bảng thông báo (nút chuông) để cả hai luôn khớp nhau
-    if (!error) await syncReminder(reminder, user?.email || "");
-    setSaving(false);
-    if (error) showToast({ tone: "error", text: authErrorMessage(error) });
-    else {
+    setSavingName(true);
+    const ok = await saveMeta({ sp_name: cleanName });
+    setSavingName(false);
+    if (ok) {
       setName(cleanName);
       showToast({ tone: "ok", text: tx("Đã lưu thay đổi.") });
-      // Đổi ngôn ngữ: tải lại trang để cả web chuyển sang ngôn ngữ mới
-      if (language !== currentLang()) {
-        window.setTimeout(() => applyLanguage(language === "en" ? "en" : "vi"), 600);
-      }
     }
   }
 
+  const sections = [
+    { id: "account", label: tx("Tài khoản"), icon: <IconUser size={15} /> },
+    { id: "security", label: tx("Bảo mật & mật khẩu"), icon: <IconLock size={15} /> },
+    { id: "appearance", label: tx("Giao diện & ngôn ngữ"), icon: <IconMonitor size={15} /> },
+    { id: "notifications", label: tx("Thông báo"), icon: <IconBell size={15} /> },
+  ];
+
   return (
-    <div className="mx-auto max-w-7xl space-y-6 pb-10">
-      {/* Đầu trang */}
-      <section>
-        <p className="text-sm font-medium text-[var(--sp-muted)]">{tx("KHÔNG GIAN HỌC TẬP / CÀI ĐẶT")}</p>
-        <h1 className="mt-2 flex items-end gap-3 text-[40px] leading-tight sm:text-[50px]">
-          <span>
-
-            {currentLang() === "en" ? (
-              <span className="sp-squiggle">Settings</span>
-            ) : (
-              <>
-                Cài <span className="sp-squiggle">đặt</span>
-              </>
-            )}
-          </span>
-          <Sparkle size={24} className="sp-twinkle mb-3 text-[var(--sp-yellow)]" />
-        </h1>
-        <p className="mt-1 text-[15px] text-[var(--sp-muted)]">
-
-          {tx("Quản lý tài khoản, giao diện và các tuỳ chọn học tập của bạn.")}
-        </p>
+    <div className="mx-auto max-w-7xl space-y-5 pb-10">
+      {/* Đầu trang: tiêu đề + thẻ tài khoản */}
+      <section className="flex flex-wrap items-end justify-between gap-5">
+        <div>
+          <p className="text-sm font-medium text-[var(--sp-muted)]">{tx("KHÔNG GIAN HỌC TẬP / CÀI ĐẶT")}</p>
+          <h1 className="mt-2 flex items-end gap-3 text-[40px] leading-tight sm:text-[50px]">
+            <span>
+              {currentLang() === "en" ? (
+                <span className="sp-squiggle">Settings</span>
+              ) : (
+                <>
+                  Cài <span className="sp-squiggle">đặt</span>
+                </>
+              )}
+            </span>
+            <Sparkle size={24} className="sp-twinkle mb-3 text-[var(--sp-yellow)]" />
+          </h1>
+          <p className="mt-1 text-[15px] text-[var(--sp-muted)]">
+            {tx("Quản lý tài khoản, bảo mật, giao diện và thông báo học tập.")}
+          </p>
+        </div>
+        <div className="flex max-w-full items-center gap-3.5 rounded-[20px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-surface)] py-2.5 pl-2.5 pr-4 shadow-[4px_4px_0_var(--sp-pink-line)]">
+          <UserAvatar size={52} />
+          <div className="min-w-0">
+            <p className="truncate font-bold text-[var(--sp-ink)]">{savedName}</p>
+            <p className="truncate text-[12.5px] text-[var(--sp-muted)]">{user?.email}</p>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {provider === "google" && <StatusChip tone="ok">Google</StatusChip>}
+              <StatusChip tone={hasPassword ? "ok" : "warn"}>{hasPassword ? tx("Có mật khẩu") : tx("Chưa có mật khẩu")}</StatusChip>
+            </div>
+          </div>
+        </div>
       </section>
 
-      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-        {/* Tài khoản */}
-        <SettingsCard icon={<IconUser size={22} />} title={tx("Tài khoản")}>
-          <Row icon={<IconIdCard size={20} />} label={tx("Tên")}>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={60}
-              aria-label={tx("Tên hiển thị")}
-              className="h-12 w-full rounded-2xl border-2 border-[var(--sp-line)] bg-white px-4 text-[15px] font-semibold text-[var(--sp-ink)] outline-none transition focus:border-[var(--sp-peri)]"
-            />
-          </Row>
+      {/* Nhảy nhanh tới từng mục */}
+      <nav className="flex flex-wrap gap-2" aria-label={tx("Các mục cài đặt")}>
+        {sections.map((section) => (
+          <a
+            key={section.id}
+            href={`#${section.id}`}
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-[var(--sp-line)] bg-[var(--sp-surface)] px-3.5 text-[13px] font-bold text-[var(--sp-text-2)] transition hover:border-[var(--sp-purple-deep)]"
+          >
+            {section.icon}
+            {section.label}
+          </a>
+        ))}
+      </nav>
 
-          <Row icon={<IconMail size={20} />} label="Email">
-            <div className="flex h-12 w-full items-center gap-3 rounded-2xl border-2 border-[var(--sp-line)] bg-[var(--sp-surface-2)] px-4">
-              <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-[var(--sp-text-2)]">{user?.email}</span>
-              {provider === "google" ? (
-                <span className="sp-chip shrink-0 bg-white text-[12px]">Google</span>
-              ) : (
+      <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
+        <div className="flex flex-col gap-6">
+          {/* Tài khoản */}
+          <SettingsCard id="account" icon={<IconUser size={22} />} title={tx("Tài khoản")} subtitle={tx("Thông tin hiển thị trên web")}>
+            <Row icon={<IconIdCard size={20} />} label={tx("Tên")}>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={60}
+                aria-label={tx("Tên hiển thị")}
+                className="h-12 w-full rounded-2xl border-2 border-[var(--sp-line)] bg-white px-4 text-[15px] font-semibold text-[var(--sp-ink)] outline-none transition focus:border-[var(--sp-peri)]"
+              />
+            </Row>
+
+            <Row icon={<IconMail size={20} />} label="Email">
+              <div className="flex h-12 w-full items-center gap-3 rounded-2xl border-2 border-[var(--sp-line)] bg-[var(--sp-surface-2)] px-4">
+                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-[var(--sp-text-2)]">{user?.email}</span>
                 <span title={tx("Email dùng để đăng nhập nên không đổi được")} className="text-[var(--sp-soft)]">
                   <IconLock size={16} />
                 </span>
-              )}
+              </div>
+            </Row>
+
+            <AvatarRow savedAvatar={savedAvatar} userId={user?.id || ""} onToast={showToast} />
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => void saveName()}
+                disabled={savingName || name.trim() === savedName}
+                className="sp-btn sp-btn-primary h-11 px-5 text-[15px] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingName ? tx("Đang lưu...") : name.trim() === savedName ? tx("Đã lưu") : tx("Lưu thay đổi")}
+              </button>
             </div>
-          </Row>
+          </SettingsCard>
 
-          <AvatarRow savedAvatar={savedAvatar} userId={user?.id || ""} onToast={showToast} />
+          {/* Bảo mật & mật khẩu */}
+          <SecurityCard
+            email={user?.email || ""}
+            provider={provider}
+            hasPassword={hasPassword}
+            onToast={showToast}
+          />
+        </div>
 
-          <PasswordRow provider={provider} onToast={showToast} />
-        </SettingsCard>
-
-        <div className="space-y-6">
-          {/* Giao diện */}
-          <SettingsCard icon={<IconMonitor size={22} />} title={tx("Giao diện")}>
+        <div className="flex flex-col gap-6">
+          {/* Giao diện & ngôn ngữ */}
+          <SettingsCard id="appearance" icon={<IconMonitor size={22} />} title={tx("Giao diện & ngôn ngữ")} subtitle={tx("Màu sắc, hiệu ứng, Pilot và ngôn ngữ")}>
             <ToggleRow
               title={tx("Chế độ tối")}
               description={tx("Chuyển sang nền tối, đỡ mỏi mắt khi học ban đêm.")}
               checked={theme === "dark"}
               onChange={(dark) => setTheme(dark ? "dark" : "light")}
             />
-          </SettingsCard>
-
-          {/* Nhắc nhở học tập */}
-          <SettingsCard icon={<IconBell size={22} />} title={tx("Nhắc nhở học tập")}>
             <ToggleRow
-              title={tx("Bật nhắc nhở")}
-              description={tx("Nhắc bạn học bài và ôn lại phần còn yếu đúng lịch mỗi ngày.")}
-              checked={reminder.enabled}
-              onChange={(enabled) => setReminder((current) => ({ ...current, enabled }))}
+              title={tx("Hiệu ứng nền")}
+              description={tx("Đồ dùng học tập trôi nhẹ trên nền và đường bay tới ngày thi ở chân màn hình.")}
+              checked={bgMotion}
+              onChange={setBgMotion}
             />
-            <div className="flex flex-col gap-3 border-t border-[var(--sp-line)] pt-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className={`text-[16px] font-bold ${reminder.enabled ? "text-[var(--sp-ink)]" : "text-[var(--sp-soft)]"}`}>
-
-                {tx("Thời gian nhắc nhở")}
-              </p>
+            <ToggleRow
+              title={tx("Pilot bay lượn ở Tổng quan")}
+              description={tx("Tắt nếu bạn muốn trang chủ yên tĩnh hơn.")}
+              checked={!pilotRest}
+              onChange={(on) => setPilotRest(!on)}
+            />
+            <SettingLine title={tx("Nhà của Pilot")} description={tx("Thay đồ, phụ kiện cho Pilot.")}>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new Event(OPEN_PILOT_HOUSE_EVENT))}
+                className="sp-btn sp-btn-secondary h-10 px-4 text-[14px]"
+              >
+                🏠 {tx("Mở nhà")}
+              </button>
+            </SettingLine>
+            <SettingLine title={tx("Ngôn ngữ giao diện")} description={tx("Đổi xong trang tự tải lại.")}>
               <SelectBox
-                icon={<IconClock size={18} />}
-                value={String(reminder.hour)}
-                disabled={!reminder.enabled}
-                ariaLabel={tx("Giờ nhận mail nhắc học")}
-                onChange={(value) => setReminder((current) => ({ ...current, hour: Number(value) }))}
-                options={REMINDER_HOURS.map((hour) => ({ value: String(hour), label: `${String(hour).padStart(2, "0")}:00` }))}
+                value={savedLanguage}
+                ariaLabel={tx("Ngôn ngữ hiển thị")}
+                onChange={(value) => void setLanguage(value)}
+                options={[
+                  // Tên ngôn ngữ luôn viết bằng chính ngôn ngữ đó
+                  { value: "vi", label: "Tiếng Việt" },
+                  { value: "en", label: "English" },
+                ]}
               />
-            </div>
+            </SettingLine>
+            <SettingLine title={tx("Ngôn ngữ nội dung mặc định")} description={tx("Cho kế hoạch mới: tóm tắt, câu hỏi, giải thích.")}>
+              <SelectBox
+                value={savedContentLanguage}
+                ariaLabel={tx("Ngôn ngữ nội dung mặc định")}
+                onChange={(value) => void saveMeta({ sp_content_language: value }).then((ok) => ok && showToast({ tone: "ok", text: tx("Đã lưu thay đổi.") }))}
+                options={[
+                  { value: "vi", label: "Tiếng Việt" },
+                  { value: "en", label: "English" },
+                ]}
+              />
+            </SettingLine>
           </SettingsCard>
 
-          {/* Ngôn ngữ */}
-          <SettingsCard icon={<IconGlobe size={22} />} title={tx("Ngôn ngữ")}>
-            <SelectBox
-              value={language}
-              ariaLabel={tx("Ngôn ngữ hiển thị")}
-              onChange={setLanguage}
-              wide
-              options={[
-                // Tên ngôn ngữ luôn viết bằng chính ngôn ngữ đó
-                { value: "vi", label: "Tiếng Việt" },
-                { value: "en", label: "English" },
-              ]}
-            />
-          </SettingsCard>
+          {/* Thông báo học tập: cùng dữ liệu với nút chuông */}
+          <NotificationCard email={user?.email || ""} />
         </div>
-      </div>
-
-      {/* Lưu thay đổi */}
-      <div className="flex justify-end border-t border-[var(--sp-line)] pt-6">
-        <button
-          type="button"
-          onClick={() => void saveAll()}
-          disabled={!dirty || saving}
-          className="flex h-13 items-center gap-2.5 rounded-2xl border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-peri)] px-8 py-3.5 text-[17px] font-bold text-white shadow-[5px_5px_0_var(--sp-pink)] transition hover:bg-[var(--sp-peri-dark)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[3px_3px_0_var(--sp-pink)] disabled:cursor-not-allowed disabled:border-[var(--sp-lav-line)] disabled:bg-[var(--sp-lav-line)] disabled:text-white/90 disabled:shadow-none"
-        >
-          {saving ? <Sparkle size={18} className="sp-twinkle" /> : <IconCheck size={20} />}
-          {saving ? tx("Đang lưu...") : dirty ? tx("Lưu thay đổi") : tx("Đã lưu")}
-        </button>
       </div>
 
       {toast && (
@@ -273,17 +295,73 @@ export default function SettingsPage() {
 
 /* ---------- Khối giao diện dùng chung ---------- */
 
-function SettingsCard({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+function SettingsCard({
+  id,
+  icon,
+  title,
+  subtitle,
+  tone = "pink",
+  grow = false,
+  children,
+}: {
+  id: string;
+  icon: ReactNode;
+  title: string;
+  subtitle?: string;
+  tone?: "pink" | "blue";
+  /* thẻ cuối mỗi cột giãn ra để hai cột cao bằng nhau */
+  grow?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <section className="rounded-[26px] border-2 border-[var(--sp-purple-deep)] bg-white p-5 shadow-[5px_5px_0_var(--sp-pink-line)] sm:p-7">
-      <div className="mb-5 flex items-center gap-4 border-b border-[var(--sp-line)] pb-5">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-pink)] text-white">
+    <section
+      id={id}
+      className={`scroll-mt-24 rounded-[26px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-surface)] p-5 sm:p-6 ${
+        tone === "blue" ? "shadow-[5px_5px_0_var(--sp-lav-line)]" : "shadow-[5px_5px_0_var(--sp-pink-line)]"
+      } ${grow ? "flex flex-1 flex-col" : ""}`}
+    >
+      <div className="mb-4 flex items-center gap-3.5 border-b-2 border-[var(--sp-line)] pb-4">
+        <span
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border-2 border-[var(--sp-purple-deep)] text-white shadow-[2px_2px_0_var(--sp-purple-deep)] ${
+            tone === "blue" ? "bg-[var(--sp-peri)]" : "bg-[var(--sp-pink)]"
+          }`}
+        >
           {icon}
         </span>
-        <h2 className="text-[24px] font-extrabold text-[var(--sp-purple)]">{title}</h2>
+        <div>
+          <h2 className="text-[22px] font-extrabold leading-tight text-[var(--sp-purple)]">{title}</h2>
+          {subtitle && <p className="text-[13px] font-semibold text-[var(--sp-muted)]">{subtitle}</p>}
+        </div>
       </div>
-      <div className="space-y-5">{children}</div>
+      <div className={`space-y-5 ${grow ? "flex flex-1 flex-col" : ""}`}>{children}</div>
     </section>
+  );
+}
+
+function StatusChip({ tone, children }: { tone: "ok" | "warn"; children: ReactNode }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-[1px] text-[11px] font-extrabold ${
+        tone === "ok"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-[#f3dc9b] bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]"
+      }`}
+    >
+      {tone === "ok" && <IconCheck size={11} />}
+      {children}
+    </span>
+  );
+}
+
+function SettingLine({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-[16px] font-bold text-[var(--sp-ink)]">{title}</p>
+        <p className="mt-1 text-[14px] leading-5 text-[var(--sp-muted)]">{description}</p>
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
   );
 }
 
@@ -367,6 +445,7 @@ function SelectBox({
   onChange,
   disabled,
   wide,
+  compact,
   ariaLabel,
 }: {
   icon?: ReactNode;
@@ -375,10 +454,11 @@ function SelectBox({
   onChange: (value: string) => void;
   disabled?: boolean;
   wide?: boolean;
+  compact?: boolean;
   ariaLabel: string;
 }) {
   return (
-    <label className={`relative flex h-12 items-center rounded-2xl border-2 border-[var(--sp-line)] bg-white transition focus-within:border-[var(--sp-peri)] ${wide ? "w-full" : "w-full sm:w-[260px]"} ${disabled ? "opacity-50" : ""}`}>
+    <label className={`relative flex h-12 items-center rounded-2xl border-2 border-[var(--sp-line)] bg-white transition focus-within:border-[var(--sp-peri)] ${wide ? "w-full" : compact ? "w-[110px]" : "w-full sm:w-[170px]"} ${disabled ? "opacity-50" : ""}`}>
       {icon && <span className="pointer-events-none absolute left-4 text-[var(--sp-text-2)]">{icon}</span>}
       <select
         value={value}
@@ -593,18 +673,43 @@ function AvatarRow({
   );
 }
 
-/* ---------- Đổi mật khẩu ---------- */
+/* ---------- Bảo mật & mật khẩu ---------- */
 
-function PasswordRow({ provider, onToast }: { provider: string; onToast: (toast: Toast) => void }) {
-  const [open, setOpen] = useState(false);
+const PASSWORD_RULES = [
+  { key: "len", label: tx("Ít nhất 8 ký tự"), test: (value: string) => value.length >= 8 },
+  { key: "num", label: tx("Có chữ số"), test: (value: string) => /\d/.test(value) },
+  { key: "case", label: tx("Có chữ hoa và thường"), test: (value: string) => /[a-z]/.test(value) && /[A-Z]/.test(value) },
+  { key: "sym", label: tx("Có ký tự đặc biệt"), test: (value: string) => /[^A-Za-z0-9]/.test(value) },
+];
+const STRENGTH_COLORS = ["var(--sp-pink)", "#f0954a", "var(--sp-yellow)", "#2f9e6e"];
+
+function SecurityCard({
+  email,
+  provider,
+  hasPassword,
+  onToast,
+}: {
+  email: string;
+  provider: string;
+  hasPassword: boolean;
+  onToast: (toast: Toast) => void;
+}) {
+  const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState("");
+
+  const passed = PASSWORD_RULES.filter((rule) => rule.test(password)).length;
 
   async function submit() {
     setError("");
+    if (hasPassword && !current) {
+      setError(tx("Nhập mật khẩu hiện tại trước nhé."));
+      return;
+    }
+    // Bắt buộc tối thiểu: 8 ký tự, có chữ và số (2 điều kiện còn lại chỉ để mật khẩu mạnh hơn)
     if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
       setError(tx("Mật khẩu cần ít nhất 8 ký tự, có cả chữ và số."));
       return;
@@ -615,55 +720,132 @@ function PasswordRow({ provider, onToast }: { provider: string; onToast: (toast:
     }
     const client = getAuthClient();
     if (!client) return;
-    setBusy(true);
-    const { error: updateError } = await client.auth.updateUser({ password });
-    setBusy(false);
+    setBusy("save");
+    if (hasPassword) {
+      // Supabase không tự hỏi mật khẩu cũ: đăng nhập thử để chắc đúng chủ tài khoản
+      const { error: checkError } = await client.auth.signInWithPassword({ email, password: current });
+      if (checkError) {
+        setBusy("");
+        setError(tx("Mật khẩu hiện tại chưa đúng."));
+        return;
+      }
+    }
+    const { error: updateError } = await client.auth.updateUser({ password, data: { sp_has_password: true } });
+    setBusy("");
     if (updateError) {
       setError(authErrorMessage(updateError));
       return;
     }
+    setCurrent("");
     setPassword("");
     setConfirm("");
-    setOpen(false);
-    onToast({ tone: "ok", text: tx("Đã đổi mật khẩu.") });
+    onToast({ tone: "ok", text: hasPassword ? tx("Đã đổi mật khẩu.") : tx("Đã tạo mật khẩu. Giờ bạn đăng nhập được bằng email hoặc Google.") });
+  }
+
+  async function sendReset() {
+    const client = getAuthClient();
+    if (!client || !email) return;
+    setBusy("reset");
+    const { error: resetError } = await client.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setBusy("");
+    onToast(
+      resetError
+        ? { tone: "error", text: authErrorMessage(resetError) }
+        : { tone: "ok", text: tx("Đã gửi link đặt lại mật khẩu tới {0}.", [email]) },
+    );
+  }
+
+  async function signOutOthers() {
+    const client = getAuthClient();
+    if (!client) return;
+    setBusy("others");
+    const { error: signOutError } = await client.auth.signOut({ scope: "others" });
+    setBusy("");
+    onToast(
+      signOutError
+        ? { tone: "error", text: authErrorMessage(signOutError) }
+        : { tone: "ok", text: tx("Đã đăng xuất khỏi các thiết bị khác.") },
+    );
   }
 
   const inputClass =
-    "h-12 w-full rounded-2xl border-2 border-[var(--sp-line)] bg-white px-4 pr-12 text-[15px] text-[var(--sp-ink)] outline-none transition focus:border-[var(--sp-peri)]";
+    "h-11 w-full rounded-[14px] border-2 border-[var(--sp-line)] bg-white px-4 text-[15px] text-[var(--sp-ink)] outline-none transition focus:border-[var(--sp-peri)]";
 
   return (
-    <Row icon={<IconLock size={20} />} label={tx("Đổi mật khẩu")}>
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="flex h-12 w-full items-center justify-between rounded-2xl border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-5 text-[15.5px] font-bold text-[var(--sp-pink-dark)] transition hover:border-[var(--sp-pink)]"
-      >
-        {provider === "google" ? tx("Tạo mật khẩu để đăng nhập bằng email") : tx("Đổi mật khẩu")}
-        <IconChevronRight size={18} className={`transition ${open ? "rotate-90" : ""}`} />
-      </button>
+    <SettingsCard id="security" tone="blue" grow icon={<IconLock size={22} />} title={tx("Bảo mật & mật khẩu")} subtitle={tx("Cách bạn đăng nhập vào StudyPilot")}>
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+        {[
+          { key: "google", mark: "G", label: "Google", on: provider === "google", onText: tx("Đang dùng"), offText: tx("Chưa liên kết") },
+          { key: "email", mark: "✉", label: tx("Email + mật khẩu"), on: hasPassword, onText: tx("Đã thiết lập"), offText: tx("Chưa thiết lập") },
+        ].map((method) => (
+          <div key={method.key} className="flex items-center gap-3 rounded-2xl border-2 border-[var(--sp-line)] px-3 py-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border-2 border-[var(--sp-line)] bg-white font-extrabold text-[#4285f4]">
+              {method.mark}
+            </span>
+            <div className="min-w-0">
+              <p className="text-[14px] font-bold text-[var(--sp-ink)]">{method.label}</p>
+              <StatusChip tone={method.on ? "ok" : "warn"}>{method.on ? method.onText : method.offText}</StatusChip>
+            </div>
+          </div>
+        ))}
+      </div>
 
-      {open && (
-        <div className="sp-fade-in mt-3 space-y-3">
-          <div className="relative">
+      <div className="rounded-[18px] border-2 border-[var(--sp-lav-line)] bg-[var(--sp-surface-2)] p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-[15px] font-bold text-[var(--sp-ink)]">
+            {hasPassword ? tx("Đổi mật khẩu") : tx("Tạo mật khẩu để đăng nhập bằng email")}
+          </p>
+          <button
+            type="button"
+            onClick={() => setShow((value) => !value)}
+            aria-label={show ? tx("Ẩn mật khẩu") : tx("Hiện mật khẩu")}
+            className="text-[var(--sp-muted)] hover:text-[var(--sp-ink)]"
+          >
+            {show ? <IconEyeOff size={19} /> : <IconEye size={19} />}
+          </button>
+        </div>
+        <div className="space-y-2.5">
+          {hasPassword && (
             <input
               type={show ? "text" : "password"}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder={tx("Mật khẩu mới (ít nhất 8 ký tự, có chữ và số)")}
-              autoComplete="new-password"
-              aria-label={tx("Mật khẩu mới")}
+              value={current}
+              onChange={(event) => setCurrent(event.target.value)}
+              placeholder={tx("Mật khẩu hiện tại")}
+              autoComplete="current-password"
+              aria-label={tx("Mật khẩu hiện tại")}
               className={inputClass}
             />
-            <button
-              type="button"
-              onClick={() => setShow((value) => !value)}
-              aria-label={show ? tx("Ẩn mật khẩu") : tx("Hiện mật khẩu")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--sp-muted)] hover:text-[var(--sp-ink)]"
-            >
-              {show ? <IconEyeOff size={19} /> : <IconEye size={19} />}
-            </button>
+          )}
+          <input
+            type={show ? "text" : "password"}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder={tx("Mật khẩu mới")}
+            autoComplete="new-password"
+            aria-label={tx("Mật khẩu mới")}
+            className={inputClass}
+          />
+          <div className="grid grid-cols-4 gap-1.5" aria-hidden="true">
+            {PASSWORD_RULES.map((rule, index) => (
+              <span
+                key={rule.key}
+                className="h-1.5 rounded-full bg-[var(--sp-line)] transition-colors"
+                style={index < passed ? { background: STRENGTH_COLORS[passed - 1] } : undefined}
+              />
+            ))}
           </div>
+          <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12.5px]">
+            {PASSWORD_RULES.map((rule) => {
+              const ok = rule.test(password);
+              return (
+                <li key={rule.key} className={ok ? "font-bold text-emerald-700" : "text-[var(--sp-muted)]"}>
+                  {ok ? "✓" : "○"} {rule.label}
+                </li>
+              );
+            })}
+          </ul>
           <input
             type={show ? "text" : "password"}
             value={confirm}
@@ -673,22 +855,161 @@ function PasswordRow({ provider, onToast }: { provider: string; onToast: (toast:
             aria-label={tx("Nhập lại mật khẩu mới")}
             className={inputClass}
           />
-          {error && (
-            <p role="alert" className="rounded-2xl border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-4 py-2.5 text-[13.5px] font-semibold text-[var(--sp-pink-dark)]">
-              {error}
-            </p>
-          )}
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setOpen(false)} className="sp-btn sp-btn-secondary h-11 px-5 text-[15px]">
-
-              {tx("Huỷ")}
-            </button>
-            <button type="button" onClick={() => void submit()} disabled={busy} className="sp-btn sp-btn-primary h-11 px-5 text-[15px]">
-              {busy ? tx("Đang cập nhật...") : tx("Cập nhật mật khẩu")}
-            </button>
-          </div>
         </div>
+        {error && (
+          <p role="alert" className="mt-2.5 rounded-xl border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-3 py-2 text-[13px] font-semibold text-[var(--sp-pink-dark)]">
+            {error}
+          </p>
+        )}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => void sendReset()}
+            disabled={busy !== ""}
+            className="text-[13px] font-bold text-[var(--sp-peri-dark)] underline disabled:opacity-50"
+          >
+            {busy === "reset" ? tx("Đang gửi...") : tx("Quên mật khẩu? Gửi email đặt lại")}
+          </button>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={busy !== "" || !password}
+            className="sp-btn sp-btn-primary h-10 px-4 text-[14px] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy === "save" ? tx("Đang cập nhật...") : hasPassword ? tx("Đổi mật khẩu") : tx("Tạo mật khẩu")}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-auto">
+        <SettingLine title={tx("Phiên đăng nhập")} description={tx("Đăng xuất tài khoản trên các máy và trình duyệt khác, giữ lại máy này.")}>
+          <button
+            type="button"
+            onClick={() => void signOutOthers()}
+            disabled={busy !== ""}
+            className="sp-btn sp-btn-secondary h-10 px-4 text-[14px] disabled:opacity-50"
+          >
+            {busy === "others" ? tx("Đang đăng xuất...") : tx("Đăng xuất thiết bị khác")}
+          </button>
+        </SettingLine>
+      </div>
+    </SettingsCard>
+  );
+}
+
+/* ---------- Thông báo học tập (cùng dữ liệu với nút chuông) ---------- */
+
+function NotificationCard({ email }: { email: string }) {
+  const [settings, setSettings] = useState<NotificationSettings | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [notice, setNotice] = useState<Toast>(null);
+
+  useEffect(() => {
+    notificationRequest<{ data: NotificationSettings }>("/settings")
+      .then((result) => setSettings(result.data))
+      .catch(() => setSettings(null))
+      .finally(() => setLoaded(true));
+  }, []);
+
+  const run = async (key: string, action: () => Promise<void>) => {
+    setBusy(key);
+    setNotice(null);
+    try {
+      await action();
+    } catch (error) {
+      setNotice({ tone: "error", text: error instanceof Error ? error.message : tx("Có lỗi xảy ra.") });
+    } finally {
+      setBusy("");
+    }
+  };
+
+  // Thư luôn gửi tới Gmail của tài khoản đang đăng nhập
+  const update = (changes: Partial<NotificationSettings>) =>
+    run("save", async () => {
+      const result = await notificationRequest<{ data: NotificationSettings }>("/settings", {
+        method: "PUT",
+        body: JSON.stringify({ ...changes, email: email || undefined }),
+      });
+      setSettings(result.data);
+    });
+
+  const sendTest = (kind: "schedule" | "weak") =>
+    run(`test-${kind}`, async () => {
+      if (email) await notificationRequest("/settings", { method: "PUT", body: JSON.stringify({ email }) });
+      const result = await notificationRequest<{ message: string }>("/test", { method: "POST", body: JSON.stringify({ kind }) });
+      setNotice({ tone: "ok", text: tx("{0} Kiểm tra cả mục Spam nếu chưa thấy.", [result.message]) });
+    });
+
+  return (
+    <SettingsCard id="notifications" tone="blue" grow icon={<IconBell size={22} />} title={tx("Thông báo học tập")} subtitle={tx("Gửi tới Gmail bạn dùng để đăng nhập")}>
+      {!settings ? (
+        <p className="text-sm text-[var(--sp-muted)]">
+          {loaded ? tx("Chưa kết nối được backend. Hãy chạy backend rồi mở lại.") : tx("Đang tải...")}
+        </p>
+      ) : (
+        <>
+          {settings.disabled_reason && (
+            <p className="rounded-xl bg-[var(--sp-pink-bg)] px-3 py-2.5 text-[13px] text-[var(--sp-pink-dark)]">{settings.disabled_reason}</p>
+          )}
+          <ToggleRow
+            title={tx("Bật thông báo")}
+            description={tx("Tắt để tạm dừng mọi email nhắc học.")}
+            checked={settings.enabled}
+            disabled={busy === "save"}
+            onChange={(value) => update({ enabled: value })}
+          />
+          <div className={`space-y-5 ${settings.enabled ? "" : "pointer-events-none opacity-50"}`}>
+            <SettingLine title={tx("Nhắc theo lịch học")} description={tx("Bài hôm nay, bài còn nợ, ngày ôn đã chọn, đếm ngược ngày thi.")}>
+              <div className="flex items-center gap-3">
+                <SelectBox
+                  compact
+                  value={String(settings.daily_hour)}
+                  ariaLabel={tx("Giờ gửi thông báo")}
+                  onChange={(value) => update({ daily_hour: Number(value) })}
+                  options={Array.from({ length: 17 }, (_, index) => index + 5).map((hour) => ({
+                    value: String(hour),
+                    label: `${String(hour).padStart(2, "0")}:00`,
+                  }))}
+                />
+                <Toggle label={tx("Nhắc theo lịch học")} checked={settings.daily_enabled} onChange={(value) => update({ daily_enabled: value })} />
+              </div>
+            </SettingLine>
+            <ToggleRow
+              title={tx("Nhắc ôn phần còn yếu")}
+              description={tx("Còn 7, 5, 3, 2, 1 ngày tới thi mà còn bài dưới 80%.")}
+              checked={settings.weak_enabled}
+              onChange={(value) => update({ weak_enabled: value })}
+            />
+          </div>
+          <div className="mt-auto space-y-3">
+            <SettingLine title={tx("Gửi thử")} description={tx("Xem trước email sẽ trông thế nào.")}>
+              <div className="flex gap-2">
+                {(["schedule", "weak"] as const).map((kind) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    disabled={busy !== "" || !settings.enabled}
+                    onClick={() => sendTest(kind)}
+                    className="sp-btn sp-btn-secondary h-10 px-3.5 text-[13.5px] disabled:opacity-50"
+                  >
+                    {busy === `test-${kind}` ? tx("Đang gửi...") : kind === "schedule" ? tx("Lịch học") : tx("Phần còn yếu")}
+                  </button>
+                ))}
+              </div>
+            </SettingLine>
+            {notice && (
+              <p
+                className={`rounded-xl px-3 py-2 text-[13px] ${
+                  notice.tone === "ok" ? "bg-emerald-50 text-emerald-800" : "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]"
+                }`}
+              >
+                {notice.text}
+              </p>
+            )}
+          </div>
+        </>
       )}
-    </Row>
+    </SettingsCard>
   );
 }

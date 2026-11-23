@@ -84,6 +84,15 @@ DEFAULT_SETTINGS = {
 # Cấu hình & lưu trữ
 # ============================================================
 
+
+def _ssl_context() -> ssl.SSLContext:
+    """Python cài từ python.org trên macOS không có sẵn chứng chỉ gốc: dùng bộ chứng chỉ của certifi."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
 def _user_id() -> str:
     return os.getenv("DEMO_USER_ID") or "demo"
 
@@ -280,7 +289,7 @@ def _send_apps_script(url: str, secret: str, to: str, subject: str, html_body: s
     for _attempt in range(2):
         try:
             # Apps Script chạy lệnh rồi chuyển hướng (302) sang trang chứa kết quả; urllib tự đi theo
-            with urllib.request.urlopen(request, timeout=40) as response:
+            with urllib.request.urlopen(request, timeout=40, context=_ssl_context()) as response:
                 body = response.read().decode("utf-8", errors="ignore")
             try:
                 result = json.loads(body)
@@ -320,7 +329,7 @@ def _send_brevo(api_key: str, sender: str, to: str, subject: str, html_body: str
     last_error: Exception | None = None
     for _attempt in range(2):
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=30, context=_ssl_context()) as response:
                 if 200 <= response.status < 300:
                     return
         except urllib.error.HTTPError as error:
@@ -341,14 +350,14 @@ def _send_brevo(api_key: str, sender: str, to: str, subject: str, html_body: str
 
 
 def _send_ssl_465(sender: str, password: str, message: EmailMessage) -> None:
-    context = ssl.create_default_context()
+    context = _ssl_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30, context=context) as server:
         server.login(sender, password)
         server.send_message(message)
 
 
 def _send_starttls_587(sender: str, password: str, message: EmailMessage) -> None:
-    context = ssl.create_default_context()
+    context = _ssl_context()
     with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
         server.ehlo()
         server.starttls(context=context)

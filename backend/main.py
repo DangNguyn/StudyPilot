@@ -14,6 +14,9 @@ from uuid import UUID, uuid4
 from typing import Literal
 from document_processor import extract_text, split_into_chunks
 from groq_client import generate_text
+from ai_text import generate_light_text
+from claude_client import generate_claude_text
+from flashcard_quality import cards_look_ok, parse_cards_json
 from claude_client import is_claude_configured
 from document_analyzer import (
     analyze_document_with_claude,
@@ -29,6 +32,7 @@ from practice_questions import (
     ensure_practice_questions,
 )
 from supabase_client import supabase
+from content_language import fill_blank_rule, language_rule, plan_language
 from email_notifications import router as notifications_router, start_scheduler
 from mindmaps import router as mindmaps_router
 from flashcard_decks import router as flashcard_decks_router
@@ -593,7 +597,7 @@ def start_email_notifications():
 
 
 
-def analyze_chunk_batch(chunks):
+def analyze_chunk_batch(chunks, language: str = "vi"):
     """
     Phân tích các đoạn tài liệu và tạo chủ đề học tập
     có cấu trúc mục, tiểu mục và ý chính.
@@ -641,6 +645,8 @@ Bạn là chuyên gia thiết kế nội dung học tập cho sinh viên đại 
 
 Nhiệm vụ: phân tích tài liệu, chia thành các chủ đề học tập
 và biên soạn nội dung học ngắn gọn, có cấu trúc rõ ràng.
+
+{language_rule(language)}
 
 YÊU CẦU PHÂN TÍCH:
 
@@ -1130,6 +1136,8 @@ class ExamPlanCreate(BaseModel):
     exam_date: date
     daily_available_minutes: int = Field(gt=0)
     study_days_per_week: int = Field(default=6, ge=1, le=7)
+    # Ngôn ngữ AI viết tóm tắt, câu hỏi, bài ôn, giải thích cho kế hoạch này
+    content_language: Literal["vi", "en"] = "vi"
 
 class ScheduleCreateRequest(BaseModel):
     selected_study_dates: list[date] = Field(default_factory=list)
@@ -1343,6 +1351,7 @@ def create_exam_plan(plan: ExamPlanCreate):
                 "title": plan.title.strip(),
                 "exam_date": plan.exam_date.isoformat(),
                 "daily_available_minutes": plan.daily_available_minutes,
+                "content_language": plan.content_language,
                 "study_days_per_week": plan.study_days_per_week
             })
             .execute()
@@ -2322,7 +2331,7 @@ def get_practice_questions(topic_id: UUID):
     try:
         response = (
             supabase.table("topics")
-            .select("id, name, content_sections")
+            .select("id, name, exam_plan_id, content_sections")
             .eq("id", str(topic_id))
             .eq("user_id", DEMO_USER_ID)
             .limit(1)
@@ -4570,7 +4579,7 @@ def generate_flashcards(request: FlashcardGenerateRequest):
         # 2. Kiểm tra chủ đề có thuộc tài liệu được chọn không
         topic_response = (
             supabase.table("topics")
-            .select("id, name, source_material_id, source_chunk_ids")
+            .select("id, name, exam_plan_id, source_material_id, source_chunk_ids")
             .eq("id", str(request.topic_id))
             .eq("user_id", DEMO_USER_ID)
             .execute()
@@ -4673,8 +4682,10 @@ giúp sinh viên ghi nhớ kiến thức từ tài liệu học tập.
 CHỦ ĐỀ:
 {topic.get("name") or "Chủ đề học tập"}
 
-Hãy tạo đúng {request.number_of_cards} Flashcard bằng tiếng Việt
+Hãy tạo đúng {request.number_of_cards} Flashcard
 dựa trên nội dung tài liệu được cung cấp.
+
+{language_rule(plan_language(supabase, topic.get("exam_plan_id")))}
 
 YÊU CẦU:
 - Mỗi Flashcard gồm một mặt trước (front) và một mặt sau (back).
@@ -4708,33 +4719,29 @@ NỘI DUNG TÀI LIỆU:
 {json.dumps(chunk_data, ensure_ascii=False)}
 """
 
-        # 6. Gọi AI Groq
-        ai_response = generate_text(prompt)
+        # 6. Groq (miễn phí) tạo trước; thẻ không đạt kiểm tra thì Claude Haiku tạo lại
+        flashcard_lang = plan_language(supabase, topic.get("exam_plan_id"))
+        chunk_id_set = set(source_chunk_ids)
 
-        if not isinstance(ai_response, str) or not ai_response.strip():
-            raise ValueError("AI không trả về nội dung Flashcard.")
+        def usable(raw_cards):
+            return [
+                card for card in raw_cards
+                if isinstance(card, dict) and str(card.get("source_chunk_id") or "") in chunk_id_set
+            ]
 
-        cleaned_response = ai_response.strip()
+        cards = []
+        try:
+            cards = usable(parse_cards_json(generate_text(prompt)))
+        except Exception as groq_error:
+            print("Groq không tạo được flashcard:", groq_error)
 
-        if cleaned_response.startswith("```"):
-            lines = cleaned_response.splitlines()
+        if not cards_look_ok(cards, request.number_of_cards, flashcard_lang) and is_claude_configured():
+            try:
+                cards = usable(parse_cards_json(generate_claude_text(prompt, tier="light"))) or cards
+            except Exception as claude_error:
+                print("Claude Haiku không tạo được flashcard:", claude_error)
 
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
-
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-
-            cleaned_response = "\n".join(lines).strip()
-
-        result = json.loads(cleaned_response)
-
-        if not isinstance(result, dict):
-            raise ValueError("Định dạng dữ liệu AI trả về không hợp lệ.")
-
-        cards = result.get("cards", [])
-
-        if not isinstance(cards, list) or not cards:
+        if not cards:
             raise ValueError("AI không tạo được danh sách Flashcard.")
 
         # 7. Kiểm tra và lọc Flashcard AI tạo ra
@@ -6004,7 +6011,9 @@ NỘI DUNG GIÁO TRÌNH:
 {chunks_text}
 
 Hãy tạo chính xác {request.number_of_questions} câu hỏi
-trắc nghiệm bằng tiếng Việt.
+trắc nghiệm.
+
+{language_rule(plan_language(supabase, material.get("exam_plan_id")))}
 
 Yêu cầu:
 - Mỗi câu có 4 phương án A, B, C, D.
@@ -6041,7 +6050,7 @@ Chỉ trả về JSON, không thêm Markdown hoặc nội dung khác.
         
         # 6. Gọi Groq AI. Nếu hết quota, tạo câu hỏi dự phòng từ chunks.
         try:
-            ai_result = generate_text(prompt)
+            ai_result = generate_light_text(prompt)
         except Exception as ai_error:
             print(
                 "Không thể gọi AI tạo Quiz, dùng câu hỏi dự phòng:",
@@ -7635,6 +7644,8 @@ def generate_retake_quiz(
             )
 
         original_quiz = original_quiz_response.data[0]
+        retake_lang = plan_language(supabase, original_quiz.get("exam_plan_id"))
+        retake_language_rule = language_rule(retake_lang)
 
         # 5. Lấy nguồn tài liệu từ câu hỏi Quiz gốc
         original_questions_response = (
@@ -7728,11 +7739,13 @@ def generate_retake_quiz(
 
         valid_chunk_ids = set(selected_chunk_ids)
 
+        # Groq gói miễn phí giới hạn ~8000 token mỗi lần gọi: chia đều ~12.000 ký tự tài liệu cho các đoạn
+        per_chunk_chars = max(800, 12000 // max(1, len(chunks)))
         chunks_text = "\n\n".join(
             [
                 f"Chunk ID: {chunk['id']}\n"
                 f"Trang: {chunk.get('page_number')}\n"
-                f"Nội dung: {chunk['content']}"
+                f"Nội dung: {str(chunk['content'])[:per_chunk_chars]}"
                 for chunk in chunks
             ]
         )
@@ -7768,6 +7781,9 @@ YÊU CẦU:
 - Câu trắc nghiệm có đúng 4 lựa chọn A, B, C, D.
 - Câu điền khuyết phải có đáp án rõ ràng.
 
+{retake_language_rule}
+{fill_blank_rule(retake_lang)}
+
 ĐỊNH DẠNG JSON BẮT BUỘC:
 {{
     "questions": [
@@ -7789,7 +7805,7 @@ YÊU CẦU:
             "question_type": "fill_blank",
             "question_text": "Nội dung câu hỏi có chỗ trống ____",
             "options": {{}},
-            "correct_answer": "Đáp án chính xác",
+            "correct_answer": ["Đáp án đầy đủ", "Cách nói ngắn", "Thuật ngữ gốc"],
             "explanation": "1-2 câu ngắn: vì sao đáp án đúng (không chép lại đoạn tài liệu)",
             "difficulty_level": 2,
             "source_chunk_id": "UUID"
@@ -7801,7 +7817,7 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
 """
 
         # 9. Gọi AI Groq
-        ai_response = generate_text(prompt)
+        ai_response = generate_light_text(prompt)
         cleaned_response = ai_response.strip()
 
         if cleaned_response.startswith("```"):
@@ -7888,11 +7904,24 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
                 actual_fill_blank_count += 1
                 question["options"] = {}
 
-                if not str(question.get("correct_answer", "")).strip():
+                # Đáp án điền khuyết là danh sách 2-4 cách viết được chấp nhận
+                answers = question.get("correct_answer")
+                if isinstance(answers, str):
+                    answers = [answers]
+                answers = [
+                    str(answer).strip()
+                    for answer in (answers if isinstance(answers, list) else [])
+                    if str(answer).strip()
+                ]
+                if not answers:
                     raise HTTPException(
                         status_code=502,
                         detail="Câu điền khuyết chưa có đáp án."
                     )
+                # Thêm bản đã bỏ chữ lặp quanh chỗ trống, rồi bỏ đáp án trùng (không phân biệt hoa/thường)
+                answers += [trim_blank_overlap(question.get("question_text", ""), answer) for answer in answers]
+                answers = [answer for answer in answers if answer]
+                question["correct_answer"] = list({answer.casefold(): answer for answer in reversed(answers)}.values())[::-1][:6]
 
             else:
                 raise HTTPException(
@@ -8051,6 +8080,12 @@ def submit_quiz_attempt(attempt_id: UUID):
             )
 
         attempt = attempt_response.data[0]
+        submit_quiz_rows = (
+            supabase.table("quizzes").select("exam_plan_id").eq("id", str(attempt["quiz_id"])).limit(1).execute()
+        ).data or []
+        submit_language_rule = language_rule(
+            plan_language(supabase, submit_quiz_rows[0].get("exam_plan_id") if submit_quiz_rows else None)
+        )
 
         if attempt["status"] != "in_progress":
             raise HTTPException(
@@ -8501,6 +8536,8 @@ def submit_quiz_attempt(attempt_id: UUID):
             prompt = f"""
 Bạn là chuyên gia đánh giá năng lực học tập của sinh viên.
 
+{submit_language_rule}
+
 Hãy phân tích kết quả Quiz dưới đây.
 
 DỮ LIỆU:
@@ -8553,7 +8590,7 @@ CẤU TRÚC:
 }}
 """
 
-            ai_response = generate_text(prompt).strip()
+            ai_response = generate_light_text(prompt).strip()
 
             if ai_response.startswith("```"):
                 ai_response = ai_response.split(
@@ -8807,6 +8844,8 @@ CẤU TRÚC:
 Bạn là giảng viên chuyên thiết kế nội dung học bổ trợ
 cho sinh viên dựa trên tài liệu học tập gốc.
 
+{submit_language_rule}
+
 Sinh viên vừa hoàn thành một Quiz và có các kiến thức
 chưa nắm vững được liệt kê dưới đây.
 
@@ -8859,7 +8898,7 @@ CẤU TRÚC:
 }}
 """
 
-                    supplemental_response = generate_text(
+                    supplemental_response = generate_light_text(
                         supplemental_prompt
                     ).strip()
 
@@ -9292,10 +9331,66 @@ def normalize_answer(value) -> str:
     return text
 
 
+def trim_blank_overlap(question_text: str, answer: str) -> str:
+    """
+    Bỏ phần đáp án lặp lại chữ đứng ngay trước/sau chỗ trống:
+    "Công nghệ ___ là..." + "công nghệ xanh" -> "xanh"; "hệ thống ___" + "hệ thống thông tin" -> "thông tin".
+    """
+    match = re.search(r"_{2,}", question_text or "")
+    if not match:
+        return answer
+    before = normalize_answer(question_text[:match.start()]).split()
+    after = normalize_answer(question_text[match.end():]).split()
+    words = str(answer).split()
+    lowered = [normalize_answer(word) for word in words]
+    for size in range(min(len(before), len(words) - 1), 0, -1):
+        if before[-size:] == lowered[:size]:
+            words, lowered = words[size:], lowered[size:]
+            break
+    for size in range(min(len(after), len(words) - 1), 0, -1):
+        if after[:size] == lowered[-size:]:
+            words, lowered = words[:-size], lowered[:-size]
+            break
+    return " ".join(words)
+
+
+def _loose_answer(text: str, keep_marks: bool = False) -> str:
+    """Bỏ gạch nối, dấu câu ở giữa (và dấu tiếng Việt nếu keep_marks=False): "T-H-I-O" = "thio"."""
+    if not keep_marks:
+        text = _strip_vietnamese_marks(text)
+    text = re.sub(r"[-_./,;:!?\"'“”‘’()\[\]]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _edit_distance_at_most_one(a: str, b: str) -> bool:
+    if a == b:
+        return True
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) > len(b):
+        a, b = b, a
+    i = j = 0
+    edits = 0
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+            continue
+        edits += 1
+        if edits > 1:
+            return False
+        if len(a) == len(b):
+            i += 1
+        j += 1
+    return edits + (len(b) - j) <= 1
+
+
 def is_fill_blank_correct(selected, expected_answers) -> bool:
     """
-    Đúng khi khớp một trong các đáp án (kể cả đáp án viết dạng "A / B" hoặc "A; B"),
-    chấp nhận cả khi người học gõ không dấu.
+    Đúng khi khớp một trong các đáp án được chấp nhận (danh sách, hoặc chuỗi "A / B", "A; B").
+    Không phân biệt hoa/thường, khoảng trắng, dấu câu và gạch nối.
+    Gõ không dấu thì bỏ qua dấu; gõ có dấu thì phải đúng dấu ("vi mô" khác "vĩ mô").
+    Đáp án từ 6 chữ cái trở lên được sai 1 ký tự (gõ nhầm); đáp án ngắn phải khớp.
     """
     chosen = normalize_answer(selected)
     if not chosen:
@@ -9313,11 +9408,26 @@ def is_fill_blank_correct(selected, expected_answers) -> bool:
             if part:
                 candidates.append(part)
 
-    chosen_plain = _strip_vietnamese_marks(chosen)
-    return any(
-        chosen == candidate or chosen_plain == _strip_vietnamese_marks(candidate)
-        for candidate in candidates
-    )
+    # Người học gõ có dấu thì so cả dấu; gõ không dấu thì bỏ dấu đáp án khi so
+    keep_marks = chosen != _strip_vietnamese_marks(chosen)
+    chosen_loose = _loose_answer(chosen, keep_marks)
+    for candidate in candidates:
+        candidate_loose = _loose_answer(candidate, keep_marks)
+        if not candidate_loose:
+            continue
+        if chosen == candidate or chosen_loose == candidate_loose:
+            return True
+        if chosen_loose.replace(" ", "") == candidate_loose.replace(" ", ""):
+            return True
+        # Chỉ khác dấu thanh ("vi mô" / "vĩ mô") là khác từ, không coi là gõ nhầm
+        only_marks_differ = keep_marks and _loose_answer(chosen) == _loose_answer(candidate)
+        if (
+            not only_marks_differ
+            and len(candidate_loose.replace(" ", "")) >= 6
+            and _edit_distance_at_most_one(chosen_loose, candidate_loose)
+        ):
+            return True
+    return False
 
 
 def _normalize_result_options(raw_options):
@@ -9764,7 +9874,12 @@ def generate_attempt_assessment(attempt_id: UUID, force: bool = False):
         return {"message": "Đã có đánh giá.", "data": current}
 
     try:
-        assessment = build_attempt_assessment(result)
+        quiz_rows = (
+            supabase.table("quizzes").select("exam_plan_id").eq("id", str(result.get("quiz_id"))).limit(1).execute()
+        ).data or []
+        assessment = build_attempt_assessment(
+            result, plan_language(supabase, quiz_rows[0].get("exam_plan_id") if quiz_rows else None)
+        )
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error))
     except Exception as error:
@@ -10448,8 +10563,9 @@ def analyze_study_material(material_id: UUID):
 
             return merged
 
-        # 4. Phân tích tài liệu bằng AI
+        # 4. Phân tích tài liệu bằng AI, viết theo ngôn ngữ của kế hoạch
         generated_topics = []
+        content_lang = plan_language(supabase, material.get("exam_plan_id"))
 
         chunk_id_by_index = {
             int(chunk["chunk_index"]): str(chunk["id"])
@@ -10466,7 +10582,8 @@ def analyze_study_material(material_id: UUID):
             try:
                 claude_topics = analyze_document_with_claude(
                     chunks,
-                    material.get("file_name") or ""
+                    material.get("file_name") or "",
+                    content_lang,
                 )
                 analyzer_used = "claude"
             except Exception as analysis_error:
@@ -10492,7 +10609,7 @@ def analyze_study_material(material_id: UUID):
                 if claude_topics is not None:
                     batch_topics = claude_topics
                 else:
-                    batch_topics = analyze_chunk_batch(batch)
+                    batch_topics = analyze_chunk_batch(batch, content_lang)
             except Exception as analysis_error:
                 print(
                     "Không thể gọi AI phân tích batch, dùng dữ liệu dự phòng:",

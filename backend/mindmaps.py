@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from claude_client import generate_structured, is_claude_configured
 from supabase_client import supabase
+from content_language import language_rule, plan_language
 
 router = APIRouter()
 
@@ -231,11 +232,12 @@ YÊU CẦU:
   hệ quả, trường hợp đặc biệt). Chỉ số nhánh và ý đếm từ 0. label tối đa 40 ký tự."""
 
 
-def _generate(chapter: str, topics: list[dict]) -> dict:
-    prompt = f"Chương: {chapter}\n\n" + "\n\n".join(
+def _generate(chapter: str, topics: list[dict], language: str = "vi") -> dict:
+    prompt = f"{language_rule(language)}\n\nChương: {chapter}\n\n" + "\n\n".join(
         _lesson_text(index, topic) for index, topic in enumerate(topics, start=1)
     )
     data = generate_structured(
+        tier="light",
         system=MINDMAP_SYSTEM,
         prompt=prompt[:60000],
         input_schema=MINDMAP_SCHEMA,
@@ -403,7 +405,7 @@ def chapter_mindmap(exam_plan_id: str, payload: MindmapRequest):
         if saved and saved.get("digest") == digest:
             return {"locked": False, "plan": plan, "chapter": payload.chapter, "lessons": lessons, "data": saved}
         try:
-            data = _generate(payload.chapter, topics)
+            data = _generate(payload.chapter, topics, plan_language(supabase, exam_plan_id))
         except Exception as error:
             raise HTTPException(status_code=500, detail=f"Chưa tạo được mindmap: {error}") from error
         data["digest"] = digest

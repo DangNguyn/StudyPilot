@@ -9,6 +9,8 @@ import {
   IconArrowRight,
   IconBook,
   IconBulb,
+  IconCheck,
+  IconEye,
   IconLock,
   IconCalendar,
   IconChevronLeft,
@@ -641,6 +643,8 @@ function MaterialReader({
   focusMode?: SessionMode | null;
   onBack: () => void;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [materials, setMaterials] = useState<StudyMaterial[]>([]);
@@ -723,10 +727,12 @@ function MaterialReader({
         item.parts.some((part) => part.session.id === focusSessionId)
       )?.dateKey
     : undefined;
+  /* Ngày đang học = ngày đầu tiên chưa xong; các ngày sau nó còn khoá (buổi chỉ xong khi nộp bài kiểm tra) */
+  const openIndex = days.findIndex((item) => item.status !== "done");
+  const isDayLocked = (index: number) => openIndex >= 0 && index > openIndex;
   const defaultKey =
     focusKey ||
-    days.find((day) => day.dateKey === todayKey)?.dateKey ||
-    days.find((day) => day.dateKey > todayKey)?.dateKey ||
+    days[openIndex]?.dateKey ||
     days[days.length - 1]?.dateKey ||
     null;
   const activeIndex = Math.max(
@@ -734,6 +740,18 @@ function MaterialReader({
     days.findIndex((day) => day.dateKey === (activeKey || defaultKey))
   );
   const day = days[activeIndex];
+  /* Mở từ Kế hoạch / Đánh giá (Vào ôn, Xem lại) thì luôn xem được; vào thẳng để học tiếp thì
+     ngày đã học được cất gọn (chỉ hiện nút Xem lại), ngày chưa tới lượt bị khoá */
+  const openedFromPlan = Boolean(focusKey) && day?.dateKey === focusKey && (focusMode === "review" || focusMode === "revisit");
+  const dayGate: "open" | "done" | "locked" = !day || openedFromPlan
+    ? "open"
+    : isDayLocked(activeIndex)
+      ? "locked"
+      : day.status === "done"
+        ? "done"
+        : "open";
+  const revisitHref = (target: StudyDay) =>
+    `${pathname}?subject=${encodeURIComponent(subject.id)}&session=${encodeURIComponent(target.parts[0]?.session.id || "")}&mode=revisit`;
   /* Buổi Tổng ôn (mindmap cả chương): không có trong lịch, mở khi học xong mọi ngày */
   const showReview = activeKey === REVIEW_KEY;
   const doneDays = days.filter((item) => item.status === "done").length;
@@ -773,7 +791,7 @@ function MaterialReader({
 
   /* Tải (hoặc tạo lần đầu) câu hỏi ôn nhanh cho các chủ đề của ngày đang xem */
   useEffect(() => {
-    if (!day || practiceError) return;
+    if (!day || practiceError || dayGate !== "open") return;
     const topicIds = Array.from(
       new Set(
         day.parts
@@ -811,7 +829,7 @@ function MaterialReader({
     }
     // practiceLoading cố ý không nằm trong deps để tránh gọi lại khi trạng thái tải đổi
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [day, practiceByTopic, practiceRetry, practiceError]);
+  }, [day, practiceByTopic, practiceRetry, practiceError, dayGate]);
 
   /* Tải đoạn gốc khi chuyển sang "Bản gốc" */
   useEffect(() => {
@@ -1194,6 +1212,7 @@ function MaterialReader({
         {days.map((item, index) => {
           const active = !showReview && item.dateKey === day.dateKey;
           const itemIsToday = item.dateKey === todayKey;
+          const itemLocked = isDayLocked(index);
           return (
             <button
               key={item.dateKey}
@@ -1203,6 +1222,8 @@ function MaterialReader({
               aria-current={active ? "true" : undefined}
               title={`${weekdayLong(item.dateKey)} ${dayMonth(item.dateKey)} · ${getDayTitle(item)}`}
               className={`relative flex shrink-0 items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-semibold transition ${
+                itemLocked && !active ? "border-dashed opacity-60 " : ""
+              }${
                 active
                   ? "border-[var(--sp-purple)] bg-[var(--sp-purple)] text-white shadow-[3px_3px_0_var(--sp-lav-line)]"
                   : itemIsToday
@@ -1210,6 +1231,7 @@ function MaterialReader({
                     : "border-[var(--sp-line)] bg-white text-[var(--sp-text-2)] hover:-translate-y-0.5 hover:border-[var(--sp-lav-line)]"
               }`}
             >
+              {itemLocked && <IconLock size={13} className={active ? "text-[var(--sp-yellow)]" : "text-[var(--sp-muted)]"} />}
               <span className={active ? "text-[var(--sp-yellow)]" : ""}>
                 {tx("Ngày {0}", [item.number])}
               </span>
@@ -1287,7 +1309,7 @@ function MaterialReader({
             </div>
 
             <div className="justify-self-start sm:justify-self-center">
-              <StudyTimer storageKey={`sp-study-time:${plan?.id || subject.id}:${day.dateKey}`} />
+              {dayGate === "open" && !(openedFromPlan && focusMode === "revisit") && <StudyTimer storageKey={`sp-study-time:${plan?.id || subject.id}:${day.dateKey}`} />}
             </div>
 
             <div className="flex w-fit rounded-xl bg-[var(--sp-surface-2)] p-1 sm:justify-self-end" role="tablist">
@@ -1344,7 +1366,15 @@ function MaterialReader({
             ref={scrollRef}
             className="max-h-[68vh] min-h-[360px] overflow-y-auto px-5 py-6 text-justify sm:px-7"
           >
-            {mode === "summary" ? (
+            {dayGate !== "open" ? (
+              <DayGate
+                kind={dayGate}
+                day={day}
+                openDay={days[openIndex]}
+                onRevisit={() => router.push(revisitHref(day))}
+                onGoOpen={() => selectDay(openIndex)}
+              />
+            ) : mode === "summary" ? (
               <div className="space-y-2">
                 {day.parts.map((part, partIndex) => (
                   <div
@@ -1379,7 +1409,7 @@ function MaterialReader({
                           : part.topic?.description || tx("Bài này chưa có nội dung tóm tắt.")}
                       </p>
                     ) : (
-                      <div className="divide-y divide-[var(--sp-line)]">
+                      <div className="space-y-6">
                         {numbered[partIndex].map(({ section, number, id }) => (
                           <SectionBlock
                             key={id}
@@ -1420,7 +1450,8 @@ function MaterialReader({
               </button>
               <button
                 type="button"
-                disabled={activeIndex >= days.length - 1}
+                disabled={activeIndex >= days.length - 1 || isDayLocked(activeIndex + 1)}
+                title={isDayLocked(activeIndex + 1) ? tx("Học xong và nộp bài kiểm tra ngày này để mở ngày sau") : undefined}
                 onClick={() => selectDay(activeIndex + 1)}
                 className="sp-btn sp-btn-primary px-4 py-2 text-sm"
               >
@@ -1433,6 +1464,17 @@ function MaterialReader({
         </div>
 
         <aside className="border-t-2 border-dashed border-[var(--sp-lav-line)] xl:sticky xl:top-0 xl:max-h-[calc(68vh+150px)] xl:overflow-y-auto xl:border-l-2 xl:border-t-0">
+          {dayGate !== "open" ? (
+            <div className="p-5">
+              <p className="sp-accent text-[15px] text-[var(--sp-pink)]">{tx("Tự kiểm tra nhanh")}</p>
+              <p className="mt-0.5 text-lg font-bold text-[var(--sp-ink)]">{dayGate === "done" ? tx("Đã hoàn thành") : tx("Chưa mở")}</p>
+              <p className="mt-3 text-sm leading-6 text-[var(--sp-muted)]">
+                {dayGate === "done"
+                  ? tx("Câu hỏi của ngày này hiện lại khi bạn bấm Xem lại kiến thức.")
+                  : tx("Câu hỏi mở cùng nội dung của ngày này.")}
+              </p>
+            </div>
+          ) : (
           <PracticeQuizPanel
             questions={dayQuestions}
             isLoading={isPracticeLoading}
@@ -1457,6 +1499,7 @@ function MaterialReader({
                 : undefined
             }
           />
+          )}
         </aside>
       </section>
       )}
@@ -1466,6 +1509,77 @@ function MaterialReader({
 }
 
 /* ================= Khối nội dung ================= */
+
+/* Ngày đã học (cất gọn, có nút Xem lại) hoặc ngày chưa tới lượt (khoá) */
+function DayGate({
+  kind,
+  day,
+  openDay,
+  onRevisit,
+  onGoOpen,
+}: {
+  kind: "done" | "locked";
+  day: StudyDay;
+  openDay?: StudyDay;
+  onRevisit: () => void;
+  onGoOpen: () => void;
+}) {
+  const titles = Array.from(new Set(day.parts.map((part) => (part.topic ? getMainTopicTitle(part.topic.name) : "")).filter(Boolean)));
+  const done = kind === "done";
+  return (
+    <div className="flex min-h-[420px] items-center justify-center py-6">
+      <div className="w-full max-w-[520px] rounded-[24px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-surface)] px-6 py-7 text-center shadow-[5px_5px_0_var(--sp-lav-line)] sm:px-8">
+        <span
+          className={`mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-[20px] border-2 border-[var(--sp-purple-deep)] ${
+            done ? "bg-emerald-50 text-emerald-600" : "bg-[var(--sp-lav)] text-[var(--sp-peri-dark)]"
+          }`}
+        >
+          {done ? <IconCheck size={28} /> : <IconLock size={26} />}
+        </span>
+        <h3 className="text-[22px] font-bold text-[var(--sp-purple)]">
+          {done ? tx("Bạn đã học xong Ngày {0}", [day.number]) : tx("Ngày {0} chưa mở", [day.number])}
+        </h3>
+        <p className="mt-1.5 text-[14.5px] leading-6 text-[var(--sp-text-2)]">
+          {done
+            ? tx("{0}. Nội dung đã được cất gọn để bạn tập trung vào bài đang học.", [titles.join(", ")])
+            : tx("Học xong và nộp bài kiểm tra của ngày trước để mở nội dung ngày này.")}
+        </p>
+        {done ? (
+          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+            {[
+              [String(day.parts.length), tx("Bài học")],
+              [tx("{0} phút", [day.minutes]), tx("Thời lượng")],
+              [dayMonth(day.dateKey), tx("Ngày học")],
+            ].map(([value, label]) => (
+              <div key={label} className="rounded-2xl border-2 border-[var(--sp-line)] px-2 py-2">
+                <b className="block text-lg text-[var(--sp-purple)]">{value}</b>
+                <span className="text-[11.5px] text-[var(--sp-muted)]">{label}</span>
+              </div>
+            ))}
+          </div>
+        ) : openDay ? (
+          <p className="mt-4 rounded-2xl border-2 border-dashed border-[var(--sp-lav-line)] px-4 py-3 text-left text-[14px] leading-6 text-[var(--sp-text-2)]">
+            {tx("Đang học: Ngày {0}. Trả lời phần tự kiểm tra rồi nộp bài kiểm tra của ngày đó để mở tiếp.", [openDay.number])}
+          </p>
+        ) : null}
+        <div className="mt-5 flex flex-wrap justify-center gap-2.5">
+          {done && (
+            <button type="button" onClick={onRevisit} className="sp-btn sp-btn-secondary px-4 py-2 text-sm">
+              <IconEye size={16} />
+              {tx("Xem lại kiến thức")}
+            </button>
+          )}
+          {openDay && openDay.dateKey !== day.dateKey && (
+            <button type="button" onClick={onGoOpen} className="sp-btn sp-btn-primary px-4 py-2 text-sm">
+              {tx("Học tiếp Ngày {0}", [openDay.number])}
+              <IconArrowRight size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function SectionBlock({
   id,
@@ -1485,14 +1599,12 @@ function SectionBlock({
     <HighlightProvider value={evidence}>
     <article
       id={id}
-      className={`scroll-mt-4 py-6 transition-colors duration-500 first:pt-0 last:pb-0 ${
-        evidence
-          ? "sp-highlight-section -mx-3 rounded-2xl bg-[#fffaf0] px-3 ring-2 ring-[#ffe08a] first:pt-4 last:pb-4"
-          : ""
+      className={`scroll-mt-4 overflow-hidden rounded-[22px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-surface)] shadow-[4px_4px_0_var(--sp-lav-line)] transition-colors duration-500 ${
+        evidence ? "sp-highlight-section ring-4 ring-[#ffe08a]" : ""
       }`}
     >
-      <h3 className="mb-3 flex items-center gap-3 text-lg text-[var(--sp-ink)]">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--sp-peri)] text-sm font-extrabold text-white shadow-[2px_2px_0_var(--sp-purple-deep)]">
+      <h3 className="flex items-center gap-3 border-b-2 border-[var(--sp-purple-deep)] bg-[var(--sp-lav)] px-4 py-3 text-[17px] text-[var(--sp-purple)] sm:px-5">
+        <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[11px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] text-sm font-extrabold text-[#33094a]">
           {number}
         </span>
         <span className="flex-1">{renderRich(stripOutlineNumbers(section.heading || ""))}</span>
@@ -1507,7 +1619,9 @@ function SectionBlock({
           </button>
         )}
       </h3>
-      <SectionBody section={section} />
+      <div className={`px-4 py-4 sm:px-5 ${evidence ? "bg-[var(--sp-amber-bg)]" : ""}`}>
+        <SectionBody section={section} />
+      </div>
     </article>
     </HighlightProvider>
   );
@@ -1524,7 +1638,7 @@ function SectionBody({ section, nested = false }: { section: ContentSection; nes
   );
 
   return (
-    <div className={`space-y-4 ${nested ? "" : "sm:pl-11"}`}>
+    <div className="space-y-4">
       {textLines.length === 1 && (
         <p className="text-[15.5px] leading-7 text-[var(--sp-text-2)]">
           <Highlightable text={textLines[0]}>{renderRich(textLines[0])}</Highlightable>
@@ -1534,7 +1648,7 @@ function SectionBody({ section, nested = false }: { section: ContentSection; nes
         <ul className="space-y-2">
           {textLines.map((line, index) => (
             <li key={index} className="flex gap-3 text-[15.5px] leading-7 text-[var(--sp-text-2)]">
-              <span className="mt-[11px] h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--sp-peri)]" />
+              <span aria-hidden="true" className="mt-[10px] h-2.5 w-2.5 shrink-0 rounded-full border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)]" />
               <span>
                 <Highlightable text={line}>{renderRich(line)}</Highlightable>
               </span>
@@ -1556,9 +1670,10 @@ function SectionBody({ section, nested = false }: { section: ContentSection; nes
       {(section.subsections || []).map((subsection, index) => (
         <div
           key={index}
-          className="rounded-2xl border border-[var(--sp-line)] bg-[var(--sp-surface-2)]/60 p-4"
+          className="rounded-2xl border-2 border-[var(--sp-line)] bg-[var(--sp-surface)] p-4"
         >
-          <p className="mb-2 font-bold text-[var(--sp-purple)]">
+          <p className="mb-2 flex items-center gap-2.5 font-bold text-[var(--sp-ink)]">
+            <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rotate-45 rounded-[3px] bg-[var(--sp-peri)]" />
             {renderRich(stripOutlineNumbers(subsection.heading || ""))}
           </p>
           <SectionBody section={subsection} nested />
@@ -1718,17 +1833,20 @@ function KeyPoints({ points, summary = false }: { points: string[]; summary?: bo
     );
   }
   return (
-    <div className="relative rounded-2xl border-2 border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] px-5 py-4">
-      <Sparkle size={18} className="sp-twinkle absolute -top-2.5 right-6 text-[var(--sp-yellow)]" />
-      <p className="sp-accent mb-2 flex items-center gap-2 text-[17px] text-[var(--sp-pink-dark)]">
-        <IconBulb size={18} className="text-[var(--sp-pink)]" />
-
-        {tx("Ý chính cần nhớ")}
+    /* Ghi nhớ của từng phần: giấy note vàng, nhẹ hơn ô Tổng kết tím (đỏ/hồng chỉ dùng cho cảnh báo) */
+    <div className="relative mt-2 rounded-2xl border-2 border-[var(--sp-amber-line)] bg-[var(--sp-amber-bg)] px-5 pb-3.5 pt-4">
+      <span aria-hidden="true" className="absolute -top-2 left-6 h-4 w-14 -rotate-3 rounded-[3px] border border-[var(--sp-amber-line)] bg-[var(--sp-amber-line)]" />
+      <p className="sp-accent mb-1.5 flex items-center gap-2 text-[17px] text-[var(--sp-amber-dark)]">
+        <IconBulb size={18} />
+        {tx("Ghi nhớ nhanh")}
       </p>
-      <ul className="space-y-1.5 pl-1 sm:pl-7">
+      <ul className="space-y-1">
         {points.map((point, index) => (
-          <li key={index} className="text-[15px] leading-7 text-[var(--sp-ink)]">
-            <Highlightable text={point}>{renderRich(point)}</Highlightable>
+          <li key={index} className="flex gap-2.5 text-[15px] leading-7 text-[var(--sp-ink)]">
+            <IconCheck size={16} className="mt-1.5 shrink-0 text-[var(--sp-amber-dark)]" />
+            <span>
+              <Highlightable text={point}>{renderRich(point)}</Highlightable>
+            </span>
           </li>
         ))}
       </ul>

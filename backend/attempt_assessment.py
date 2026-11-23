@@ -10,6 +10,7 @@ Claude chỉ chọn câu nào thuộc nhóm điểm yếu nào nên không thể
 """
 
 from __future__ import annotations
+from content_language import language_rule
 
 from claude_client import generate_structured, is_claude_configured
 
@@ -60,7 +61,7 @@ ASSESSMENT_SCHEMA = {
 }
 
 ASSESSMENT_SYSTEM = """Bạn là giảng viên nhận xét bài kiểm tra cho sinh viên, giọng thân thiện,
-xưng "bạn", viết tiếng Việt ngắn gọn, cụ thể.
+xưng "bạn" (tiếng Anh: "you"), viết ngắn gọn, cụ thể, theo NGÔN NGỮ BẮT BUỘC ở đầu yêu cầu.
 
 QUY TẮC THEO MỨC ĐIỂM:
 1. Dưới 50% (ôn cấp tốc): nói thẳng là bài chưa vững, cần tập trung ngay. Chỉ ra
@@ -125,7 +126,7 @@ def _clamp(value, low, high):
     return max(low, min(high, value))
 
 
-def build_attempt_assessment(result: dict) -> dict:
+def build_attempt_assessment(result: dict, language: str = "vi") -> dict:
     """result: dữ liệu của GET /api/quiz-attempts/{id}/result."""
     if not is_claude_configured():
         raise RuntimeError("Chưa cấu hình ANTHROPIC_API_KEY để AI đánh giá bài làm.")
@@ -151,6 +152,7 @@ def build_attempt_assessment(result: dict) -> dict:
         )
 
     prompt = (
+        f"{language_rule(language)}\n\n"
         f"Bài học: {context.get('topic_name') or result.get('title')}\n"
         f"Điểm: {score}% (đúng {correct}/{total} câu) → mức "
         f"{'dưới 50%' if tier == 'intensive' else '50-79%' if tier == 'relaxed' else 'từ 80%'}\n\n"
@@ -158,6 +160,7 @@ def build_attempt_assessment(result: dict) -> dict:
     )
 
     data = generate_structured(
+        tier="light",
         system=ASSESSMENT_SYSTEM,
         prompt=prompt,
         input_schema=ASSESSMENT_SCHEMA,

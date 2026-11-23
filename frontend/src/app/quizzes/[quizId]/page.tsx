@@ -139,6 +139,8 @@ export default function QuizTakingPage() {
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [finished, setFinished] = useState(false);
+  // true khi màn chờ nộp bài đã sang game: giữ màn chờ tới khi người dùng bấm Xem kết quả
+  const [submitHold, setSubmitHold] = useState(false);
   const [error, setError] = useState("");
 
   // 1. Bắt đầu bài và lấy câu hỏi
@@ -258,7 +260,6 @@ export default function QuizTakingPage() {
           submitCompletedRef.current = true;
         }
         setFinished(true);
-        router.replace(`/quiz-results/${attemptId}`);
       } catch (err) {
         // Có thể bài đã được chấm dù bước sau lỗi: kiểm tra lại rồi mới báo lỗi
         try {
@@ -266,12 +267,12 @@ export default function QuizTakingPage() {
           const recoveryData = await recovery.json();
           if (recovery.ok && recoveryData.status === "submitted") {
             setFinished(true);
-            router.replace(`/quiz-results/${attemptId}`);
             return;
           }
         } catch {
           /* giữ lỗi gốc */
         }
+        setSubmitHold(false);
         setError(err instanceof Error ? err.message : tx("Không thể nộp bài."));
         if (remainingSeconds !== null && remainingSeconds <= 0) setRemainingSeconds(null);
       } finally {
@@ -279,7 +280,7 @@ export default function QuizTakingPage() {
         setSubmitting(false);
       }
     },
-    [attemptId, submitting, saving, finished, questions.length, answeredCount, remainingSeconds, router]
+    [attemptId, submitting, saving, finished, questions.length, answeredCount, remainingSeconds]
   );
 
   // 4. Đồng hồ đếm ngược, hết giờ tự nộp
@@ -294,6 +295,11 @@ export default function QuizTakingPage() {
     }, 1000);
     return () => window.clearTimeout(timer);
   }, [remainingSeconds, finished, loading, attemptId, submitting, saving, handleSubmit]);
+
+  // Chấm xong: sang trang kết quả khi người dùng không còn giữ màn chờ (đang chơi game)
+  useEffect(() => {
+    if (finished && !submitHold && attemptId) router.replace(`/quiz-results/${attemptId}`);
+  }, [finished, submitHold, attemptId, router]);
 
   const tagById = useMemo(
     () => new Map((overview?.question_tags || []).map((tag) => [tag.question_id, tag])),
@@ -314,6 +320,20 @@ export default function QuizTakingPage() {
     );
   }
 
+  // Nộp bài: chấm điểm, điểm thấp còn phải soạn bài kiểm tra lại nên có thể lâu
+  if (submitting || submitHold || finished) {
+    return (
+      <SmartLoading
+        text={tx("Đang nộp bài và chấm điểm…")}
+        sub={tx("Pilot đang chấm từng câu, chờ mình xíu nhé!")}
+        stages={[tx("Nộp bài"), tx("Chấm điểm"), tx("Phân tích câu sai"), tx("Soạn bài ôn lại")]}
+        continueLabel={tx("Xem kết quả")}
+        done={finished}
+        onHoldChange={setSubmitHold}
+      />
+    );
+  }
+
   if (error && questions.length === 0) {
     return (
       <div className="sp-card mx-auto max-w-3xl p-8 text-center">
@@ -330,16 +350,6 @@ export default function QuizTakingPage() {
 
   if (!currentQuestion) {
     return <div className="sp-card mx-auto max-w-3xl p-8 text-center text-[var(--sp-muted)]">{tx("Bài này chưa có câu hỏi.")}</div>;
-  }
-
-  if (finished) {
-    return (
-      <div className="sp-card mx-auto max-w-3xl p-10 text-center text-[var(--sp-muted)]">
-        <Sparkle size={22} className="sp-twinkle mx-auto mb-3 text-[var(--sp-pink)]" />
-
-        {tx("Đã nộp bài, đang chấm điểm...")}
-      </div>
-    );
   }
 
   const total = questions.length;

@@ -26,3 +26,9 @@ create index if not exists flashcards_deck_id_idx on public.flashcards(deck_id);
 grant select, insert, update, delete
 on table public.flashcard_decks
 to service_role;
+
+-- Ngôn ngữ nội dung AI viết cho từng kế hoạch (tóm tắt, câu hỏi, bài ôn, giải thích).
+-- Đã chạy ngày 23/11/2026; kế hoạch cũ nhận mặc định 'vi'.
+alter table public.exam_plans
+  add column if not exists content_language text not null default 'vi'
+  check (content_language in ('vi', 'en'));

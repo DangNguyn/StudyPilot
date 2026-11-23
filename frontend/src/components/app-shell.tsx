@@ -1,12 +1,16 @@
 "use client";
 
-import { applyLanguage, currentLang, tx } from "@/lib/i18n";
+import { applyLanguage, currentLang, currentLocale, tx } from "@/lib/i18n";
 import { applyTheme, currentTheme } from "@/lib/theme";
 import Link from "next/link";
 import { useCurrentUserName } from "@/lib/current-user";
 import UserAvatar from "@/components/user-avatar";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import PilotHouse, { OPEN_PILOT_HOUSE_EVENT } from "@/components/pilot-house";
+import StudyBackdrop from "@/components/study-backdrop";
+import { PilotMascot } from "@/components/loading-play";
+import { useBgMotion } from "@/lib/bg-motion";
 import { useAuth } from "@/components/auth-provider";
 import LoginSplash from "@/components/login-splash";
 import { getAuthClient, isAuthPath, isAuthRedirectHeld } from "@/lib/auth";
@@ -18,8 +22,11 @@ import {
   IconFile,
   IconHome,
   IconLayers,
+  IconChevronDown,
   IconLogout,
+  IconMoon,
   IconSettings,
+  IconUser,
   IconPen,
   Sparkle,
 } from "@/components/icons";
@@ -30,30 +37,40 @@ type NavItem = {
   icon: ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
   /* Các đường dẫn con cũng tính là đang ở mục này */
   match?: string[];
+  /* Nhóm trên thanh bên */
+  group: "learn" | "practice";
 };
 
+const NAV_GROUPS = [
+  { key: "learn", label: tx("Học tập") },
+  { key: "practice", label: tx("Luyện tập") },
+] as const;
+
 const navigation: NavItem[] = [
-  { name: tx("Tổng quan"), href: "/", icon: IconHome },
+  { name: tx("Tổng quan"), href: "/", icon: IconHome, group: "learn" },
   {
     name: tx("Kế hoạch ôn thi"),
     href: "/study-plans",
     icon: IconCalendar,
     match: ["/study-sessions", "/review-plans"],
+    group: "learn",
   },
   {
     name: tx("Tài liệu học tập"),
     href: "/materials",
     icon: IconFile,
     match: ["/study-materials"],
+    group: "learn",
   },
-  { name: "Flashcards", href: "/flashcards", icon: IconLayers },
+  { name: "Flashcards", href: "/flashcards", icon: IconLayers, group: "learn" },
   {
     name: tx("Kiểm tra kiến thức"),
     href: "/quizzes",
     icon: IconPen,
     match: ["/quiz-results"],
+    group: "practice",
   },
-  { name: tx("Đánh giá năng lực"), href: "/weak-areas", icon: IconChart },
+  { name: tx("Đánh giá năng lực"), href: "/weak-areas", icon: IconChart, group: "practice" },
 ];
 
 function isActivePath(pathname: string, item: NavItem) {
@@ -191,84 +208,216 @@ function AppShellContent({
   }
 
   return (
+    <SignedInShell pathname={pathname} userName={userName} onSignOut={() => void signOut()}>
+      {children}
+    </SignedInShell>
+  );
+}
+
+function pageTitle(pathname: string) {
+  if (pathname.startsWith("/settings")) return tx("Cài đặt");
+  return navigation.find((item) => isActivePath(pathname, item))?.name || tx("Không gian học tập của bạn");
+}
+
+function SideLink({ href, active, icon: Icon, children }: { href: string; active: boolean; icon: NavItem["icon"]; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={`group flex h-[46px] items-center gap-3 rounded-2xl border-2 px-2.5 text-[14.5px] font-semibold transition ${
+        active
+          ? "border-[var(--sp-purple-deep)] bg-[var(--sp-peri)] text-white shadow-[3px_3px_0_var(--sp-purple-deep)]"
+          : "border-transparent text-[var(--sp-text-2)] hover:border-[var(--sp-line)] hover:bg-[var(--sp-surface)]"
+      }`}
+    >
+      <span
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] transition ${
+          active
+            ? "bg-white/20 text-white"
+            : "border border-[var(--sp-line)] bg-[var(--sp-surface)] text-[var(--sp-muted)] group-hover:text-[var(--sp-peri-dark)]"
+        }`}
+      >
+        <Icon size={17} />
+      </span>
+      {children}
+    </Link>
+  );
+}
+
+/* Thẻ "Nhà của Pilot" cuối thanh bên: ngôi nhà nhỏ, Pilot mặc bộ đồ đang lưu đứng cạnh */
+function HouseCard({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={tx("Mở nhà của Pilot")}
+      className="sp-house-card relative block w-full shrink-0 overflow-hidden rounded-[20px] border-2 border-[var(--sp-purple-deep)] text-left shadow-[4px_4px_0_var(--sp-pink-line)] transition"
+    >
+      <span className="relative block h-[98px]">
+        <span className="sp-house-cloud" style={{ left: 130, top: 12, width: 42 }} />
+        <span className="sp-house-cloud" style={{ left: 186, top: 26, width: 26 }} />
+        <svg className="absolute bottom-1 left-3 h-[84px] w-[104px]" viewBox="0 0 104 84" aria-hidden="true">
+          <rect x="70" y="10" width="10" height="20" fill="#c98d4f" stroke="#33094a" strokeWidth="2.5" />
+          <path d="M6 42 L52 6 L98 42 Z" fill="#e0457b" stroke="#33094a" strokeWidth="3" strokeLinejoin="round" />
+          <rect x="16" y="40" width="72" height="42" fill="#fff5d6" stroke="#33094a" strokeWidth="3" />
+          <path d="M42 82 V62 a10 10 0 0 1 20 0 V82 Z" fill="#5b7fe3" stroke="#33094a" strokeWidth="3" />
+          <circle cx="57" cy="72" r="1.8" fill="#f6c343" />
+          <rect x="22" y="50" width="14" height="14" rx="3" fill="#bfe3ff" stroke="#33094a" strokeWidth="2.5" />
+          <rect x="68" y="50" width="14" height="14" rx="3" fill="#bfe3ff" stroke="#33094a" strokeWidth="2.5" />
+        </svg>
+        <span className="sp-house-peek absolute bottom-[-2px] left-[118px]">
+          <PilotMascot size={82} className="sp-pilot-still" />
+        </span>
+      </span>
+      <span className="flex items-center gap-2.5 border-t-2 border-[var(--sp-purple-deep)] bg-[var(--sp-surface)] py-2.5 pl-3.5 pr-3">
+        <span className="min-w-0">
+          <b className="block text-[14.5px] text-[var(--sp-purple)]">{tx("Nhà của Pilot")}</b>
+          <span className="block text-[12px] text-[var(--sp-muted)]">{tx("Thay đồ, phụ kiện cho Pilot")}</span>
+        </span>
+        <span className="ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[10px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-yellow)] font-extrabold text-[#33094a]">
+          →
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function UserMenu({ userName, onOpenHouse, onSignOut }: { userName: string; onOpenHouse: () => void; onSignOut: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [dark, setDark] = useState(() => currentTheme() === "dark");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  function toggleDark() {
+    const next = dark ? "light" : "dark";
+    setDark(!dark);
+    applyTheme(next);
+    // Lưu theo tài khoản như ở trang Cài đặt
+    void getAuthClient()?.auth.updateUser({ data: { sp_theme: next } });
+  }
+
+  const itemClass =
+    "flex h-[42px] w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[14px] font-semibold text-[var(--sp-text-2)] hover:bg-[var(--sp-lav)]";
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex h-[46px] items-center gap-2.5 rounded-2xl border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-surface)] py-0 pl-[5px] pr-3 shadow-[3px_3px_0_var(--sp-purple-deep)]"
+      >
+        <UserAvatar size={34} />
+        <span className="hidden text-left leading-tight sm:block">
+          <span className="block text-[11px] font-semibold text-[var(--sp-soft)]">{tx("Xin chào")}</span>
+          <b className="block max-w-[180px] truncate text-[13.5px] text-[var(--sp-ink)]">{userName}</b>
+        </span>
+        <IconChevronDown size={15} className={`text-[var(--sp-muted)] transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+10px)] z-30 w-[240px] rounded-[18px] border-2 border-[var(--sp-purple-deep)] bg-[var(--sp-surface)] p-2 shadow-[4px_4px_0_var(--sp-purple-deep)]"
+        >
+          <button type="button" role="menuitem" className={itemClass} onClick={() => { setOpen(false); router.push("/settings"); }}>
+            <IconUser size={17} /> {tx("Tài khoản & cài đặt")}
+          </button>
+          <button type="button" role="menuitem" className={itemClass} onClick={() => { setOpen(false); onOpenHouse(); }}>
+            <span className="w-[17px] text-center">🏠</span> {tx("Nhà của Pilot")}
+          </button>
+          <button type="button" role="menuitemcheckbox" aria-checked={dark} className={itemClass} onClick={toggleDark}>
+            <IconMoon size={17} /> {tx("Chế độ tối")}
+            <span className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-bold ${dark ? "bg-[var(--sp-peri)] text-white" : "bg-[var(--sp-surface-2)] text-[var(--sp-muted)]"}`}>
+              {dark ? tx("Bật") : tx("Tắt")}
+            </span>
+          </button>
+          <hr className="mx-1 my-1.5 border-[var(--sp-line)]" />
+          <button type="button" role="menuitem" className={`${itemClass} !text-[var(--sp-pink-dark)]`} onClick={onSignOut}>
+            <IconLogout size={17} /> {tx("Đăng xuất")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SignedInShell({
+  pathname,
+  userName,
+  onSignOut,
+  children,
+}: {
+  pathname: string;
+  userName: string;
+  onSignOut: () => void;
+  children: React.ReactNode;
+}) {
+  const [houseOpen, setHouseOpen] = useState(false);
+  const [strip, setStrip] = useState(false);
+  const bgMotion = useBgMotion();
+  const closeHouse = useCallback(() => setHouseOpen(false), []);
+  const openHouse = useCallback(() => setHouseOpen(true), []);
+
+  useEffect(() => {
+    window.addEventListener(OPEN_PILOT_HOUSE_EVENT, openHouse);
+    return () => window.removeEventListener(OPEN_PILOT_HOUSE_EVENT, openHouse);
+  }, [openHouse]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("sp-bg-live", bgMotion);
+    return () => document.documentElement.classList.remove("sp-bg-live");
+  }, [bgMotion]);
+
+  const today = new Date().toLocaleDateString(currentLocale(), { weekday: "long", day: "numeric", month: "numeric" });
+
+  return (
     <div className="min-h-screen text-[var(--sp-ink)]">
+      {bgMotion && <StudyBackdrop onStrip={setStrip} />}
+
       {/* Sidebar (máy tính) */}
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-[272px] flex-col border-r border-[var(--sp-line)] bg-[var(--sp-sidebar)] px-5 py-7 lg:flex">
-        <div className="mb-10 px-1">
+      <aside className="fixed inset-y-0 left-0 z-20 hidden w-[272px] flex-col overflow-y-auto border-r border-[var(--sp-line)] bg-[var(--sp-sidebar)] px-[18px] pb-[18px] pt-[26px] lg:flex">
+        <div className="mb-5 px-1">
           <Logo />
         </div>
 
-        <p className="mb-3 px-3 text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--sp-soft)]">
+        {NAV_GROUPS.map((group) => (
+          <div key={group.key}>
+            <p className="mb-1.5 mt-3.5 px-3 text-[10.5px] font-extrabold uppercase tracking-[0.2em] text-[var(--sp-soft)]">{group.label}</p>
+            <nav className="flex flex-col gap-1" aria-label={group.label}>
+              {navigation
+                .filter((item) => item.group === group.key)
+                .map((item) => (
+                  <SideLink key={item.href} href={item.href} active={isActivePath(pathname, item)} icon={item.icon}>
+                    {item.name}
+                  </SideLink>
+                ))}
+            </nav>
+          </div>
+        ))}
 
-          {tx("Không gian học")}
-        </p>
+        <div className="min-h-6 flex-1" />
 
-        <nav className="flex flex-col gap-2" aria-label={tx("Điều hướng chính")}>
-          {navigation.map((item) => {
-            const isActive = isActivePath(pathname, item);
-            const Icon = item.icon;
+        <HouseCard onOpen={openHouse} />
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={isActive ? "page" : undefined}
-                className={`group flex items-center gap-3 rounded-2xl border-2 px-3 py-2.5 text-[15px] font-semibold transition ${
-                  isActive
-                    ? "border-[var(--sp-purple-deep)] bg-[var(--sp-peri)] text-white shadow-[4px_4px_0_var(--sp-purple-deep)]"
-                    : "border-transparent text-[var(--sp-text-2)] hover:border-[var(--sp-line)] hover:bg-white"
-                }`}
-              >
-                <span
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
-                    isActive
-                      ? "bg-white/20 text-white"
-                      : "border border-[var(--sp-line)] bg-white text-[var(--sp-muted)] group-hover:text-[var(--sp-peri-dark)]"
-                  }`}
-                >
-                  <Icon size={18} />
-                </span>
-                {item.name}
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Cài đặt nằm cuối menu */}
-        <Link
-          href="/settings"
-          aria-current={pathname.startsWith("/settings") ? "page" : undefined}
-          className={`group mt-auto mb-4 flex items-center gap-3 rounded-2xl border-2 px-3 py-2.5 text-[15px] font-semibold transition ${
-            pathname.startsWith("/settings")
-              ? "border-[var(--sp-purple-deep)] bg-[var(--sp-peri)] text-white shadow-[4px_4px_0_var(--sp-purple-deep)]"
-              : "border-transparent text-[var(--sp-text-2)] hover:border-[var(--sp-line)] hover:bg-white"
-          }`}
-        >
-          <span
-            className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${
-              pathname.startsWith("/settings")
-                ? "bg-white/20 text-white"
-                : "border border-[var(--sp-line)] bg-white text-[var(--sp-muted)] group-hover:text-[var(--sp-peri-dark)]"
-            }`}
-          >
-            <IconSettings size={18} />
-          </span>
-
-          {tx("Cài đặt")}
-        </Link>
-
-        <div className="rounded-[20px] border border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)] p-5">
-          <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--sp-pink-line)] bg-white text-[var(--sp-pink)]">
-            <Sparkle size={16} />
-          </span>
-          <p className="text-[15px] font-bold text-[var(--sp-purple)]">
-
-            {tx("Học tập có lộ trình")}
-          </p>
-          <p className="mt-1.5 text-[13px] leading-5 text-[var(--sp-text-2)]">
-
-            {tx("AI giúp bạn chia nhỏ tài liệu và biết chính xác hôm nay cần học gì.")}
-          </p>
+        <div className="mt-3 border-t border-dashed border-[var(--sp-line)] pt-2.5">
+          <SideLink href="/settings" active={pathname.startsWith("/settings")} icon={IconSettings}>
+            {tx("Cài đặt")}
+          </SideLink>
         </div>
       </aside>
 
@@ -279,50 +428,18 @@ function AppShellContent({
             <div className="lg:hidden">
               <Logo compact />
             </div>
-            <div className="hidden sm:block">
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--sp-soft)]">
-                StudyPilot
-              </p>
-              <p className="text-sm font-semibold text-[var(--sp-text-2)]">
-
-                {tx("Không gian học tập của bạn")}
+            <div className="hidden min-w-0 sm:block">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--sp-soft)]">StudyPilot</p>
+              <p className="truncate text-[15px] font-bold text-[var(--sp-ink)]">
+                {pageTitle(pathname)}
+                <span className="ml-1.5 text-[13px] font-semibold text-[var(--sp-muted)]">· {today}</span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-2.5">
             <NotificationBell />
-
-            <div className="hidden text-right sm:block">
-              <p className="text-xs font-medium text-[var(--sp-soft)]">
-
-                {tx("Xin chào")}
-              </p>
-              <p className="text-sm font-bold text-[var(--sp-ink)]">
-                {userName}
-              </p>
-            </div>
-
-            <Link
-              href="/settings"
-              title={tx("Cài đặt tài khoản")}
-              aria-label={tx("Cài đặt tài khoản")}
-              className="rounded-xl ring-[var(--sp-peri)] ring-offset-2 ring-offset-[var(--sp-paper)] transition hover:ring-2"
-            >
-              <UserAvatar size={40} />
-            </Link>
-
-            {(
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                title={tx("Đăng xuất")}
-                aria-label={tx("Đăng xuất")}
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--sp-line)] bg-white text-[var(--sp-muted)] transition hover:border-[var(--sp-pink-line)] hover:text-[var(--sp-pink-dark)]"
-              >
-                <IconLogout size={18} />
-              </button>
-            )}
+            <UserMenu userName={userName} onOpenHouse={openHouse} onSignOut={onSignOut} />
           </div>
         </header>
 
@@ -351,12 +468,22 @@ function AppShellContent({
               </Link>
             );
           })}
+          <button
+            type="button"
+            onClick={openHouse}
+            className="flex shrink-0 items-center gap-1.5 rounded-xl border-2 border-[var(--sp-line)] bg-white px-3 py-2 text-xs font-semibold text-[var(--sp-text-2)]"
+          >
+            🏠 {tx("Nhà của Pilot")}
+          </button>
         </nav>
 
-        <main className="mx-auto max-w-[1480px] p-4 sm:p-6 lg:p-8">
+        {/* Chừa chỗ cho dải đường bay ở chân màn hình */}
+        <main className={`mx-auto max-w-[1480px] p-4 sm:p-6 lg:p-8 ${bgMotion && strip ? "lg:pb-28" : ""}`}>
           {children}
         </main>
       </div>
+
+      <PilotHouse open={houseOpen} onClose={closeHouse} />
     </div>
   );
 }

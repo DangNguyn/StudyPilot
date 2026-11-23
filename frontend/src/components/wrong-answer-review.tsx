@@ -2,7 +2,7 @@
 
 import { tx } from "@/lib/i18n";
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import type { LessonPeekRequest } from "@/components/lesson-peek";
 import {
   IconAlert,
   IconBook,
@@ -33,6 +33,7 @@ export type ReviewQuestion = {
     page_number: number | null;
     material_id: string | null;
     file_name?: string | null;
+    content?: string | null;
   } | null;
 };
 
@@ -171,7 +172,8 @@ export default function WrongAnswerReview({
   weakNumbers,
   mistakes,
   weakHints,
-  materialsHref,
+  onPeekLesson,
+  jump,
 }: {
   results: ReviewQuestion[];
   correct: number;
@@ -183,7 +185,9 @@ export default function WrongAnswerReview({
   weakNumbers: Set<number>;
   mistakes: Mistake[];
   weakHints: WeakHint[];
-  materialsHref: string;
+  onPeekLesson: (request: LessonPeekRequest) => void;
+  /* nhảy tới một câu sai (bấm "Câu 7, 9" ở phần đánh giá); at đổi mỗi lần bấm */
+  jump?: { number: number; at: number } | null;
 }) {
   const groups = useMemo(() => buildGroups(results), [results]);
   const wrongNumbers = useMemo(
@@ -194,6 +198,14 @@ export default function WrongAnswerReview({
   const [selected, setSelected] = useState<number | null>(wrongNumbers[0] ?? null);
   const [openingSource, setOpeningSource] = useState(false);
   const [sourceError, setSourceError] = useState("");
+  const [seenJump, setSeenJump] = useState(jump);
+  if (jump !== seenJump) {
+    setSeenJump(jump);
+    if (jump && wrongNumbers.includes(jump.number)) {
+      setSelected(jump.number);
+      setGroupFilter("all");
+    }
+  }
 
   const groupOf = (number: number) => groups.find((group) => group.numbers.includes(number));
   const wrongGroups = groups
@@ -227,7 +239,7 @@ export default function WrongAnswerReview({
   }
 
   return (
-    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
+    <div id="wrong-answers" className="grid scroll-mt-24 grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]">
       {/* ---------- Cột trái ---------- */}
       <div className="min-w-0 space-y-5">
         <ScoreSummaryCard
@@ -338,7 +350,7 @@ export default function WrongAnswerReview({
             wrongTotal={wrongNumbers.length}
             onPrev={() => position > 0 && setSelected(wrongNumbers[position - 1])}
             onNext={() => setSelected(wrongNumbers[(position + 1) % wrongNumbers.length])}
-            materialsHref={materialsHref}
+            onPeekLesson={onPeekLesson}
             openingSource={openingSource}
             sourceError={sourceError}
             onOpenSource={openSource}
@@ -361,7 +373,7 @@ function QuestionDetail({
   wrongTotal,
   onPrev,
   onNext,
-  materialsHref,
+  onPeekLesson,
   openingSource,
   sourceError,
   onOpenSource,
@@ -377,7 +389,7 @@ function QuestionDetail({
   wrongTotal: number;
   onPrev: () => void;
   onNext: () => void;
-  materialsHref: string;
+  onPeekLesson: (request: LessonPeekRequest) => void;
   openingSource: boolean;
   sourceError: string;
   onOpenSource: (materialId: string, page?: number | null) => void;
@@ -454,10 +466,10 @@ function QuestionDetail({
             <p className="flex items-center gap-1 text-[12px] font-bold text-emerald-700">
               <IconCheck size={13} />
 
-              {tx("Đáp án đúng")}
+              {Array.isArray(question.correct_answer) && question.correct_answer.length > 1 ? tx("Đáp án được chấp nhận") : tx("Đáp án đúng")}
             </p>
             <p className="mt-1 font-semibold text-[var(--sp-ink)]">
-              {Array.isArray(question.correct_answer) ? question.correct_answer.join(", ") : question.correct_answer}
+              {Array.isArray(question.correct_answer) ? question.correct_answer.join(" · ") : question.correct_answer}
             </p>
           </div>
         </div>
@@ -559,11 +571,29 @@ function QuestionDetail({
           {sourceError && <p className="mt-1 text-[12px] font-semibold text-[var(--sp-pink-dark)]">{sourceError}</p>}
         </div>
         <div className="flex shrink-0 flex-col gap-2">
-          <Link href={materialsHref} className="sp-btn sp-btn-secondary justify-center px-4 py-2 text-[13px]">
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={(event) =>
+              onPeekLesson({
+                query: [
+                  question.question_text,
+                  ...(options.length
+                    ? options.filter((option) => correctKeys.includes(option.key)).map((option) => option.text)
+                    : correctKeys),
+                  question.explanation || "",
+                ].join("\n"),
+                page,
+                raw: question.source_location?.content,
+                anchor: event.currentTarget,
+              })
+            }
+            className="sp-btn sp-btn-secondary justify-center px-4 py-2 text-[13px]"
+          >
             <IconFile size={15} />
 
             {tx("Mở bài học")}
-          </Link>
+          </button>
           {materialId && (
             <button
               type="button"

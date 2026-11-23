@@ -1,7 +1,8 @@
 "use client";
 
 import { tx } from "@/lib/i18n";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { PilotGlasses, PilotHat, PilotHeld, PilotScarf, coverColors, usePilotOutfit, type PilotOutfit } from "@/components/pilot-wear";
 import { IconBook, IconCheck, IconPlay } from "@/components/icons";
 
 /*
@@ -38,11 +39,22 @@ export function PilotMascot({
   size = 200,
   interactive = false,
   onPoke,
+  outfit: outfitOverride,
+  happy = false,
+  className = "",
 }: {
   size?: number;
   interactive?: boolean;
   onPoke?: (event: React.MouseEvent<SVGSVGElement>) => void;
+  /* Bộ đồ để mặc thử (Nhà của Pilot); bỏ trống thì mặc bộ đã lưu của tài khoản */
+  outfit?: PilotOutfit;
+  happy?: boolean;
+  className?: string;
 }) {
+  const savedOutfit = usePilotOutfit();
+  const outfit = outfitOverride ?? savedOutfit;
+  const cover = coverColors(outfit);
+  const uid = useId().replace(/:/g, "");
   const ref = useRef<SVGSVGElement>(null);
   const [eye, setEye] = useState({ x: 0, y: 0 });
   const [jumping, setJumping] = useState(false);
@@ -71,7 +83,7 @@ export function PilotMascot({
       height={size}
       role={interactive ? "button" : "img"}
       aria-label={interactive ? tx("Pilot, linh vật StudyPilot. Bấm để Pilot nhảy") : tx("Pilot, linh vật StudyPilot")}
-      className={`sp-pilot ${interactive ? "cursor-pointer" : ""} ${jumping ? "sp-pilot-jump" : ""}`}
+      className={`sp-pilot ${interactive ? "cursor-pointer" : ""} ${jumping ? "sp-pilot-jump" : ""} ${className}`}
       onClick={(event) => {
         if (!interactive) return;
         setJumping(false);
@@ -82,13 +94,12 @@ export function PilotMascot({
     >
       <ellipse cx="100" cy="186" rx="56" ry="8" fill="#33094a" opacity=".12" />
       <g className="sp-pilot-body">
-        <rect x="48" y="48" width="104" height="126" rx="22" fill="#5b2a86" stroke="#33094a" strokeWidth="4" />
-        <rect x="48" y="48" width="18" height="126" rx="9" fill="#4a1068" stroke="#33094a" strokeWidth="4" />
+        <rect x="48" y="48" width="104" height="126" rx="22" fill={cover.main} stroke="#33094a" strokeWidth="4" />
+        <rect x="48" y="48" width="18" height="126" rx="9" fill={cover.spine} stroke="#33094a" strokeWidth="4" />
         {[72, 100, 128, 156].map((y) => (
           <circle key={y} cx="57" cy={y} r="3.5" fill="#f6c343" />
         ))}
-        <path d="M62 54 Q100 14 140 54 Z" fill="#e0457b" stroke="#33094a" strokeWidth="4" strokeLinejoin="round" />
-        <rect x="80" y="40" width="40" height="13" rx="6.5" fill="#bfe3ff" stroke="#33094a" strokeWidth="3.5" />
+        <PilotHat outfit={outfit} />
         <g className="sp-pilot-blink">
           <ellipse cx="88" cy="86" rx="11" ry="13" fill="#fff" stroke="#33094a" strokeWidth="3" />
           <ellipse cx="122" cy="86" rx="11" ry="13" fill="#fff" stroke="#33094a" strokeWidth="3" />
@@ -97,17 +108,14 @@ export function PilotMascot({
         </g>
         <ellipse cx="78" cy="106" rx="7" ry="4" fill="#ff8fb6" opacity=".7" />
         <ellipse cx="132" cy="106" rx="7" ry="4" fill="#ff8fb6" opacity=".7" />
-        {jumping ? (
+        {jumping || happy ? (
           <path d="M94 102 Q105 118 116 102 Z" fill="#33094a" />
         ) : (
           <path d="M96 104 Q105 112 114 104" fill="none" stroke="#33094a" strokeWidth="3.5" strokeLinecap="round" />
         )}
-        <path d="M66 118 Q105 132 146 118 L146 128 Q105 142 66 128 Z" fill="#e0457b" stroke="#33094a" strokeWidth="3.5" strokeLinejoin="round" />
-        <path d="M136 126 l16 22 l-14 -2 z" fill="#e0457b" stroke="#33094a" strokeWidth="3" strokeLinejoin="round" />
-        <g className="sp-pilot-page">
-          <rect x="80" y="134" width="40" height="30" rx="4" fill="#fff" stroke="#33094a" strokeWidth="3" />
-          <path d="M86 143 h28 M86 150 h22 M86 157 h26" stroke="#d5ddf8" strokeWidth="3" strokeLinecap="round" />
-        </g>
+        <PilotGlasses outfit={outfit} />
+        <PilotScarf outfit={outfit} uid={uid} />
+        <PilotHeld outfit={outfit} pageClassName="sp-pilot-page" />
       </g>
     </svg>
   );
@@ -233,9 +241,10 @@ export function SmartLoading({
       document.body.appendChild(clone);
       const box = canvas.getBoundingClientRect();
       // nội dung bên trong đã ở vị trí cuối, chỉ khung ngoài đang nở chiều cao
-      const size = 70;
+      // khớp vị trí xuất phát của Pilot trong RunnerGame (p.x = 64, cao 40)
+      const size = PILOT_RUN_SIZE;
       const toLeft = box.left + 64 - size * 0.24;
-      const toTop = box.top + (box.height - 38) - size * 0.86;
+      const toTop = box.top + (box.height - 38) - 40 - size * 0.24;
       const peak = Math.min(pilot.top, toTop) - 70;
       const mid = (pilot.width + size) / 2;
       clone.animate(
@@ -509,6 +518,7 @@ type Obstacle = { kind: "books" | "clock" | "grade"; x: number; w: number; h: nu
 type Star = { x: number; y: number; got?: boolean };
 
 const BEST_KEY = "sp-runner-best";
+const PILOT_RUN_SIZE = 66;
 const readBest = () => {
   try {
     return Number(localStorage.getItem(BEST_KEY)) || 0;
@@ -538,6 +548,7 @@ function RunnerGame({
     hooks.current = { onStart, pauseText };
   }, [onStart, pauseText]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const runnerRef = useRef<HTMLDivElement>(null);
   const scoreRef = useRef<HTMLSpanElement>(null);
   const [best, setBest] = useState(readBest);
   const [overlay, setOverlay] = useState<{ title: string; text: string; label: string } | null>({
@@ -602,48 +613,15 @@ function RunnerGame({
       ctx.strokeStyle = "#33094a";
       ctx.stroke();
     };
+    // Pilot là SVG thật (mặc bộ đồ đã lưu) đặt đè lên canvas; thân sách 104 đơn vị khớp hộp va chạm p.w
     const drawPilot = (g: number) => {
-      const x = p.x;
-      const y = g - p.h + p.y;
-      const step = p.onGround ? Math.sin(p.leg) * 5 : 3;
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "#33094a";
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(x + 11, y + p.h - 3);
-      ctx.lineTo(x + 11 + step, y + p.h + 6);
-      ctx.moveTo(x + 23, y + p.h - 3);
-      ctx.lineTo(x + 23 - step, y + p.h + 6);
-      ctx.stroke();
-      box(x, y, p.w, p.h - 2, 8, "#5b2a86");
-      box(x, y, 7, p.h - 2, 4, "#4a1068");
-      ctx.beginPath();
-      ctx.moveTo(x + 4, y + 2);
-      ctx.quadraticCurveTo(x + 17, y - 14, x + 31, y + 2);
-      ctx.closePath();
-      ctx.fillStyle = "#e0457b";
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#fff";
-      ctx.beginPath();
-      ctx.ellipse(x + 15, y + 13, 4.5, 5.5, 0, 0, Math.PI * 2);
-      ctx.ellipse(x + 26, y + 13, 4.5, 5.5, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 1.6;
-      ctx.stroke();
-      ctx.fillStyle = "#24123a";
-      ctx.beginPath();
-      ctx.arc(x + 16.5, y + 14, 2.2, 0, Math.PI * 2);
-      ctx.arc(x + 27.5, y + 14, 2.2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#e0457b";
-      ctx.fillRect(x + 7, y + 24, p.w - 7, 5);
-      ctx.beginPath();
-      ctx.moveTo(x + 7, y + 26);
-      ctx.lineTo(x - 8, y + 22 + Math.sin(p.leg * 1.5) * 3);
-      ctx.lineTo(x - 6, y + 31);
-      ctx.closePath();
-      ctx.fill();
+      const runner = runnerRef.current;
+      if (!runner) return;
+      const k = PILOT_RUN_SIZE / 200;
+      const bounce = p.onGround ? -Math.abs(Math.sin(p.leg)) * 3 : 0;
+      const tilt = p.onGround ? Math.sin(p.leg) * 4 : -8;
+      runner.style.visibility = alive ? "visible" : "hidden";
+      runner.style.transform = `translate(${p.x - 48 * k}px, ${g - p.h + p.y - 48 * k + bounce}px) rotate(${tilt}deg)`;
     };
     const drawObstacle = (o: Obstacle, g: number) => {
       const y = g - o.h;
@@ -711,7 +689,7 @@ function RunnerGame({
       ctx.setLineDash([]);
       for (const star of stars) drawStar(star.x, g - star.y);
       for (const obstacle of obstacles) drawObstacle(obstacle, g);
-      if (alive) drawPilot(g);
+      drawPilot(g);
     };
 
     const gameOver = () => {
@@ -848,6 +826,9 @@ function RunnerGame({
         onPointerDown={() => engine.current?.jump()}
         aria-label={tx("Game Pilot chạy deadline: bấm hoặc nhấn phím cách để nhảy")}
       />
+      <div ref={runnerRef} className="pointer-events-none absolute left-0 top-0 origin-[50%_85%] will-change-transform" aria-hidden="true">
+        <PilotMascot size={PILOT_RUN_SIZE} className="sp-pilot-still" />
+      </div>
       <div className="absolute right-3.5 top-3 flex gap-2">
         <span className="rounded-full border-2 border-[var(--sp-purple-deep)] bg-white px-3 py-0.5 text-[13px] font-extrabold shadow-[2px_2px_0_var(--sp-purple-deep)]">
           <span ref={scoreRef}>0</span>

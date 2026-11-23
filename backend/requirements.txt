@@ -9,3 +9,4 @@ anthropic
 pypdf
 python-docx
 python-pptx
+certifi
