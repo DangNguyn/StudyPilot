@@ -7917,7 +7917,8 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
                         status_code=502,
                         detail="Câu điền khuyết chưa có đáp án."
                     )
-                question["correct_answer"] = answers[:4]
+                # Bỏ đáp án trùng (không phân biệt hoa/thường), tối đa 4
+                question["correct_answer"] = list({answer.casefold(): answer for answer in reversed(answers)}.values())[::-1][:4]
 
             else:
                 raise HTTPException(
