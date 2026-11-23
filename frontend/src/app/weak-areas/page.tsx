@@ -1018,9 +1018,6 @@ function WeakAreasPageContent() {
                 className={`sp-route-node relative flex h-10 w-10 items-center justify-center justify-self-center rounded-[13px] border-2 border-[var(--sp-purple-deep)] shadow-[3px_3px_0_var(--sp-purple-deep)] ${node.tone} ${node.now ? "sp-route-now" : ""}`}
                 style={{ animationDelay: `${0.1 + index * 0.15}s` }}
               >
-                {node.now && (
-                  <IconChevronDown size={16} className="sp-route-here absolute -top-6 left-1/2 -translate-x-1/2 text-[var(--sp-yellow)]" />
-                )}
                 {node.icon}
               </span>
             ))}
