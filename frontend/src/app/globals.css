@@ -825,8 +825,10 @@ html.sp-bg-live body { background: transparent; }
   33% { transform: translate(14px, -22px) rotate(calc(var(--r, 0deg) + 8deg)); }
   66% { transform: translate(-10px, -8px) rotate(calc(var(--r, 0deg) - 6deg)); }
 }
-html.dark .sp-bg-doodle { opacity: 0.22; }
-html.dark .sp-bg-chip { opacity: 0.45; }
+/* Nền tối: chỉ vẽ nét viền sáng (ruột pastel trên nền tối thành khối xám) */
+html.dark .sp-bg-doodle { opacity: 0.45; }
+html.dark .sp-bg-doodle svg * { fill: none; }
+html.dark .sp-bg-chip { opacity: 0.55; background: transparent; }
 
 .sp-bg-strip {
   position: fixed;
