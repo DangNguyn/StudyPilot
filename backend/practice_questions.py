@@ -12,6 +12,8 @@ Câu hỏi ôn nhanh (practice) hiển thị cạnh nội dung tóm tắt ở tr
 
 from __future__ import annotations
 
+from content_language import language_rule, plan_language
+from supabase_client import supabase
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -66,8 +68,8 @@ YÊU CẦU:
 5. explanation: 1-2 câu giải thích VÌ SAO đáp án đúng, viết cho người vừa trả lời sai.
 6. evidence: chép NGUYÊN VĂN một cụm 4-20 từ có trong nội dung của mục, là chỗ chứa
    câu trả lời (để ứng dụng tô sáng). Không diễn đạt lại.
-7. Viết cùng ngôn ngữ với nội dung (nội dung tiếng Việt thì hỏi tiếng Việt; thuật ngữ
-   tiếng Anh giữ nguyên như trong nội dung).
+7. Câu hỏi, lựa chọn và giải thích viết theo NGÔN NGỮ BẮT BUỘC ghi ở đầu yêu cầu;
+   riêng evidence vẫn chép nguyên văn từ nội dung của mục.
 8. Không đánh số đề mục trong câu hỏi."""
 
 
@@ -166,12 +168,15 @@ def ensure_practice_questions(topic: dict) -> tuple[list, bool]:
     if not is_claude_configured():
         raise RuntimeError("Chưa cấu hình ANTHROPIC_API_KEY để tạo câu hỏi ôn nhanh.")
 
+    lang = plan_language(supabase, topic.get("exam_plan_id"))
+
     def generate_batch(batch: list[int]) -> list[dict]:
         blocks = [
             f"=== MỤC {index} ===\n{_section_text(sections[index])[:6000]}"
             for index in batch
         ]
         prompt = (
+            f"{language_rule(lang)}\n\n"
             f"Bài học: {topic.get('name') or ''}\n\n"
             f"Viết 3 câu hỏi cho MỖI mục có số: {', '.join(str(index) for index in batch)}.\n"
             "section_index phải là đúng số MỤC tương ứng.\n\n" + "\n\n".join(blocks)

@@ -1677,4 +1677,12 @@ export const EN: Record<string, string> = {
   "Tắt": "Off",
   "Hiệu ứng nền": "Background effects",
   "Đồ dùng học tập trôi nhẹ trên nền và đường bay tới ngày thi ở chân màn hình.": "Study items float gently in the background, plus a flight path to exam day along the bottom.",
+  // Ngôn ngữ nội dung kế hoạch
+  "Thuật ngữ giữ tiếng Anh trong ngoặc": "English terms kept in brackets",
+  "Toàn bộ nội dung bằng tiếng Anh": "All content in English",
+  "Ngôn ngữ nội dung": "Content language",
+  "Tóm tắt, câu hỏi, bài ôn, giải thích": "Summaries, questions, reviews, explanations",
+  "Tài liệu tiếng Anh vẫn dùng được: AI đọc bản gốc rồi viết tóm tắt và câu hỏi bằng tiếng Việt.": "English documents still work: AI reads the original and writes summaries and questions in Vietnamese.",
+  "Mọi nội dung AI viết cho kế hoạch này sẽ bằng tiếng Anh, kể cả khi tài liệu là tiếng Việt.": "Everything AI writes for this plan will be in English, even if the document is in Vietnamese.",
+  "Đáp án được chấp nhận": "Accepted answers",
 };

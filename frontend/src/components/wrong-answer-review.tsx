@@ -454,10 +454,10 @@ function QuestionDetail({
             <p className="flex items-center gap-1 text-[12px] font-bold text-emerald-700">
               <IconCheck size={13} />
 
-              {tx("Đáp án đúng")}
+              {Array.isArray(question.correct_answer) && question.correct_answer.length > 1 ? tx("Đáp án được chấp nhận") : tx("Đáp án đúng")}
             </p>
             <p className="mt-1 font-semibold text-[var(--sp-ink)]">
-              {Array.isArray(question.correct_answer) ? question.correct_answer.join(", ") : question.correct_answer}
+              {Array.isArray(question.correct_answer) ? question.correct_answer.join(" · ") : question.correct_answer}
             </p>
           </div>
         </div>

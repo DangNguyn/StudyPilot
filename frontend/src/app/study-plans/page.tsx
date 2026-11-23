@@ -18,6 +18,8 @@ import {
   CreatePlanHero,
   FocusChapterChips,
   PlanModeCards,
+  ContentLanguagePicker,
+  type ContentLanguage,
   PlanPreviewDialog,
   type OutlineChapter,
   type OutlineState,
@@ -265,6 +267,7 @@ export default function StudyPlansPage() {
 
   // Cách chia kế hoạch + AI nhận diện chương ngay khi chọn tài liệu
   const [planMode, setPlanMode] = useState<PlanMode>("chapter");
+  const [contentLanguage, setContentLanguage] = useState<ContentLanguage>("vi");
   const [outline, setOutline] = useState<OutlineState>({ status: "idle" });
   const [focusChapters, setFocusChapters] = useState<Set<number>>(new Set());
   const outlineRequestRef = useRef(0);
@@ -842,6 +845,7 @@ export default function StudyPlansPage() {
             exam_date: examDate,
             daily_available_minutes: Number(dailyHours) * 60,
             study_days_per_week: Number(studyDays),
+            content_language: contentLanguage,
           }),
         }
       );
@@ -1466,6 +1470,7 @@ export default function StudyPlansPage() {
             <div>
               <StepHead number={4} title={tx("Cách chia kế hoạch")} done={modeReady && workflowSteps[2].complete} />
               <PlanModeCards compact mode={planMode} onChange={setPlanMode} />
+              <ContentLanguagePicker value={contentLanguage} onChange={setContentLanguage} />
               {planMode === "focus" && (
                 <div className="mt-3">
                   <FocusChapterChips

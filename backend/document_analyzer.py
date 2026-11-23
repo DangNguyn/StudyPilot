@@ -14,6 +14,7 @@ Kết quả trả về có cùng định dạng với analyze_chunk_batch() cũ 
 main.py, nên lịch học, Quiz, Flashcard và giao diện không cần thay đổi.
 """
 
+from content_language import language_rule
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -261,8 +262,8 @@ YÊU CẦU BIÊN SOẠN:
    sách từ vựng vào content.
 7. Loại bỏ nhiễu: số trang, đầu/chân trang, ngày tháng in ấn, mục lục, quảng cáo,
    hướng dẫn thao tác không phải kiến thức.
-8. Viết bằng tiếng Việt, rõ ràng; giữ nguyên thuật ngữ chuyên ngành, từ tiếng Anh,
-   tên riêng và ví dụ gốc của tài liệu (có thể kèm giải thích tiếng Việt).
+8. Viết theo NGÔN NGỮ BẮT BUỘC ghi ở đầu yêu cầu, rõ ràng; giữ tên riêng và ví dụ gốc
+   của tài liệu, thuật ngữ chuyên ngành kèm thuật ngữ gốc như quy tắc ngôn ngữ đã nêu.
 9. Mỗi công thức đưa vào formulas (KHÔNG lặp lại trong content): expression viết
    một dòng, phân số dạng "tử / mẫu" có dấu cách quanh "/", chỉ số dưới dùng "_"
    (ví dụ |E_D| = %ΔQ / %ΔP); explanation giải thích ngắn ý nghĩa các ký hiệu.
@@ -862,7 +863,7 @@ def build_fallback_sections(topic, chunks):
     }] if lines else []
 
 
-def _write_lesson(topic, chunks, document_title):
+def _write_lesson(topic, chunks, document_title, language: str = "vi"):
     location = " > ".join(
         part
         for part in [
@@ -873,6 +874,7 @@ def _write_lesson(topic, chunks, document_title):
     )
 
     prompt = (
+        f"{language_rule(language)}\n\n"
         f"TÀI LIỆU: {document_title}\n"
         f"VỊ TRÍ TRONG GIÁO TRÌNH: {location or 'Không rõ'}\n"
         f"TÊN BÀI HỌC: {topic.get('name')}\n\n"
@@ -920,7 +922,7 @@ def _make_unique_names(topics):
 # HÀM CHÍNH
 # ==============================
 
-def analyze_document_with_claude(chunks, document_name: str = ""):
+def analyze_document_with_claude(chunks, document_name: str = "", language: str = "vi"):
     """
     Phân tích toàn bộ tài liệu và trả về danh sách chủ đề theo định dạng:
     hierarchy, name, description, difficulty_level, estimated_minutes,
@@ -979,7 +981,7 @@ def analyze_document_with_claude(chunks, document_name: str = ""):
         ]
 
         try:
-            lesson = _write_lesson(topic, topic_chunks, document_title)
+            lesson = _write_lesson(topic, topic_chunks, document_title, language)
             sections = [
                 normalized
                 for normalized in (
