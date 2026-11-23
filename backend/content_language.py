@@ -36,8 +36,12 @@ def fill_blank_rule(lang: str) -> str:
     return (
         "CÂU ĐIỀN KHUYẾT: chỗ trống chỉ là MỘT cụm ngắn 1-4 từ có trong tài liệu, chỉ có một cách hiểu đúng; "
         "câu hỏi viết bằng đúng ngôn ngữ bắt buộc ở trên. "
-        "correct_answer là DANH SÁCH 2-4 đáp án được chấp nhận: cụm đầy đủ trước, rồi cách nói ngắn, "
-        f"rồi thuật ngữ gốc của tài liệu (nếu khác ngôn ngữ). Ví dụ: {example}."
+        "correct_answer là DANH SÁCH 2-4 đáp án được chấp nhận: đáp án ĐẦU TIÊN bắt buộc viết bằng ngôn ngữ "
+        "bắt buộc ở trên, rồi cách nói ngắn, rồi thuật ngữ gốc của tài liệu (nếu khác ngôn ngữ). "
+        "Mỗi đáp án chỉ gồm đúng phần điền vào chỗ trống, đặt vào câu phải đọc trôi chảy; "
+        "không lặp lại chữ đã có ngay trước hoặc sau chỗ trống "
+        '(câu "một hệ thống ____" thì đáp án là "thông tin", không phải "hệ thống thông tin"). '
+        f"Ví dụ: {example}."
     )
 
 

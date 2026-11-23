@@ -7740,11 +7740,13 @@ def generate_retake_quiz(
 
         valid_chunk_ids = set(selected_chunk_ids)
 
+        # Groq gói miễn phí giới hạn ~8000 token mỗi lần gọi: chia đều ~12.000 ký tự tài liệu cho các đoạn
+        per_chunk_chars = max(800, 12000 // max(1, len(chunks)))
         chunks_text = "\n\n".join(
             [
                 f"Chunk ID: {chunk['id']}\n"
                 f"Trang: {chunk.get('page_number')}\n"
-                f"Nội dung: {chunk['content']}"
+                f"Nội dung: {str(chunk['content'])[:per_chunk_chars]}"
                 for chunk in chunks
             ]
         )
@@ -7917,8 +7919,10 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
                         status_code=502,
                         detail="Câu điền khuyết chưa có đáp án."
                     )
-                # Bỏ đáp án trùng (không phân biệt hoa/thường), tối đa 4
-                question["correct_answer"] = list({answer.casefold(): answer for answer in reversed(answers)}.values())[::-1][:4]
+                # Thêm bản đã bỏ chữ lặp quanh chỗ trống, rồi bỏ đáp án trùng (không phân biệt hoa/thường)
+                answers += [trim_blank_overlap(question.get("question_text", ""), answer) for answer in answers]
+                answers = [answer for answer in answers if answer]
+                question["correct_answer"] = list({answer.casefold(): answer for answer in reversed(answers)}.values())[::-1][:6]
 
             else:
                 raise HTTPException(
@@ -9326,6 +9330,29 @@ def normalize_answer(value) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     text = text.strip(" .,;:!?\"'“”‘’()[]")
     return text
+
+
+def trim_blank_overlap(question_text: str, answer: str) -> str:
+    """
+    Bỏ phần đáp án lặp lại chữ đứng ngay trước/sau chỗ trống:
+    "Công nghệ ___ là..." + "công nghệ xanh" -> "xanh"; "hệ thống ___" + "hệ thống thông tin" -> "thông tin".
+    """
+    match = re.search(r"_{2,}", question_text or "")
+    if not match:
+        return answer
+    before = normalize_answer(question_text[:match.start()]).split()
+    after = normalize_answer(question_text[match.end():]).split()
+    words = str(answer).split()
+    lowered = [normalize_answer(word) for word in words]
+    for size in range(min(len(before), len(words) - 1), 0, -1):
+        if before[-size:] == lowered[:size]:
+            words, lowered = words[size:], lowered[size:]
+            break
+    for size in range(min(len(after), len(words) - 1), 0, -1):
+        if after[:size] == lowered[-size:]:
+            words, lowered = words[:-size], lowered[:-size]
+            break
+    return " ".join(words)
 
 
 def _loose_answer(text: str, keep_marks: bool = False) -> str:

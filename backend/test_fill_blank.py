@@ -16,3 +16,10 @@ assert ok("", [""]) is False
 assert ok("hcm", ["TP.HCM / HCM"]) is True
 
 print("OK: fill_blank")
+
+from main import trim_blank_overlap as trim
+assert trim("Công nghệ ___ là loại giảm tác động môi trường.", "công nghệ xanh") == "xanh"
+assert trim("Một hệ thống ___ có tổ chức.", "hệ thống thông tin") == "thông tin"
+assert trim("Công nghệ có một _____ vòng đời.", "vòng đời") == "vòng đời", "không cắt hết đáp án"
+assert trim("Thủ đô là ____.", "Hà Nội") == "Hà Nội"
+print("OK: trim_blank_overlap")
