@@ -182,6 +182,7 @@ def ensure_practice_questions(topic: dict) -> tuple[list, bool]:
             "section_index phải là đúng số MỤC tương ứng.\n\n" + "\n\n".join(blocks)
         )
         result = generate_structured(
+        tier="light",
             system=PRACTICE_SYSTEM,
             prompt=prompt,
             input_schema=PRACTICE_SCHEMA,

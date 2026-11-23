@@ -14,6 +14,9 @@ from uuid import UUID, uuid4
 from typing import Literal
 from document_processor import extract_text, split_into_chunks
 from groq_client import generate_text
+from ai_text import generate_light_text
+from claude_client import generate_claude_text
+from flashcard_quality import cards_look_ok, parse_cards_json
 from claude_client import is_claude_configured
 from document_analyzer import (
     analyze_document_with_claude,
@@ -4716,33 +4719,29 @@ NỘI DUNG TÀI LIỆU:
 {json.dumps(chunk_data, ensure_ascii=False)}
 """
 
-        # 6. Gọi AI Groq
-        ai_response = generate_text(prompt)
+        # 6. Groq (miễn phí) tạo trước; thẻ không đạt kiểm tra thì Claude Haiku tạo lại
+        flashcard_lang = plan_language(supabase, topic.get("exam_plan_id"))
+        chunk_id_set = set(source_chunk_ids)
 
-        if not isinstance(ai_response, str) or not ai_response.strip():
-            raise ValueError("AI không trả về nội dung Flashcard.")
+        def usable(raw_cards):
+            return [
+                card for card in raw_cards
+                if isinstance(card, dict) and str(card.get("source_chunk_id") or "") in chunk_id_set
+            ]
 
-        cleaned_response = ai_response.strip()
+        cards = []
+        try:
+            cards = usable(parse_cards_json(generate_text(prompt)))
+        except Exception as groq_error:
+            print("Groq không tạo được flashcard:", groq_error)
 
-        if cleaned_response.startswith("```"):
-            lines = cleaned_response.splitlines()
+        if not cards_look_ok(cards, request.number_of_cards, flashcard_lang) and is_claude_configured():
+            try:
+                cards = usable(parse_cards_json(generate_claude_text(prompt, tier="light"))) or cards
+            except Exception as claude_error:
+                print("Claude Haiku không tạo được flashcard:", claude_error)
 
-            if lines and lines[0].startswith("```"):
-                lines = lines[1:]
-
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-
-            cleaned_response = "\n".join(lines).strip()
-
-        result = json.loads(cleaned_response)
-
-        if not isinstance(result, dict):
-            raise ValueError("Định dạng dữ liệu AI trả về không hợp lệ.")
-
-        cards = result.get("cards", [])
-
-        if not isinstance(cards, list) or not cards:
+        if not cards:
             raise ValueError("AI không tạo được danh sách Flashcard.")
 
         # 7. Kiểm tra và lọc Flashcard AI tạo ra
@@ -6051,7 +6050,7 @@ Chỉ trả về JSON, không thêm Markdown hoặc nội dung khác.
         
         # 6. Gọi Groq AI. Nếu hết quota, tạo câu hỏi dự phòng từ chunks.
         try:
-            ai_result = generate_text(prompt)
+            ai_result = generate_light_text(prompt)
         except Exception as ai_error:
             print(
                 "Không thể gọi AI tạo Quiz, dùng câu hỏi dự phòng:",
@@ -7818,7 +7817,7 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
 """
 
         # 9. Gọi AI Groq
-        ai_response = generate_text(prompt)
+        ai_response = generate_light_text(prompt)
         cleaned_response = ai_response.strip()
 
         if cleaned_response.startswith("```"):
@@ -8591,7 +8590,7 @@ CẤU TRÚC:
 }}
 """
 
-            ai_response = generate_text(prompt).strip()
+            ai_response = generate_light_text(prompt).strip()
 
             if ai_response.startswith("```"):
                 ai_response = ai_response.split(
@@ -8899,7 +8898,7 @@ CẤU TRÚC:
 }}
 """
 
-                    supplemental_response = generate_text(
+                    supplemental_response = generate_light_text(
                         supplemental_prompt
                     ).strip()
 

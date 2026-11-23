@@ -160,6 +160,7 @@ def build_attempt_assessment(result: dict, language: str = "vi") -> dict:
     )
 
     data = generate_structured(
+        tier="light",
         system=ASSESSMENT_SYSTEM,
         prompt=prompt,
         input_schema=ASSESSMENT_SCHEMA,

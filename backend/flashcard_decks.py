@@ -24,6 +24,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from claude_client import generate_structured, is_claude_configured
 from document_processor import extract_text, split_into_chunks
 from groq_client import generate_text
+from flashcard_quality import cards_look_ok, parse_cards_json
 from supabase_client import supabase
 
 router = APIRouter()
@@ -130,19 +131,19 @@ NỘI DUNG TÀI LIỆU:
 def _generate_cards(deck_name: str, count: int, source: str) -> list[dict]:
     prompt = _build_prompt(deck_name, count, source)
 
-    if is_claude_configured():
-        result = generate_structured(system=SYSTEM_PROMPT, prompt=prompt, input_schema=CARD_SCHEMA, max_tokens=8000)
-    else:
-        raw = generate_text(
+    # Groq (miễn phí) tạo trước; không đạt kiểm tra thì Claude Haiku tạo lại
+    raw_cards = []
+    try:
+        raw_cards = parse_cards_json(generate_text(
             prompt + '\nChỉ trả về JSON hợp lệ dạng {"cards": [{"front": "...", "back": "..."}]}, không kèm Markdown.'
-        )
-        cleaned = (raw or "").strip()
-        if cleaned.startswith("```"):
-            lines = cleaned.splitlines()[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            cleaned = "\n".join(lines)
-        result = json.loads(cleaned)
+        ))
+    except Exception as groq_error:
+        print("Groq không tạo được bộ flashcard:", groq_error)
+    if not cards_look_ok(raw_cards, count, "vi") and is_claude_configured():
+        raw_cards = (generate_structured(
+            tier="light", system=SYSTEM_PROMPT, prompt=prompt, input_schema=CARD_SCHEMA, max_tokens=8000
+        ) or {}).get("cards") or raw_cards
+    result = {"cards": raw_cards}
 
     cards = []
     seen = set()

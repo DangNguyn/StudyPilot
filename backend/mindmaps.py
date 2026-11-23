@@ -237,6 +237,7 @@ def _generate(chapter: str, topics: list[dict], language: str = "vi") -> dict:
         _lesson_text(index, topic) for index, topic in enumerate(topics, start=1)
     )
     data = generate_structured(
+        tier="light",
         system=MINDMAP_SYSTEM,
         prompt=prompt[:60000],
         input_schema=MINDMAP_SCHEMA,
