@@ -70,3 +70,13 @@ cd frontend && node src/lib/study-calendar.test.ts   # kiểm thử .ts chạy t
 ## Việc còn lại theo bộ prompt
 
 Đã xong P1 (buổi hoàn thành gắn với quiz) và phần lịch/ôn lại. Còn: P8 đăng nhập đa người dùng → P2 Email A nhắc 19h (gồm buổi ôn có `review_date` hôm nay chưa xong) → P3 Email B (bỏ qua phần yếu đã có ngày ôn sắp tới) → P4 gom ngưỡng → P5 cảnh báo thiếu thời gian → P6 trích nguồn → P7 ẩn flashcards/mindmap/Pro → P9 kiểm tra toàn luồng.
+
+
+## Mỗi tài khoản một bộ dữ liệu (11/2026)
+- Frontend: `src/lib/api-auth.ts` bọc `window.fetch`, tự gắn `Authorization: Bearer <Supabase access token>` cho mọi request tới backend `/api/*` (cài trong `auth-provider.tsx`). Token hết hạn → refresh rồi thử lại 1 lần.
+- Backend: `auth.py` (middleware xác thực token qua Supabase `/auth/v1/user`, cache 5 phút) → `current_user_id()` thay cho `DEMO_USER_ID` cũ. Ngoài request (script, scheduler) dùng `with acting_as(user_id):`.
+- Dữ liệu cũ dưới `DEMO_USER_ID` được giữ nguyên nhưng không tài khoản nào thấy.
+- Chi phí AI: `ai_usage.py` ghi mỗi lần gọi Claude/Groq + mỗi tài liệu đọc (số trang) vào bảng `ai_usage`; SQL + view thống kê trong `backend/supabase_usage.sql` (`admin_usage_by_user`, `admin_usage_by_feature`, `admin_usage_by_document`, `admin_usage_by_day`, `admin_exam_plans`). Giá ước tính trong `DEFAULT_PRICES`, ghi đè bằng `PRICE_<MODEL>=in,out`.
+- ThreadPoolExecutor phải chạy task trong `contextvars.copy_context()` để giữ người dùng (xem document_analyzer.py, practice_questions.py).
+- Thông báo Gmail: cài đặt lưu theo user_id trong `notification_settings.json`; scheduler chạy cho từng người.
+- Hosting: thêm địa chỉ web vào `FRONTEND_ORIGINS` (CORS).

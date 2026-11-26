@@ -26,10 +26,11 @@ from document_processor import extract_text, split_into_chunks
 from groq_client import generate_text
 from flashcard_quality import cards_look_ok, parse_cards_json
 from supabase_client import supabase
+from auth import current_user_id
+from ai_usage import record_document, set_usage_document
 
 router = APIRouter()
 
-DEMO_USER_ID = os.getenv("DEMO_USER_ID")
 ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".ppt", ".pptx"}
 MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_SOURCE_CHARS = 28000  # đủ để AI bao quát tài liệu mà không quá tốn token
@@ -74,14 +75,20 @@ def _is_schema_error(error: Exception) -> bool:
     )
 
 
-def _read_chunks(content: bytes, extension: str) -> list[dict]:
+def _read_chunks(content: bytes, extension: str, file_name: str = "") -> list[dict]:
     temp_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=extension, delete=False) as temp_file:
             temp_file.write(content)
             temp_path = temp_file.name
         chunks = []
-        for page in extract_text(temp_path) or []:
+        pages = extract_text(temp_path) or []
+        if pages:
+            record_document(
+                file_name,
+                max((page.get("page_number") or 0 for page in pages), default=len(pages)),
+            )
+        for page in pages:
             for chunk in split_into_chunks(page["content"]):
                 if chunk.strip():
                     chunks.append({"page_number": page.get("page_number"), "content": chunk.strip()})
@@ -169,6 +176,7 @@ def create_flashcard_deck(
     number_of_cards: int = Form(default=20),
 ):
     original_name = (file.filename or "tai-lieu").replace("\\", "/").split("/")[-1]
+    set_usage_document(None, original_name)
     extension = os.path.splitext(original_name)[1].lower()
 
     if extension not in ALLOWED_EXTENSIONS:
@@ -186,7 +194,7 @@ def create_flashcard_deck(
     deck_name = (name or "").strip()[:120] or os.path.splitext(original_name)[0][:120]
 
     try:
-        chunks = _read_chunks(content, extension)
+        chunks = _read_chunks(content, extension, original_name)
     except Exception as error:
         raise HTTPException(status_code=400, detail=f"Không đọc được tài liệu: {error}")
 
@@ -208,7 +216,7 @@ def create_flashcard_deck(
     try:
         deck_response = (
             supabase.table("flashcard_decks")
-            .insert({"user_id": DEMO_USER_ID, "name": deck_name, "file_name": original_name})
+            .insert({"user_id": current_user_id(), "name": deck_name, "file_name": original_name})
             .execute()
         )
         deck = (deck_response.data or [None])[0]
@@ -219,7 +227,7 @@ def create_flashcard_deck(
         supabase.table("flashcards").insert(
             [
                 {
-                    "user_id": DEMO_USER_ID,
+                    "user_id": current_user_id(),
                     "deck_id": deck_id,
                     "topic_id": None,
                     "source_chunk_id": None,
@@ -254,7 +262,7 @@ def list_flashcard_decks():
         decks = (
             supabase.table("flashcard_decks")
             .select("*")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .order("created_at", desc=True)
             .execute()
         ).data or []
@@ -269,7 +277,7 @@ def list_flashcard_decks():
         cards = (
             supabase.table("flashcards")
             .select("deck_id")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "active")
             .in_("deck_id", [deck["id"] for deck in decks])
             .execute()
@@ -290,7 +298,7 @@ def delete_flashcard_deck(deck_id: UUID):
             supabase.table("flashcard_decks")
             .select("id")
             .eq("id", str(deck_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         ).data
         if not found:
@@ -299,14 +307,14 @@ def delete_flashcard_deck(deck_id: UUID):
         card_ids = [
             card["id"]
             for card in (
-                supabase.table("flashcards").select("id").eq("deck_id", str(deck_id)).eq("user_id", DEMO_USER_ID).execute()
+                supabase.table("flashcards").select("id").eq("deck_id", str(deck_id)).eq("user_id", current_user_id()).execute()
             ).data
             or []
         ]
         if card_ids:
             supabase.table("flashcard_reviews").delete().in_("flashcard_id", card_ids).execute()
             supabase.table("flashcards").delete().in_("id", card_ids).execute()
-        supabase.table("flashcard_decks").delete().eq("id", str(deck_id)).eq("user_id", DEMO_USER_ID).execute()
+        supabase.table("flashcard_decks").delete().eq("id", str(deck_id)).eq("user_id", current_user_id()).execute()
     except HTTPException:
         raise
     except Exception as error:

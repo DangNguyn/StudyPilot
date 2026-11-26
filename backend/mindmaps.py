@@ -24,10 +24,10 @@ from pydantic import BaseModel, Field
 from claude_client import generate_structured, is_claude_configured
 from supabase_client import supabase
 from content_language import language_rule, plan_language
+from auth import current_user_id
 
 router = APIRouter()
 
-DEMO_USER_ID = os.getenv("DEMO_USER_ID")
 BASE_DIR = Path(__file__).resolve().parent
 ACCOUNT_FILE = BASE_DIR / "account_settings.json"
 CACHE_DIR = BASE_DIR / ".mindmap_cache"
@@ -48,7 +48,8 @@ def _read_account() -> dict:
 
 
 def get_user_plan() -> str:
-    plan = _read_account().get("plan") or os.getenv("DEFAULT_PLAN", "free")
+    # Mỗi tài khoản một gói riêng: {"users": {"<user_id>": "pro"}}
+    plan = (_read_account().get("users") or {}).get(current_user_id()) or os.getenv("DEFAULT_PLAN", "free")
     return "pro" if str(plan).lower() == "pro" else "free"
 
 
@@ -74,7 +75,7 @@ def update_plan(payload: PlanUpdate):
             detail="Chưa mở thanh toán. Bật ALLOW_PLAN_SWITCH=true trong .env để thử gói Pro khi phát triển.",
         )
     data = _read_account()
-    data["plan"] = payload.plan
+    data.setdefault("users", {})[current_user_id()] = payload.plan
     ACCOUNT_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"plan": payload.plan, "can_switch": True}
 
@@ -96,7 +97,7 @@ def _load_chapter(exam_plan_id: str, chapter: str):
         supabase.table("topics")
         .select("id, name, hierarchy, description, content_sections, source_chunk_ids")
         .eq("exam_plan_id", exam_plan_id)
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .execute()
     ).data or []
 
@@ -108,7 +109,7 @@ def _load_chapter(exam_plan_id: str, chapter: str):
     sessions = (
         supabase.table("study_sessions")
         .select("topic_id, scheduled_start")
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .in_("topic_id", [str(topic["id"]) for topic in chapter_topics])
         .execute()
     ).data or []
@@ -325,7 +326,7 @@ def _load_saved(exam_plan_id: str, chapter: str):
         rows = (
             supabase.table("chapter_mindmaps")
             .select("data")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("exam_plan_id", exam_plan_id)
             .eq("chapter_key", key)
             .limit(1)
@@ -346,7 +347,7 @@ def _save(exam_plan_id: str, chapter: str, data: dict):
     try:
         supabase.table("chapter_mindmaps").upsert(
             {
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "exam_plan_id": exam_plan_id,
                 "chapter_key": key,
                 "chapter_name": chapter[:200],

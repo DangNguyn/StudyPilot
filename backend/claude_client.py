@@ -166,6 +166,20 @@ def generate_structured(
         },
     )
 
+    # Ghi lại token đã dùng (kể cả khi kết quả bị cắt: vẫn bị tính tiền)
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        from ai_usage import record_ai_call
+
+        record_ai_call(
+            "anthropic",
+            CLAUDE_MODEL,
+            getattr(usage, "input_tokens", 0) or 0,
+            getattr(usage, "output_tokens", 0) or 0,
+            cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
+            cache_write_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
+        )
+
     if response.stop_reason == "max_tokens":
         raise ClaudeOutputTruncated(
             "Claude trả về kết quả quá dài và bị cắt ngang."

@@ -94,7 +94,15 @@ def _ssl_context() -> ssl.SSLContext:
         return ssl.create_default_context()
 
 def _user_id() -> str:
-    return os.getenv("DEMO_USER_ID") or "demo"
+    """Người đang gọi API (mỗi tài khoản một bộ cài đặt thông báo riêng)."""
+    from auth import current_user_id
+
+    return current_user_id()
+
+
+def _is_legacy_key(user_id: str) -> bool:
+    # Cài đặt cũ của tài khoản demo dùng chung: không gửi thư nữa
+    return user_id in ("demo", os.getenv("DEMO_USER_ID") or "")
 
 
 _ENV_FILE = Path(__file__).resolve().parent / ".env"
@@ -754,11 +762,16 @@ def build_weak_review(user_id: str, force: bool = False) -> tuple[str, str, str]
 # Phát hiện thư báo lỗi (địa chỉ không tồn tại)
 # ============================================================
 
-def check_bounces() -> None:
-    """Đọc thư báo lỗi trong hộp thư của tài khoản gửi; tắt thông báo cho địa chỉ bị lỗi."""
-    if not gmail_configured():
+def check_bounces(user_id: str) -> None:
+    """Đọc thư báo lỗi trong hộp thư của tài khoản gửi; tắt thông báo cho địa chỉ bị lỗi.
+    Chỉ dùng khi gửi trực tiếp bằng Gmail (SMTP). Gửi qua Apps Script / Brevo thì bỏ qua,
+    vì khi đó GMAIL_APP_PASSWORD (nếu còn) không phải của tài khoản gửi."""
+    if all(_apps_script_settings()) or all(_brevo_settings()):
         return
-    settings = load_settings()
+    sender, password = _gmail_credentials()
+    if not (sender and password):
+        return
+    settings = load_settings(user_id)
     address = settings.get("email")
     if not address or not settings.get("enabled"):
         return
@@ -793,7 +806,7 @@ def check_bounces() -> None:
             "enabled": False,
             "disabled_reason": "Gmail báo không gửi được tới địa chỉ này nên thông báo đã tạm tắt. Bật lại để thử tiếp.",
         })
-        save_settings(settings)
+        save_settings(settings, user_id)
         print("Đã tắt thông báo vì email bị báo lỗi:", address)
 
 
@@ -805,64 +818,74 @@ _scheduler_started = False
 _retry_after: dict[str, float] = {}
 
 
-def _send_scheduled(settings: dict, kind: str, builder) -> bool:
-    """Gửi 1 loại thư. True = xong cho hôm nay (đã gửi hoặc không có gì để nhắc).
-    Lỗi thì thử lại sau 10 phút, không làm hỏng loại thư còn lại."""
-    if time.time() < _retry_after.get(kind, 0):
+def _send_scheduled(user_id: str, settings: dict, kind: str, builder) -> bool:
+    """Gửi 1 loại thư cho 1 người. True = xong cho hôm nay (đã gửi hoặc không có gì để nhắc).
+    Lỗi thì thử lại sau 10 phút, không làm hỏng loại thư còn lại hay người dùng khác."""
+    retry_key = f"{user_id}:{kind}"
+    if time.time() < _retry_after.get(retry_key, 0):
         return False
     try:
-        content = builder(_user_id())
+        content = builder(user_id)
         if content:
             send_email(settings["email"], *content)
             print(f"Đã gửi thư nhắc ({kind}) tới {settings['email']}")
-        _retry_after.pop(kind, None)
+        _retry_after.pop(retry_key, None)
         return True
     except Exception as error:
-        _retry_after[kind] = time.time() + 10 * 60
+        _retry_after[retry_key] = time.time() + 10 * 60
         print(f"Lỗi khi gửi thư nhắc ({kind}), sẽ thử lại sau 10 phút:", str(error))
         return False
+
+
+def _run_for_user(user_id: str, now: datetime, check_bounce: bool) -> None:
+    today = now.date().isoformat()
+    settings = load_settings(user_id)
+    if not (settings.get("enabled") and settings.get("email") and gmail_configured()):
+        return
+
+    last_sent = settings.setdefault("last_sent", {})
+    hour = int(settings.get("daily_hour") or 7)
+
+    # Nhắc buổi sáng: gửi 1 lần/ngày, trong khoảng [giờ đã chọn, +4 giờ]
+    # (nếu backend bật muộn trong buổi sáng vẫn gửi bù).
+    if (
+        settings.get("daily_enabled")
+        and hour <= now.hour < hour + 4
+        and last_sent.get("daily") != today
+    ):
+        if _send_scheduled(user_id, settings, "daily", build_daily_digest):
+            last_sent["daily"] = today
+            save_settings(settings, user_id)
+
+    # Ôn phần còn yếu: gần ngày thi (còn 7/5/3/2/1 ngày) nếu có bài dưới 80%
+    if (
+        settings.get("weak_enabled", True)
+        and hour <= now.hour < hour + 4
+        and last_sent.get("weak") != today
+    ):
+        if _send_scheduled(user_id, settings, "weak", build_weak_review):
+            last_sent["weak"] = today
+            save_settings(settings, user_id)
+
+    if check_bounce:
+        check_bounces(user_id)
 
 
 def _scheduler_loop() -> None:
     last_bounce_check = 0.0
     while True:
-        try:
-            now = datetime.now(VIETNAM_TZ)
-            today = now.date().isoformat()
-            settings = load_settings()
-
-            if settings.get("enabled") and settings.get("email") and gmail_configured():
-                last_sent = settings.setdefault("last_sent", {})
-                hour = int(settings.get("daily_hour") or 7)
-
-                # Nhắc buổi sáng: gửi 1 lần/ngày, trong khoảng [giờ đã chọn, +4 giờ]
-                # (nếu backend bật muộn trong buổi sáng vẫn gửi bù).
-                if (
-                    settings.get("daily_enabled")
-                    and hour <= now.hour < hour + 4
-                    and last_sent.get("daily") != today
-                ):
-                    if _send_scheduled(settings, "daily", build_daily_digest):
-                        last_sent["daily"] = today
-                        save_settings(settings)
-
-                # Ôn phần còn yếu: gần ngày thi (còn 7/5/3/2/1 ngày) nếu có bài dưới 80%
-                if (
-                    settings.get("weak_enabled", True)
-                    and hour <= now.hour < hour + 4
-                    and last_sent.get("weak") != today
-                ):
-                    if _send_scheduled(settings, "weak", build_weak_review):
-                        last_sent["weak"] = today
-                        save_settings(settings)
-
-                if time.time() - last_bounce_check > 30 * 60:
-                    last_bounce_check = time.time()
-                    check_bounces()
-
-        except Exception as error:
-            # Lỗi bất ngờ (đọc dữ liệu...): ghi lại rồi chạy tiếp ở vòng sau
-            print("Lỗi bộ hẹn giờ thông báo:", str(error))
+        now = datetime.now(VIETNAM_TZ)
+        check_bounce = time.time() - last_bounce_check > 30 * 60
+        if check_bounce:
+            last_bounce_check = time.time()
+        with _LOCK:
+            user_ids = [key for key in _load_all().keys() if not _is_legacy_key(key)]
+        # Mỗi tài khoản xử lý riêng: lỗi của người này không ảnh hưởng người khác
+        for user_id in user_ids:
+            try:
+                _run_for_user(user_id, now, check_bounce)
+            except Exception as error:
+                print(f"Lỗi bộ hẹn giờ thông báo ({user_id}):", str(error))
 
         time.sleep(60)
 

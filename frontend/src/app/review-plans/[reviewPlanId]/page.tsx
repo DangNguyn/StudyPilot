@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { SmartLoading } from "@/components/loading-play";
 import { getMainTopicTitle, stripOutlineNumbers } from "@/lib/content-titles";
 
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 interface ReviewChunk {
   id: string;
   material_id: string;

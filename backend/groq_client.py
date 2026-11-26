@@ -32,6 +32,17 @@ def generate_text(prompt: str) -> str:
             max_completion_tokens=8192
         )
 
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            from ai_usage import record_ai_call
+
+            record_ai_call(
+                "groq",
+                MODEL_NAME,
+                getattr(usage, "prompt_tokens", 0) or 0,
+                getattr(usage, "completion_tokens", 0) or 0,
+            )
+
         result = response.choices[0].message.content
 
         if not result:

@@ -16,6 +16,7 @@ from content_language import language_rule, plan_language
 from supabase_client import supabase
 import json
 import re
+import contextvars
 from concurrent.futures import ThreadPoolExecutor
 
 from claude_client import generate_structured, is_claude_configured
@@ -194,8 +195,9 @@ def ensure_practice_questions(topic: dict) -> tuple[list, bool]:
         missing[start:start + SECTIONS_PER_CALL]
         for start in range(0, len(missing), SECTIONS_PER_CALL)
     ]
+    parent_context = contextvars.copy_context()
     with ThreadPoolExecutor(max_workers=min(3, len(batches))) as executor:
-        raw_questions = [item for batch in executor.map(generate_batch, batches) for item in batch]
+        raw_questions = [item for batch in executor.map(lambda item: parent_context.copy().run(generate_batch, item), batches) for item in batch]
 
     pools: dict[int, list[dict]] = {}
     for raw in raw_questions:

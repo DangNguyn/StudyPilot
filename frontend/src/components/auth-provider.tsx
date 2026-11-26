@@ -2,7 +2,11 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
+import { installApiAuth } from "@/lib/api-auth";
 import { getAuthClient } from "@/lib/auth";
+
+// Mọi lần gọi backend tự kèm token đăng nhập (mỗi tài khoản chỉ thấy dữ liệu của mình)
+installApiAuth();
 
 type AuthState = {
   /* Người dùng đang đăng nhập (null nếu chưa) */

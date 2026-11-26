@@ -33,6 +33,8 @@ from practice_questions import (
 )
 from supabase_client import supabase
 from content_language import fill_blank_rule, language_rule, plan_language
+from auth import auth_middleware, current_user_id
+from ai_usage import record_document, set_usage_document
 from email_notifications import router as notifications_router, start_scheduler
 from mindmaps import router as mindmaps_router
 from flashcard_decks import router as flashcard_decks_router
@@ -40,7 +42,6 @@ from flashcard_decks import router as flashcard_decks_router
 # Đọc biến môi trường
 load_dotenv()
 
-DEMO_USER_ID = os.getenv("DEMO_USER_ID")
 
 def parse_ai_json(raw_text: str):
     """
@@ -575,10 +576,21 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Cho phép Frontend kết nối
+# Nhận diện người dùng từ token đăng nhập Supabase (xem auth.py).
+# Phải khai báo TRƯỚC CORS để CORS bọc ngoài cùng (lỗi 401 vẫn có header CORS).
+app.middleware("http")(auth_middleware)
+
+# Cho phép Frontend kết nối. Khi đưa lên hosting, thêm địa chỉ web vào FRONTEND_ORIGINS
+# trong .env, ví dụ: FRONTEND_ORIGINS=https://studypilot.vercel.app
+_frontend_origins = [
+    origin.strip().rstrip("/")
+    for origin in (os.getenv("FRONTEND_ORIGINS") or "").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", *_frontend_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -1256,19 +1268,12 @@ def get_message():
 
 @app.post("/api/subjects")
 def create_subject(subject: SubjectCreate):
-
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
-
     try:
         response = (
             supabase
             .table("subjects")
             .insert({
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "name": subject.name.strip(),
                 "description": subject.description,
                 "color": subject.color
@@ -1290,19 +1295,12 @@ def create_subject(subject: SubjectCreate):
 
 @app.get("/api/subjects")
 def get_subjects():
-
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
-
     try:
         response = (
             supabase
             .table("subjects")
             .select("*")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .order("created_at", desc=True)
             .execute()
         )
@@ -1319,19 +1317,13 @@ def get_subjects():
         )
 @app.post("/api/exam-plans")
 def create_exam_plan(plan: ExamPlanCreate):
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
-
     try:
         # Kiểm tra môn học có tồn tại và thuộc người dùng không
         subject_response = (
             supabase.table("subjects")
             .select("id")
             .eq("id", str(plan.subject_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -1346,7 +1338,7 @@ def create_exam_plan(plan: ExamPlanCreate):
         response = (
             supabase.table("exam_plans")
             .insert({
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "subject_id": str(plan.subject_id),
                 "title": plan.title.strip(),
                 "exam_date": plan.exam_date.isoformat(),
@@ -1374,18 +1366,12 @@ def create_exam_plan(plan: ExamPlanCreate):
 
 @app.get("/api/exam-plans")
 def get_exam_plans():
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
-
     try:
         # 1. Lấy danh sách kế hoạch
         response = (
             supabase.table("exam_plans")
             .select("*")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .order("exam_date", desc=False)
             .execute()
         )
@@ -1403,7 +1389,7 @@ def get_exam_plans():
         topics_response = (
             supabase.table("topics")
             .select("id, exam_plan_id")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("is_active", True)
             .execute()
         )
@@ -1425,7 +1411,7 @@ def get_exam_plans():
                 sessions_response = (
                     supabase.table("study_sessions")
                     .select("id, topic_id, status")
-                    .eq("user_id", DEMO_USER_ID)
+                    .eq("user_id", current_user_id())
                     .in_("topic_id", batch_topic_ids)
                     .execute()
                 )
@@ -1543,19 +1529,13 @@ def get_exam_plans():
 
 @app.post("/api/topics")
 def create_topic(topic: TopicCreate):
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
-
     try:
         # Kiểm tra kế hoạch ôn thi có thuộc người dùng không
         plan_response = (
             supabase.table("exam_plans")
             .select("id")
             .eq("id", str(topic.exam_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -1570,7 +1550,7 @@ def create_topic(topic: TopicCreate):
         response = (
             supabase.table("topics")
             .insert({
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "exam_plan_id": str(topic.exam_plan_id),
                 "name": topic.name.strip(),
                 "description": topic.description,
@@ -1600,18 +1580,12 @@ def create_topic(topic: TopicCreate):
 
 @app.get("/api/topics")
 def get_topics(exam_plan_id: UUID | None = None):
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
-
     try:
         # Khi có plan_id, chỉ lấy chủ đề của kế hoạch đó.
         query = (
             supabase.table("topics")
             .select("*")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("is_active", True)
         )
 
@@ -1620,7 +1594,7 @@ def get_topics(exam_plan_id: UUID | None = None):
                 supabase.table("exam_plans")
                 .select("id")
                 .eq("id", str(exam_plan_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .limit(1)
                 .execute()
             )
@@ -1689,7 +1663,7 @@ def _resolve_original_quiz(quiz_id):
     plan_response = (
         supabase.table("review_plans")
         .select("id, status, retake_quiz_id, assessment_id, review_items")
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .eq("retake_quiz_id", str(quiz_id))
         .limit(1)
         .execute()
@@ -1738,7 +1712,7 @@ def _find_retake_plan_for_quiz_unsafe(original_quiz_id):
     linked_plans = (
         supabase.table("review_plans")
         .select("id, status, retake_quiz_id, assessment_id, review_items")
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .not_.is_("retake_quiz_id", "null")
         .order("created_at")
         .execute()
@@ -1767,7 +1741,7 @@ def _find_retake_plan_for_quiz_unsafe(original_quiz_id):
     plans = (
         supabase.table("review_plans")
         .select("id, status, retake_quiz_id, assessment_id, review_items")
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .in_("assessment_id", assessment_ids)
         .not_.is_("retake_quiz_id", "null")
         .order("created_at")
@@ -1783,7 +1757,7 @@ def _session_day_context(study_session_id):
         supabase.table("study_sessions")
         .select("id, topic_id, scheduled_start")
         .eq("id", str(study_session_id))
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .limit(1)
         .execute()
     )
@@ -1824,7 +1798,7 @@ def _session_day_context(study_session_id):
                 supabase.table("topics")
                 .select("id")
                 .eq("exam_plan_id", str(exam_plan_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .execute()
             ).data or []
         ]
@@ -1833,7 +1807,7 @@ def _session_day_context(study_session_id):
             plan_sessions = (
                 supabase.table("study_sessions")
                 .select("scheduled_start")
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("topic_id", topic_ids)
                 .execute()
             ).data or []
@@ -1919,7 +1893,7 @@ def _finalize_retake(review_plan, retake_quiz_id, original_quiz_id):
             supabase.table("quizzes")
             .update({"title": title})
             .eq("id", str(retake_quiz_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -1940,7 +1914,7 @@ def _finalize_retake(review_plan, retake_quiz_id, original_quiz_id):
         supabase.table("review_plans")
         .update({"status": "pending", "review_items": items})
         .eq("id", str(review_plan["id"]))
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .execute()
     )
     review_plan["status"] = "pending"
@@ -1983,18 +1957,13 @@ def complete_session_practice(
     chuyển buổi học sang "đang học" để mở bài kiểm tra của buổi đó.
     Không đánh dấu hoàn thành: buổi chỉ hoàn thành khi nộp bài kiểm tra.
     """
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
 
     try:
         response = (
             supabase.table("study_sessions")
             .select("id, topic_id, scheduled_start, status, started_at")
             .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -2013,7 +1982,7 @@ def complete_session_practice(
         session_quizzes = (
             supabase.table("quizzes")
             .select("id")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("study_session_id", str(session_id))
             .execute()
         ).data or []
@@ -2030,7 +1999,7 @@ def complete_session_practice(
                         supabase.table("review_plans")
                         .update({"status": "in_progress"})
                         .eq("id", str(retake_plan["id"]))
-                        .eq("user_id", DEMO_USER_ID)
+                        .eq("user_id", current_user_id())
                         .execute()
                     )
 
@@ -2071,7 +2040,7 @@ def complete_session_practice(
             supabase.table("study_sessions")
             .update(update)
             .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "scheduled")
             .execute()
         )
@@ -2105,7 +2074,7 @@ def set_review_date(review_plan_id: UUID, request: ReviewDateRequest):
             supabase.table("review_plans")
             .select("id, assessment_id, review_items, retake_quiz_id")
             .eq("id", str(review_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -2167,7 +2136,7 @@ def set_review_date(review_plan_id: UUID, request: ReviewDateRequest):
             supabase.table("review_plans")
             .update({"review_items": items})
             .eq("id", str(review_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -2194,7 +2163,7 @@ def ensure_retake_for_attempt(attempt_id: UUID):
             supabase.table("quiz_attempts")
             .select("id, quiz_id, score, status")
             .eq("id", str(attempt_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         ).data or []
@@ -2227,7 +2196,7 @@ def ensure_retake_for_attempt(attempt_id: UUID):
                 assessment_rows = (
                     supabase.table("quiz_assessments")
                     .insert({
-                        "user_id": DEMO_USER_ID,
+                        "user_id": current_user_id(),
                         "quiz_attempt_id": str(attempt_id),
                         "quiz_id": attempt["quiz_id"],
                         "mastery_level": "not_mastered" if score < 50 else "needs_review",
@@ -2259,7 +2228,7 @@ def ensure_retake_for_attempt(attempt_id: UUID):
             supabase.table("review_plans")
             .select("id, status, retake_quiz_id, assessment_id, review_items")
             .eq("assessment_id", str(assessment_rows[0]["id"]))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         ).data or []
@@ -2270,7 +2239,7 @@ def ensure_retake_for_attempt(attempt_id: UUID):
             plan = (
                 supabase.table("review_plans")
                 .insert({
-                    "user_id": DEMO_USER_ID,
+                    "user_id": current_user_id(),
                     "assessment_id": assessment_rows[0]["id"],
                     "review_items": [],
                     "overall_goal": "Ôn lại bài học và làm bài kiểm tra lại.",
@@ -2288,7 +2257,7 @@ def ensure_retake_for_attempt(attempt_id: UUID):
                     supabase.table("review_plans")
                     .update({"status": "pending"})
                     .eq("id", str(plan["id"]))
-                    .eq("user_id", DEMO_USER_ID)
+                    .eq("user_id", current_user_id())
                     .execute()
                 )
             retake_quiz = generate_retake_quiz(
@@ -2322,18 +2291,13 @@ def get_practice_questions(topic_id: UUID):
     Tạo bằng Claude ở lần đầu rồi lưu vào content_sections của chủ đề.
     Không liên quan tới bài kiểm tra kiến thức (quizzes).
     """
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
 
     try:
         response = (
             supabase.table("topics")
             .select("id, name, exam_plan_id, content_sections")
             .eq("id", str(topic_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -2356,7 +2320,7 @@ def get_practice_questions(topic_id: UUID):
                 supabase.table("topics")
                 .update({"content_sections": sections})
                 .eq("id", str(topic_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .execute()
             )
 
@@ -2402,7 +2366,7 @@ def create_study_session(session: StudySessionCreate):
             .table("exam_plans")
             .select("id")
             .eq("id", topic["exam_plan_id"])
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -2417,7 +2381,7 @@ def create_study_session(session: StudySessionCreate):
             supabase
             .table("study_sessions")
             .insert({
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "topic_id": str(session.topic_id),
                 "scheduled_start": session.scheduled_start.isoformat(),
                 "duration_minutes": session.duration_minutes,
@@ -2448,11 +2412,6 @@ def generate_exam_schedule(
     exam_plan_id: UUID,
     schedule_request: ScheduleCreateRequest | None = None
 ):
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
 
     try:
         # 1. Lấy thông tin kế hoạch ôn thi
@@ -2462,7 +2421,7 @@ def generate_exam_schedule(
                 "id, exam_date, daily_available_minutes, study_days_per_week"
             )
             .eq("id", str(exam_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -2586,7 +2545,7 @@ def generate_exam_schedule(
             .select(
                 "id, name, hierarchy, estimated_minutes, source_chunk_ids"
             )
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("exam_plan_id", str(exam_plan_id))
             .eq("source_type", "ai")
             .eq("is_active", True)
@@ -2611,7 +2570,7 @@ def generate_exam_schedule(
         existing_response = (
             supabase.table("study_sessions")
             .select("id")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("source", "ai")
             .in_("topic_id", topic_ids)
             .limit(1)
@@ -2668,7 +2627,7 @@ def generate_exam_schedule(
             chunk_response = (
                 supabase.table("material_chunks")
                 .select("id, chunk_index")
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("id", batch_ids)
                 .execute()
             )
@@ -2880,7 +2839,7 @@ def generate_exam_schedule(
 
             if session_key not in session_lookup:
                 session_lookup[session_key] = {
-                    "user_id": DEMO_USER_ID,
+                    "user_id": current_user_id(),
                     "topic_id": topic["id"],
                     "scheduled_start": scheduled_start.isoformat(),
                     "duration_minutes": 0,
@@ -3000,7 +2959,7 @@ def _mark_session_completed_by_quiz(quiz_id, submitted_at):
         supabase.table("quizzes")
         .select("study_session_id")
         .eq("id", str(quiz_id))
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .limit(1)
         .execute()
     ).data or []
@@ -3014,7 +2973,7 @@ def _mark_session_completed_by_quiz(quiz_id, submitted_at):
         supabase.table("study_sessions")
         .select("id, status, started_at")
         .eq("id", str(session_id))
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .limit(1)
         .execute()
     ).data or []
@@ -3035,7 +2994,7 @@ def _mark_session_completed_by_quiz(quiz_id, submitted_at):
         supabase.table("study_sessions")
         .update(update)
         .eq("id", str(session_id))
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .execute()
     )
     return str(session_id)
@@ -3058,7 +3017,7 @@ def _load_plan_sessions(study_session):
         supabase.table("topics")
         .select("id, exam_plan_id")
         .eq("id", str(topic_id))
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .limit(1)
         .execute()
     ).data or []
@@ -3072,7 +3031,7 @@ def _load_plan_sessions(study_session):
                 supabase.table("topics")
                 .select("id")
                 .eq("exam_plan_id", str(exam_plan_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .eq("is_active", True)
                 .execute()
             ).data or []
@@ -3081,7 +3040,7 @@ def _load_plan_sessions(study_session):
     return (
         supabase.table("study_sessions")
         .select("id, topic_id, scheduled_start, status")
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .in_("topic_id", topic_ids)
         .order("scheduled_start")
         .execute()
@@ -3132,11 +3091,6 @@ def _is_study_session_unlocked(current_session, all_sessions):
 @app.post("/api/study-sessions/{session_id}/start")
 def start_study_session(session_id: UUID):
     """Start or resume a study session with sequential lesson unlocking."""
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
 
     try:
         # 1. Lấy buổi học hiện tại
@@ -3147,7 +3101,7 @@ def start_study_session(session_id: UUID):
                 "last_activity_at, actual_study_seconds"
             )
             .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -3200,7 +3154,7 @@ def start_study_session(session_id: UUID):
             supabase.table("topics")
             .select("id, exam_plan_id")
             .eq("id", str(current_topic_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -3224,7 +3178,7 @@ def start_study_session(session_id: UUID):
             supabase.table("topics")
             .select("id")
             .eq("exam_plan_id", str(exam_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("is_active", True)
             .execute()
         )
@@ -3248,7 +3202,7 @@ def start_study_session(session_id: UUID):
         sessions_response = (
             supabase.table("study_sessions")
             .select("id, topic_id, scheduled_start, status")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .in_("topic_id", topic_ids)
             .order("scheduled_start")
             .execute()
@@ -3276,7 +3230,7 @@ def start_study_session(session_id: UUID):
                     "updated_at": now.isoformat()
                 })
                 .eq("id", str(session_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .eq("status", "in_progress")
                 .execute()
             )
@@ -3314,7 +3268,7 @@ def start_study_session(session_id: UUID):
                 "updated_at": now.isoformat()
             })
             .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "scheduled")
             .execute()
         )
@@ -3361,7 +3315,7 @@ def record_study_activity(
                 "id, status, last_activity_at, actual_study_seconds"
             )
             .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -3437,7 +3391,7 @@ def record_study_activity(
             .table("study_sessions")
             .update(update_data)
             .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "in_progress")
         )
 
@@ -3505,11 +3459,6 @@ def get_study_sessions(
     topic_id: UUID | None = None,
     exam_plan_id: UUID | None = None
 ):
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
 
     try:
         effective_plan_id = (
@@ -3522,7 +3471,7 @@ def get_study_sessions(
                 supabase.table("exam_plans")
                 .select("id")
                 .eq("id", str(exam_plan_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .limit(1)
                 .execute()
             )
@@ -3539,7 +3488,7 @@ def get_study_sessions(
                 supabase.table("topics")
                 .select("id, exam_plan_id")
                 .eq("id", str(topic_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .eq("is_active", True)
                 .limit(1)
                 .execute()
@@ -3571,7 +3520,7 @@ def get_study_sessions(
                 supabase.table("topics")
                 .select("id")
                 .eq("exam_plan_id", effective_plan_id)
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .eq("is_active", True)
                 .execute()
             )
@@ -3593,7 +3542,7 @@ def get_study_sessions(
             sessions_response = (
                 supabase.table("study_sessions")
                 .select("*")
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("topic_id", topic_ids)
                 .order("scheduled_start")
                 .execute()
@@ -3620,7 +3569,7 @@ def get_study_sessions(
             sessions_response = (
                 supabase.table("study_sessions")
                 .select("*")
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .order("scheduled_start")
                 .execute()
             )
@@ -3649,7 +3598,7 @@ def get_study_sessions(
                 topics_response = (
                     supabase.table("topics")
                     .select("id, exam_plan_id")
-                    .eq("user_id", DEMO_USER_ID)
+                    .eq("user_id", current_user_id())
                     .in_("id", all_topic_ids)
                     .execute()
                 )
@@ -3758,19 +3707,13 @@ def get_study_sessions(
 
 @app.get("/api/study-sessions/{session_id}")
 def get_study_session_detail(session_id: UUID):
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
-
     try:
         # 1. Lấy thông tin buổi học
         session_response = (
             supabase.table("study_sessions")
             .select("*")
             .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -3791,7 +3734,7 @@ def get_study_session_detail(session_id: UUID):
                 "source_material_id, exam_plan_id, content_sections"
             )
             .eq("id", str(session["topic_id"]))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -3822,7 +3765,7 @@ def get_study_session_detail(session_id: UUID):
                 supabase.table("topics")
                 .select("id")
                 .eq("exam_plan_id", str(exam_plan_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .eq("is_active", True)
                 .execute()
             )
@@ -3841,7 +3784,7 @@ def get_study_session_detail(session_id: UUID):
                     "id, topic_id, scheduled_start, status, "
                     "actual_study_seconds"
                 )
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("topic_id", topic_ids)
                 .order("scheduled_start")
                 .execute()
@@ -3879,7 +3822,7 @@ def get_study_session_detail(session_id: UUID):
             .select(
                 "id, chunk_index, page_number, content, material_id"
             )
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .in_("id", source_chunk_ids)
             .execute()
         )
@@ -3944,7 +3887,7 @@ def update_study_session(
             .table("study_sessions")
             .select("id")
             .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -3978,7 +3921,7 @@ def update_study_session(
             .table("study_sessions")
             .update(update_data)
             .eq("id", str(session_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -4005,6 +3948,7 @@ def preview_material_outline(file: UploadFile = File(...)):
     dùng lại kết quả này, không đọc lại từ đầu.
     """
     original_name = file.filename or "tai-lieu"
+    set_usage_document(None, original_name)
     extension = os.path.splitext(original_name)[1].lower()
 
     if extension not in [".pdf", ".doc", ".docx", ".ppt", ".pptx"]:
@@ -4093,7 +4037,7 @@ async def upload_study_material(
             .table("exam_plans")
             .select("id")
             .eq("id", str(exam_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -4150,7 +4094,7 @@ async def upload_study_material(
         unique_filename = f"{uuid4()}{extension}"
 
         storage_path = (
-            f"{DEMO_USER_ID}/{exam_plan_id}/{unique_filename}"
+            f"{current_user_id()}/{exam_plan_id}/{unique_filename}"
         )
 
         supabase.storage.from_("study-materials").upload(
@@ -4167,7 +4111,7 @@ async def upload_study_material(
             supabase
             .table("study_materials")
             .insert({
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "exam_plan_id": str(exam_plan_id),
                 "file_name": original_name,
                 "storage_path": storage_path,
@@ -4209,7 +4153,7 @@ def get_study_materials(exam_plan_id: UUID | None = None):
             supabase
             .table("study_materials")
             .select("*")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
         )
 
         if exam_plan_id:
@@ -4240,7 +4184,7 @@ def get_study_material_download_url(material_id: UUID):
             .table("study_materials")
             .select("id, file_name, storage_path")
             .eq("id", str(material_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -4304,7 +4248,7 @@ def process_study_material(material_id: UUID):
                 supabase.table("material_chunks").delete().eq(
                     "material_id", str(material_id)
                 ).eq(
-                    "user_id", DEMO_USER_ID
+                    "user_id", current_user_id()
                 ).execute()
 
                 # Khôi phục chunks cũ theo từng nhóm 100
@@ -4327,7 +4271,7 @@ def process_study_material(material_id: UUID):
             }).eq(
                 "id", str(material_id)
             ).eq(
-                "user_id", DEMO_USER_ID
+                "user_id", current_user_id()
             ).execute()
 
         except Exception:
@@ -4340,7 +4284,7 @@ def process_study_material(material_id: UUID):
             .table("study_materials")
             .select("*")
             .eq("id", str(material_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -4351,6 +4295,7 @@ def process_study_material(material_id: UUID):
             )
 
         material = material_response.data[0]
+        set_usage_document(material.get("id"), material.get("file_name"))
 
         # 2. Chỉ xử lý giáo trình ở phiên bản này
         if material["material_type"] != "textbook":
@@ -4368,7 +4313,7 @@ def process_study_material(material_id: UUID):
             supabase.table("material_chunks")
             .select("*")
             .eq("material_id", str(material_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .order("chunk_index")
             .execute()
         )
@@ -4381,7 +4326,7 @@ def process_study_material(material_id: UUID):
         }).eq(
             "id", str(material_id)
         ).eq(
-            "user_id", DEMO_USER_ID
+            "user_id", current_user_id()
         ).execute()
 
         processing_started = True
@@ -4407,6 +4352,11 @@ def process_study_material(material_id: UUID):
 
         # 7. Trích xuất nội dung
         pages = extract_text(temp_path)
+        record_document(
+            material.get("file_name") or "",
+            max((page.get("page_number") or 0 for page in pages), default=len(pages)),
+            material_id=str(material.get("id") or ""),
+        )
 
         if not pages:
             raise ValueError(
@@ -4422,7 +4372,7 @@ def process_study_material(material_id: UUID):
 
             for chunk in chunks:
                 chunk_records.append({
-                    "user_id": DEMO_USER_ID,
+                    "user_id": current_user_id(),
                     "material_id": str(material_id),
                     "chunk_index": chunk_index,
                     "content": chunk,
@@ -4441,7 +4391,7 @@ def process_study_material(material_id: UUID):
         supabase.table("material_chunks").delete().eq(
             "material_id", str(material_id)
         ).eq(
-            "user_id", DEMO_USER_ID
+            "user_id", current_user_id()
         ).execute()
 
         old_chunks_deleted = True
@@ -4460,7 +4410,7 @@ def process_study_material(material_id: UUID):
         }).eq(
             "id", str(material_id)
         ).eq(
-            "user_id", DEMO_USER_ID
+            "user_id", current_user_id()
         ).execute()
 
         # 12. Trả kết quả
@@ -4502,7 +4452,7 @@ def get_material_chunks(material_id: UUID):
             .table("study_materials")
             .select("id, file_name")
             .eq("id", str(material_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -4520,7 +4470,7 @@ def get_material_chunks(material_id: UUID):
                 "id, chunk_index, content, page_number, token_count, created_at"
             )
             .eq("material_id", str(material_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .order("chunk_index")
             .execute()
         )
@@ -4552,7 +4502,7 @@ def generate_flashcards(request: FlashcardGenerateRequest):
             supabase.table("study_materials")
             .select("id, material_type, processing_status")
             .eq("id", str(request.material_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -4581,7 +4531,7 @@ def generate_flashcards(request: FlashcardGenerateRequest):
             supabase.table("topics")
             .select("id, name, exam_plan_id, source_material_id, source_chunk_ids")
             .eq("id", str(request.topic_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -4616,7 +4566,7 @@ def generate_flashcards(request: FlashcardGenerateRequest):
             supabase.table("material_chunks")
             .select("id, chunk_index, page_number, content")
             .eq("material_id", str(request.material_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .in_("id", source_chunk_ids)
             .execute()
         )
@@ -4658,7 +4608,7 @@ def generate_flashcards(request: FlashcardGenerateRequest):
         existing_response = (
             supabase.table("flashcards")
             .select("front, back")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("topic_id", str(request.topic_id))
             .eq("status", "active")
             .execute()
@@ -4786,7 +4736,7 @@ NỘI DUNG TÀI LIỆU:
             generated_keys.add(card_key)
 
             flashcard_records.append({
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "topic_id": str(request.topic_id),
                 "source_chunk_id": source_chunk_id,
                 "front": front,
@@ -4839,7 +4789,7 @@ def get_quiz_questions(quiz_id: UUID):
             supabase.table("quizzes")
             .select("*")
             .eq("id", str(quiz_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "active")
             .execute()
         )
@@ -4860,7 +4810,7 @@ def get_quiz_questions(quiz_id: UUID):
                 "options, points, question_order, difficulty_level"
             )
             .eq("quiz_id", str(quiz_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "ready")
             .order("question_order")
             .execute()
@@ -4893,18 +4843,13 @@ def get_quiz_questions(quiz_id: UUID):
 @app.post("/api/quizzes/{quiz_id}/start")
 def start_quiz(quiz_id: UUID):
     try:
-        if not DEMO_USER_ID:
-            raise HTTPException(
-                status_code=500,
-                detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-            )
 
         # 1. Kiểm tra Quiz
         quiz_response = (
             supabase.table("quizzes")
             .select("id, title, time_limit_minutes, study_session_id")
             .eq("id", str(quiz_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "active")
             .limit(1)
             .execute()
@@ -4929,7 +4874,7 @@ def start_quiz(quiz_id: UUID):
                     "actual_study_seconds"
                 )
                 .eq("id", str(study_session_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .limit(1)
                 .execute()
             )
@@ -4954,7 +4899,7 @@ def start_quiz(quiz_id: UUID):
                 supabase.table("quiz_attempts")
                 .select("id")
                 .eq("quiz_id", str(quiz_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .eq("status", "submitted")
                 .limit(1)
                 .execute()
@@ -4976,7 +4921,7 @@ def start_quiz(quiz_id: UUID):
                 supabase.table("review_plans")
                 .select("id, status, review_study_seconds")
                 .eq("retake_quiz_id", str(quiz_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .limit(1)
                 .execute()
             )
@@ -5003,7 +4948,7 @@ def start_quiz(quiz_id: UUID):
             supabase.table("quiz_questions")
             .select("id")
             .eq("quiz_id", str(quiz_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "ready")
             .execute()
         )
@@ -5020,7 +4965,7 @@ def start_quiz(quiz_id: UUID):
         existing_attempt_response = (
             supabase.table("quiz_attempts")
             .select("id, started_at, status")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("quiz_id", str(quiz_id))
             .eq("status", "in_progress")
             .order("started_at", desc=True)
@@ -5035,7 +4980,7 @@ def start_quiz(quiz_id: UUID):
                 supabase.table("quiz_attempts")
                 .insert({
                     "id": str(uuid4()),
-                    "user_id": DEMO_USER_ID,
+                    "user_id": current_user_id(),
                     "quiz_id": str(quiz_id),
                     "status": "in_progress",
                     "total_questions": len(questions)
@@ -5092,7 +5037,7 @@ def get_review_material(review_plan_id: UUID):
                 "review_study_seconds, review_study_completed_at"
             )
             .eq("id", str(review_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -5120,7 +5065,7 @@ def get_review_material(review_plan_id: UUID):
             supabase.table("quiz_assessments")
             .select("quiz_id")
             .eq("id", str(review_plan["assessment_id"]))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -5138,7 +5083,7 @@ def get_review_material(review_plan_id: UUID):
             supabase.table("quizzes")
             .select("id, title, study_session_id")
             .eq("id", str(original_quiz_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -5162,7 +5107,7 @@ def get_review_material(review_plan_id: UUID):
                 supabase.table("study_sessions")
                 .select("id, topic_id, source_chunk_ids, notes")
                 .eq("id", str(study_session_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .limit(1)
                 .execute()
             )
@@ -5184,7 +5129,7 @@ def get_review_material(review_plan_id: UUID):
                             "id, material_id, content, "
                             "page_number, chunk_index"
                         )
-                        .eq("user_id", DEMO_USER_ID)
+                        .eq("user_id", current_user_id())
                         .in_("id", source_chunk_ids)
                         .execute()
                     )
@@ -5269,7 +5214,7 @@ def start_review_plan(review_plan_id: UUID):
                 "review_study_started_at, review_study_seconds"
             )
             .eq("id", str(review_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -5308,7 +5253,7 @@ def start_review_plan(review_plan_id: UUID):
             supabase.table("review_plans")
             .update(start_update)
             .eq("id", str(review_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -5361,7 +5306,7 @@ def record_review_activity(review_plan_id: UUID):
                 "review_study_completed_at"
             )
             .eq("id", str(review_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -5435,7 +5380,7 @@ def record_review_activity(review_plan_id: UUID):
             supabase.table("review_plans")
             .update(update_payload)
             .eq("id", str(review_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq(
                 "review_study_last_activity_at",
                 last_activity_raw
@@ -5448,7 +5393,7 @@ def record_review_activity(review_plan_id: UUID):
                 supabase.table("review_plans")
                 .select("review_study_seconds")
                 .eq("id", str(review_plan_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .limit(1)
                 .execute()
             )
@@ -5494,7 +5439,7 @@ def complete_supplemental_review(review_plan_id: UUID):
             supabase.table("review_plans")
             .select("id, status, retake_quiz_id")
             .eq("id", str(review_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -5535,7 +5480,7 @@ def complete_supplemental_review(review_plan_id: UUID):
                 "status": "completed"
             })
             .eq("id", str(review_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -5571,7 +5516,7 @@ def save_quiz_answer(
             supabase.table("quiz_attempts")
             .select("id, quiz_id, status, started_at")
             .eq("id", str(attempt_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -5594,7 +5539,7 @@ def save_quiz_answer(
             supabase.table("quizzes")
             .select("time_limit_minutes")
             .eq("id", attempt["quiz_id"])
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -5633,7 +5578,7 @@ def save_quiz_answer(
             .select("id, options, question_type")
             .eq("id", str(request.question_id))
             .eq("quiz_id", attempt["quiz_id"])
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "ready")
             .execute()
         )
@@ -5730,7 +5675,7 @@ def save_quiz_answer(
             supabase.table("quiz_answers")
             .upsert(
                 {
-                    "user_id": DEMO_USER_ID,
+                    "user_id": current_user_id(),
                     "attempt_id": str(attempt_id),
                     "question_id": str(request.question_id),
                     "selected_answer": request.selected_answer,
@@ -5770,7 +5715,7 @@ def get_quiz_attempt_answers(attempt_id: UUID):
             supabase.table("quiz_attempts")
             .select("id, status")
             .eq("id", str(attempt_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -5785,7 +5730,7 @@ def get_quiz_attempt_answers(attempt_id: UUID):
             supabase.table("quiz_answers")
             .select("question_id, selected_answer")
             .eq("attempt_id", str(attempt_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -5813,7 +5758,7 @@ def generate_quiz(request: QuizGenerateRequest):
             supabase.table("study_materials")
             .select("id, exam_plan_id, material_type, processing_status")
             .eq("id", str(request.material_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -5847,7 +5792,7 @@ def generate_quiz(request: QuizGenerateRequest):
                 "source_chunk_ids"
             )
             .eq("id", str(request.study_session_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -5866,7 +5811,7 @@ def generate_quiz(request: QuizGenerateRequest):
             supabase.table("topics")
             .select("id, name, description, difficulty_level, source_material_id")
             .eq("id", session["topic_id"])
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("is_active", True)
             .execute()
         )
@@ -5902,7 +5847,7 @@ def generate_quiz(request: QuizGenerateRequest):
             .select(
                 "id, content, page_number, material_id, chunk_index"
             )
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("material_id", str(request.material_id))
             .in_("id", source_chunk_ids)
             .execute()
@@ -5943,7 +5888,7 @@ def generate_quiz(request: QuizGenerateRequest):
         existing_quiz_response = (
             supabase.table("quizzes")
             .select("id")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("study_session_id", str(request.study_session_id))
             .eq("status", "active")
             .limit(1)
@@ -5957,7 +5902,7 @@ def generate_quiz(request: QuizGenerateRequest):
                 supabase.table("quiz_questions")
                 .select("id")
                 .eq("quiz_id", str(existing_quiz_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .execute()
             )
 
@@ -5982,7 +5927,7 @@ def generate_quiz(request: QuizGenerateRequest):
             supabase.table("quizzes").delete().eq(
                 "id", str(existing_quiz_id)
             ).eq(
-                "user_id", DEMO_USER_ID
+                "user_id", current_user_id()
             ).execute()
 
 
@@ -6260,7 +6205,7 @@ Chỉ trả về JSON, không thêm Markdown hoặc nội dung khác.
         quiz_response = (
             supabase.table("quizzes")
             .insert({
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "exam_plan_id": material["exam_plan_id"],
                 "study_session_id": str(request.study_session_id),
                 "title": request.title,
@@ -6287,7 +6232,7 @@ Chỉ trả về JSON, không thêm Markdown hoặc nội dung khác.
             question_records.append({
                 "source_chunk_id": question["source_chunk_id"],
                 "quiz_id": quiz_id,
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "source_material_id": str(request.material_id),
                 "source_type": "textbook",
                 "question_text": question["question_text"],
@@ -6318,7 +6263,7 @@ Chỉ trả về JSON, không thêm Markdown hoặc nội dung khác.
             supabase.table("quizzes").delete().eq(
                 "id", quiz_id
             ).eq(
-                "user_id", DEMO_USER_ID
+                "user_id", current_user_id()
             ).execute()
 
             raise
@@ -6476,7 +6421,7 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
                 )
 
                 mapping_records.append({
-                    "user_id": DEMO_USER_ID,
+                    "user_id": current_user_id(),
                     "question_id": question_id,
                     "topic_id": topic_id,
                     "material_chunk_id": question_chunk_lookup[question_id],
@@ -6528,7 +6473,7 @@ def _latest_submitted_attempt(quiz_id):
     rows = (
         supabase.table("quiz_attempts")
         .select("*")
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .eq("quiz_id", str(quiz_id))
         .eq("status", "submitted")
         .order("submitted_at", desc=True)
@@ -6542,7 +6487,7 @@ def _attempt_answer_stats(attempt_id):
         supabase.table("quiz_answers")
         .select("question_id, is_correct")
         .eq("attempt_id", str(attempt_id))
-        .eq("user_id", DEMO_USER_ID)
+        .eq("user_id", current_user_id())
         .execute()
     ).data or []
     wrong_ids = {str(item["question_id"]) for item in answers if not item.get("is_correct")}
@@ -6561,7 +6506,7 @@ def get_quiz_overview(quiz_id: UUID):
             supabase.table("quizzes")
             .select("id, title, description, time_limit_minutes, study_session_id, exam_plan_id")
             .eq("id", str(quiz_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         ).data or []
@@ -6575,7 +6520,7 @@ def get_quiz_overview(quiz_id: UUID):
             supabase.table("quiz_questions")
             .select("id, question_type, source_chunk_id")
             .eq("quiz_id", str(quiz_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "ready")
             .execute()
         ).data or []
@@ -6797,7 +6742,7 @@ def get_quizzes(exam_plan_id: UUID | None = None):
         query = (
             supabase.table("quizzes")
             .select("*")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "active")
         )
 
@@ -6834,7 +6779,7 @@ def get_quizzes(exam_plan_id: UUID | None = None):
                 "id, retake_quiz_id, assessment_id, status, "
                 "review_study_seconds, review_items"
             )
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .in_("retake_quiz_id", quiz_ids)
             .execute()
         )
@@ -7070,7 +7015,7 @@ def get_quizzes(exam_plan_id: UUID | None = None):
                 .select(
                     "id, subject_id, title, study_days_per_week"
                 )
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("id", list(plan_ids))
                 .execute()
             )
@@ -7089,7 +7034,7 @@ def get_quizzes(exam_plan_id: UUID | None = None):
                 subjects_response = (
                     supabase.table("subjects")
                     .select("id, name")
-                    .eq("user_id", DEMO_USER_ID)
+                    .eq("user_id", current_user_id())
                     .in_("id", subject_ids)
                     .execute()
                 )
@@ -7134,7 +7079,7 @@ def get_quizzes(exam_plan_id: UUID | None = None):
             all_topics_response = (
                 supabase.table("topics")
                 .select("id, exam_plan_id")
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("exam_plan_id", list(plan_ids))
                 .execute()
             )
@@ -7158,7 +7103,7 @@ def get_quizzes(exam_plan_id: UUID | None = None):
                     "id, topic_id, scheduled_start, status, "
                     "actual_study_seconds"
                 )
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("topic_id", all_topic_ids)
                 .execute()
             )
@@ -7305,7 +7250,7 @@ def get_quizzes(exam_plan_id: UUID | None = None):
                 rows = (
                     supabase.table("quiz_questions")
                     .select("quiz_id")
-                    .eq("user_id", DEMO_USER_ID)
+                    .eq("user_id", current_user_id())
                     .eq("status", "ready")
                     .in_("quiz_id", quiz_ids[start:start + 100])
                     .execute()
@@ -7338,7 +7283,7 @@ def review_flashcard(request: FlashcardReviewCreate):
             supabase.table("flashcards")
             .select("id")
             .eq("id", str(request.flashcard_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "active")
             .execute()
         )
@@ -7354,7 +7299,7 @@ def review_flashcard(request: FlashcardReviewCreate):
             supabase.table("flashcard_reviews")
             .select("interval_days")
             .eq("flashcard_id", str(request.flashcard_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .order("reviewed_at", desc=True)
             .limit(1)
             .execute()
@@ -7396,7 +7341,7 @@ def review_flashcard(request: FlashcardReviewCreate):
         review_response = (
             supabase.table("flashcard_reviews")
             .insert({
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "flashcard_id": str(request.flashcard_id),
                 "rating": request.rating,
                 "response_time_seconds": request.response_time_seconds,
@@ -7431,7 +7376,7 @@ def get_due_flashcards(topic_id: UUID | None = None):
         query = (
             supabase.table("flashcards")
             .select("*")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "active")
         )
 
@@ -7454,7 +7399,7 @@ def get_due_flashcards(topic_id: UUID | None = None):
             .select(
                 "flashcard_id, interval_days, reviewed_at, next_review_at"
             )
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .order("reviewed_at", desc=True)
             .execute()
         )
@@ -7523,7 +7468,7 @@ def get_flashcards(topic_id: UUID | None = None):
         query = (
             supabase.table("flashcards")
             .select("*")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "active")
         )
 
@@ -7565,7 +7510,7 @@ def generate_retake_quiz(
             supabase.table("review_plans")
             .select("*")
             .eq("id", str(review_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -7612,7 +7557,7 @@ def generate_retake_quiz(
             supabase.table("quiz_assessments")
             .select("id, quiz_id, weak_areas")
             .eq("id", str(review_plan["assessment_id"]))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -7633,7 +7578,7 @@ def generate_retake_quiz(
             supabase.table("quizzes")
             .select("id, title, exam_plan_id")
             .eq("id", str(assessment["quiz_id"]))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -7652,7 +7597,7 @@ def generate_retake_quiz(
             supabase.table("quiz_questions")
             .select("source_material_id, source_chunk_id")
             .eq("quiz_id", str(original_quiz["id"]))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -7705,7 +7650,7 @@ def generate_retake_quiz(
         chunks_response = (
             supabase.table("material_chunks")
             .select("id, content, page_number")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("material_id", material_id)
             .in_("id", selected_chunk_ids)
             .execute()
@@ -7963,7 +7908,7 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
         quiz_response = (
             supabase.table("quizzes")
             .insert({
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "exam_plan_id": original_quiz["exam_plan_id"],
                 "study_session_id": None,
                 "title": f"Ôn tập lại - {original_quiz['title']}",
@@ -7988,7 +7933,7 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
         for index, question in enumerate(questions, start=1):
             question_records.append({
                 "quiz_id": new_quiz_id,
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "source_material_id": material_id,
                 "source_chunk_id": str(question["source_chunk_id"]),
                 "source_type": "textbook",
@@ -8019,7 +7964,7 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
             # Không để lại bài kiểm tra rỗng (không có câu hỏi) khi lưu thất bại
             try:
                 supabase.table("quiz_questions").delete().eq("quiz_id", new_quiz_id).execute()
-                supabase.table("quizzes").delete().eq("id", new_quiz_id).eq("user_id", DEMO_USER_ID).execute()
+                supabase.table("quizzes").delete().eq("id", new_quiz_id).eq("user_id", current_user_id()).execute()
             except Exception as cleanup_error:
                 print("Không dọn được Retake Quiz lỗi:", str(cleanup_error))
             raise
@@ -8033,7 +7978,7 @@ Chỉ trả về JSON hợp lệ, không thêm Markdown.
                 "updated_at": datetime.now(timezone.utc).isoformat()
             })
             .eq("id", str(review_plan_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -8069,7 +8014,7 @@ def submit_quiz_attempt(attempt_id: UUID):
             supabase.table("quiz_attempts")
             .select("*")
             .eq("id", str(attempt_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -8102,7 +8047,7 @@ def submit_quiz_attempt(attempt_id: UUID):
                 "source_chunk_id, source_material_id"
             )
             .eq("quiz_id", attempt["quiz_id"])
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "ready")
             .order("question_order")
             .execute()
@@ -8121,7 +8066,7 @@ def submit_quiz_attempt(attempt_id: UUID):
             supabase.table("quiz_answers")
             .select("*")
             .eq("attempt_id", str(attempt_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -8202,7 +8147,7 @@ def submit_quiz_attempt(attempt_id: UUID):
                         ).isoformat()
                     })
                     .eq("id", answer["id"])
-                    .eq("user_id", DEMO_USER_ID)
+                    .eq("user_id", current_user_id())
                     .execute()
                 )
 
@@ -8235,7 +8180,7 @@ def submit_quiz_attempt(attempt_id: UUID):
                 .select(
                     "id, content, page_number, chunk_index, material_id"
                 )
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("id", chunk_ids)
                 .execute()
             )
@@ -8254,7 +8199,7 @@ def submit_quiz_attempt(attempt_id: UUID):
         mappings_response = (
             supabase.table("question_topic_mappings")
             .select("question_id, topic_id")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("mapping_status", "mapped")
             .in_("question_id", question_ids)
             .execute()
@@ -8282,7 +8227,7 @@ def submit_quiz_attempt(attempt_id: UUID):
                 .select(
                     "id, name, description, hierarchy, difficulty_level"
                 )
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("id", all_topic_ids)
                 .execute()
             )
@@ -8354,7 +8299,7 @@ def submit_quiz_attempt(attempt_id: UUID):
                 "submitted_at": submitted_at
             })
             .eq("id", str(attempt_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "in_progress")
             .execute()
         )
@@ -8690,7 +8635,7 @@ CẤU TRÚC:
             assessment_insert_response = (
                 supabase.table("quiz_assessments")
                 .insert({
-                    "user_id": DEMO_USER_ID,
+                    "user_id": current_user_id(),
                     "quiz_attempt_id": str(attempt_id),
                     "quiz_id": attempt["quiz_id"],
                     "mastery_level": mastery_level,
@@ -8738,7 +8683,7 @@ CẤU TRÚC:
         existing_retake_response = (
             supabase.table("review_plans")
             .select("id, status, retake_quiz_id")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("retake_quiz_id", str(attempt["quiz_id"]))
             .limit(1)
             .execute()
@@ -8766,7 +8711,7 @@ CẤU TRÚC:
                         "review_study_completed_at": None
                     })
                     .eq("id", existing_retake_plan["id"])
-                    .eq("user_id", DEMO_USER_ID)
+                    .eq("user_id", current_user_id())
                     .execute()
                 )
 
@@ -8782,7 +8727,7 @@ CẤU TRÚC:
                         "status": "completed"
                     })
                     .eq("id", existing_retake_plan["id"])
-                    .eq("user_id", DEMO_USER_ID)
+                    .eq("user_id", current_user_id())
                     .execute()
                 )
 
@@ -8798,7 +8743,7 @@ CẤU TRÚC:
                 supabase.table("review_plans")
                 .update({"status": "pending"})
                 .eq("id", str(review_plan["id"]))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .execute()
             )
             review_plan["status"] = "pending"
@@ -9071,7 +9016,7 @@ CẤU TRÚC:
                     supabase.table("quizzes")
                     .select("exam_plan_id")
                     .eq("id", str(attempt["quiz_id"]))
-                    .eq("user_id", DEMO_USER_ID)
+                    .eq("user_id", current_user_id())
                     .limit(1)
                     .execute()
                 )
@@ -9087,7 +9032,7 @@ CẤU TRÚC:
                         supabase.table("exam_plans")
                         .select("exam_date")
                         .eq("id", str(exam_plan_id))
-                        .eq("user_id", DEMO_USER_ID)
+                        .eq("user_id", current_user_id())
                         .limit(1)
                         .execute()
                     )
@@ -9100,7 +9045,7 @@ CẤU TRÚC:
                         supabase.table("topics")
                         .select("id")
                         .eq("exam_plan_id", str(exam_plan_id))
-                        .eq("user_id", DEMO_USER_ID)
+                        .eq("user_id", current_user_id())
                         .eq("is_active", True)
                         .execute()
                     )
@@ -9114,7 +9059,7 @@ CẤU TRÚC:
                         session_response = (
                             supabase.table("study_sessions")
                             .select("scheduled_start")
-                            .eq("user_id", DEMO_USER_ID)
+                            .eq("user_id", current_user_id())
                             .in_("topic_id", topic_ids)
                             .execute()
                         )
@@ -9205,7 +9150,7 @@ CẤU TRÚC:
             review_plan_response = (
                 supabase.table("review_plans")
                 .insert({
-                    "user_id": DEMO_USER_ID,
+                    "user_id": current_user_id(),
                     "assessment_id": ai_assessment["id"],
                     "review_items": review_items,
                     "overall_goal": assessment_data["summary"],
@@ -9465,7 +9410,7 @@ def get_quiz_attempt_result(attempt_id: UUID):
             supabase.table("quiz_attempts")
             .select("*")
             .eq("id", str(attempt_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -9488,7 +9433,7 @@ def get_quiz_attempt_result(attempt_id: UUID):
             supabase.table("quizzes")
             .select("id, title")
             .eq("id", attempt["quiz_id"])
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -9507,7 +9452,7 @@ def get_quiz_attempt_result(attempt_id: UUID):
                 "source_chunk_id, options, question_type, difficulty_level"
             )
             .eq("quiz_id", attempt["quiz_id"])
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "ready")
             .order("question_order")
             .execute()
@@ -9523,7 +9468,7 @@ def get_quiz_attempt_result(attempt_id: UUID):
                 "is_correct, earned_points"
             )
             .eq("attempt_id", str(attempt_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 
@@ -9547,7 +9492,7 @@ def get_quiz_attempt_result(attempt_id: UUID):
                 .select(
                     "id, content, page_number, chunk_index, material_id"
                 )
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("id", source_chunk_ids)
                 .execute()
             )
@@ -9650,7 +9595,7 @@ def get_quiz_attempt_result(attempt_id: UUID):
                     "assessment_status, created_at"
                 )
                 .eq("quiz_attempt_id", str(attempt_id))
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .limit(1)
                 .execute()
             )
@@ -9734,7 +9679,7 @@ def get_quiz_attempt_result(attempt_id: UUID):
                     "updated_at"
                 )
                 .eq("assessment_id", ai_assessment["id"])
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .limit(1)
                 .execute()
             )
@@ -9754,7 +9699,7 @@ def get_quiz_attempt_result(attempt_id: UUID):
                     "updated_at"
                 )
                 .eq("retake_quiz_id", attempt["quiz_id"])
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .limit(1)
                 .execute()
             )
@@ -9910,7 +9855,7 @@ def generate_attempt_assessment(attempt_id: UUID, force: bool = False):
                 supabase.table("quiz_assessments")
                 .insert({
                     **record,
-                    "user_id": DEMO_USER_ID,
+                    "user_id": current_user_id(),
                     "quiz_attempt_id": str(attempt_id),
                     "quiz_id": result.get("quiz_id"),
                 })
@@ -9925,18 +9870,12 @@ def generate_attempt_assessment(attempt_id: UUID, force: bool = False):
 
 @app.get("/api/quiz-attempts")
 def get_quiz_attempts(quiz_id: UUID | None = None):
-    if not DEMO_USER_ID:
-        raise HTTPException(
-            status_code=500,
-            detail="Chưa cấu hình DEMO_USER_ID trong file .env"
-        )
-
     try:
         # 1. Lấy các lượt làm Quiz đã nộp
         query = (
             supabase.table("quiz_attempts")
             .select("*")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "submitted")
         )
 
@@ -9967,7 +9906,7 @@ def get_quiz_attempts(quiz_id: UUID | None = None):
         quizzes_response = (
             supabase.table("quizzes")
             .select("id, title")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .in_("id", quiz_ids)
             .execute()
         )
@@ -9993,7 +9932,7 @@ def get_quiz_attempts(quiz_id: UUID | None = None):
                     "strengths, weak_areas, recommendations, "
                     "ai_model, assessment_status, created_at"
                 )
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("quiz_attempt_id", attempt_ids)
                 .order("created_at", desc=True)
                 .execute()
@@ -10032,7 +9971,7 @@ def get_quiz_attempts(quiz_id: UUID | None = None):
                     "review_study_completed_at, "
                     "created_at, updated_at"
                 )
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("assessment_id", assessment_ids)
                 .order("updated_at", desc=True)
                 .execute()
@@ -10051,7 +9990,7 @@ def get_quiz_attempts(quiz_id: UUID | None = None):
                 "review_study_completed_at, "
                 "created_at, updated_at"
             )
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .in_("retake_quiz_id", quiz_ids)
             .order("updated_at", desc=True)
             .execute()
@@ -10093,7 +10032,7 @@ def get_quiz_attempts(quiz_id: UUID | None = None):
             retake_quizzes_response = (
                 supabase.table("quizzes")
                 .select("id, title")
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .in_("id", retake_quiz_ids)
                 .execute()
             )
@@ -10109,7 +10048,7 @@ def get_quiz_attempts(quiz_id: UUID | None = None):
                     "id, quiz_id, score, correct_count, "
                     "total_questions, started_at, submitted_at, status"
                 )
-                .eq("user_id", DEMO_USER_ID)
+                .eq("user_id", current_user_id())
                 .eq("status", "submitted")
                 .in_("quiz_id", retake_quiz_ids)
                 .order("submitted_at", desc=True)
@@ -10263,7 +10202,7 @@ def get_weak_areas():
         attempts_response = (
             supabase.table("quiz_attempts")
             .select("id")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("status", "submitted")
             .execute()
         )
@@ -10284,7 +10223,7 @@ def get_weak_areas():
         answers_response = (
             supabase.table("quiz_answers")
             .select("question_id, is_correct")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .in_("attempt_id", attempt_ids)
             .execute()
         )
@@ -10310,7 +10249,7 @@ def get_weak_areas():
         mappings_response = (
             supabase.table("question_topic_mappings")
             .select("question_id, topic_id")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("mapping_status", "mapped")
             .in_("question_id", question_ids)
             .execute()
@@ -10345,7 +10284,7 @@ def get_weak_areas():
         topics_response = (
             supabase.table("topics")
             .select("id, name, description")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .in_("id", topic_ids)
             .execute()
         )
@@ -10439,7 +10378,7 @@ def analyze_study_material(material_id: UUID):
                 "material_type, processing_status"
             )
             .eq("id", str(material_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -10451,6 +10390,7 @@ def analyze_study_material(material_id: UUID):
             )
 
         material = material_response.data[0]
+        set_usage_document(material.get("id"), material.get("file_name"))
 
         if material["material_type"] != "textbook":
             raise HTTPException(
@@ -10471,7 +10411,7 @@ def analyze_study_material(material_id: UUID):
             supabase.table("material_chunks")
             .select("id, chunk_index, content, page_number")
             .eq("material_id", str(material_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .order("chunk_index")
             .execute()
         )
@@ -10807,7 +10747,7 @@ def analyze_study_material(material_id: UUID):
         existing_response = (
             supabase.table("topics")
             .select("id, source_key")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("source_material_id", str(material_id))
             .eq("source_type", "ai")
             .execute()
@@ -10849,7 +10789,7 @@ def analyze_study_material(material_id: UUID):
                     supabase.table("topics")
                     .update(topic_data)
                     .eq("id", str(topic_id))
-                    .eq("user_id", DEMO_USER_ID)
+                    .eq("user_id", current_user_id())
                     .execute()
                 )
 
@@ -10857,7 +10797,7 @@ def analyze_study_material(material_id: UUID):
 
             else:
                 topic_data.update({
-                    "user_id": DEMO_USER_ID,
+                    "user_id": current_user_id(),
                     "exam_plan_id": exam_plan_id,
                     "understanding_level": 1,
                     "priority": 3,
@@ -10882,7 +10822,7 @@ def analyze_study_material(material_id: UUID):
                     supabase.table("topics")
                     .update({"is_active": False})
                     .eq("id", str(old_topic["id"]))
-                    .eq("user_id", DEMO_USER_ID)
+                    .eq("user_id", current_user_id())
                     .execute()
                 )
 
@@ -10923,7 +10863,7 @@ def get_study_reminders(study_session_id: UUID | None = None):
         query = (
             supabase.table("study_reminders")
             .select("*")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
         )
 
         if study_session_id:
@@ -10968,7 +10908,7 @@ def create_study_reminder(request: StudyReminderCreate):
             supabase.table("study_sessions")
             .select("id, status")
             .eq("id", str(request.study_session_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -10990,7 +10930,7 @@ def create_study_reminder(request: StudyReminderCreate):
         existing_response = (
             supabase.table("study_reminders")
             .select("id")
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .eq("study_session_id", str(request.study_session_id))
             .eq("reminder_type", request.reminder_type)
             .eq("remind_at", request.remind_at)
@@ -11007,7 +10947,7 @@ def create_study_reminder(request: StudyReminderCreate):
         insert_response = (
             supabase.table("study_reminders")
             .insert({
-                "user_id": DEMO_USER_ID,
+                "user_id": current_user_id(),
                 "study_session_id": str(request.study_session_id),
                 "remind_at": request.remind_at,
                 "reminder_type": request.reminder_type,
@@ -11039,7 +10979,7 @@ def cancel_study_reminder(reminder_id: UUID):
             supabase.table("study_reminders")
             .select("id, status")
             .eq("id", str(reminder_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .limit(1)
             .execute()
         )
@@ -11064,7 +11004,7 @@ def cancel_study_reminder(reminder_id: UUID):
                 "status": "cancelled"
             })
             .eq("id", str(reminder_id))
-            .eq("user_id", DEMO_USER_ID)
+            .eq("user_id", current_user_id())
             .execute()
         )
 

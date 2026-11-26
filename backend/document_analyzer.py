@@ -17,6 +17,7 @@ main.py, nên lịch học, Quiz, Flashcard và giao diện không cần thay đ
 from content_language import language_rule
 import os
 import re
+import contextvars
 from concurrent.futures import ThreadPoolExecutor
 
 from claude_client import (
@@ -1026,6 +1027,8 @@ def analyze_document_with_claude(chunks, document_name: str = "", language: str 
         }
 
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENCY) as executor:
-        topics = list(executor.map(build_topic, planned_topics))
+        # Giữ thông tin người dùng / tài liệu cho từng luồng (để ghi chi phí AI đúng người)
+        parent_context = contextvars.copy_context()
+        topics = list(executor.map(lambda item: parent_context.copy().run(build_topic, item), planned_topics))
 
     return _make_unique_names(topics)
