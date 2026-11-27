@@ -9,8 +9,16 @@ import { getMainTopicTitle } from "@/lib/content-titles";
 import StudyCalendar from "@/components/study-calendar";
 import type { CalendarEntry } from "@/lib/study-calendar";
 import {
+  buildLessonStatuses,
+  lessonCalendarResult,
+  lessonLinksFor,
+  buildTodayTasks,
+  type LessonStatus,
+  type PlanLock,
+} from "@/lib/lesson-status";
+import { isPass, levelLabel, scoreLevel } from "@/lib/score-rules";
+import {
   getReviewUrgency,
-  scoreBand,
   type ReviewLevel,
   type ReviewUrgency,
 } from "@/lib/review-urgency";
@@ -76,9 +84,13 @@ type Quiz = {
   id: string;
   study_session_id?: string | null;
   is_retake?: boolean;
+  /* Bài tổng hợp 20 câu (L4) */
+  is_final?: boolean;
   review_plan_id?: string | null;
   review_status?: string | null;
   review_date?: string | null;
+  needs_attention?: boolean;
+  final_quiz_id?: string | null;
 };
 
 type ReviewPlanInfo = {
@@ -115,6 +127,8 @@ type SessionInsight = {
   doneReviewDate: string | null;
   /* Cả ba nút đều mở trang Tài liệu học tập (tóm tắt có câu hỏi lồng) của buổi này */
   links: { learn: string; review: string; revisit: string };
+  /* Trạng thái dùng chung (lib/lesson-status.ts): điểm, nhãn, nút việc tiếp theo, khoá */
+  lesson: LessonStatus;
 };
 
 type TaskKind = "review" | "quiz" | "learn";
@@ -131,7 +145,6 @@ type TodayTask = {
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-const PASS_SCORE = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /* ================= Tiện ích ngày tháng ================= */
@@ -220,6 +233,9 @@ export default function StudyPlanDetailPage() {
   const [materials, setMaterials] = useState<StudyMaterial[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [attempts, setAttempts] = useState<QuizAttempt[]>([]);
+  /* Kế hoạch đang khoá chờ bài tổng hợp 20 câu (L4) */
+  const [planLock, setPlanLock] = useState<PlanLock | null>(null);
+  const [ensureError, setEnsureError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [holdLoading, setHoldLoading] = useState(false);
   const [error, setError] = useState("");
@@ -274,7 +290,7 @@ export default function StudyPlanDetailPage() {
         setSessions(sessionResult.data || []);
 
         // Dữ liệu phụ: lỗi ở đây không chặn việc hiển thị lịch học.
-        const [materialResult, quizResult, attemptResult] =
+        const [materialResult, quizResult, attemptResult, lockResult] =
           await Promise.allSettled([
             fetch(
               `${API_URL}/api/study-materials?exam_plan_id=${planId}`
@@ -285,7 +301,14 @@ export default function StudyPlanDetailPage() {
             fetch(`${API_URL}/api/quiz-attempts`).then((response) =>
               response.json()
             ),
+            fetch(`${API_URL}/api/exam-plans/${planId}/lock`).then((response) =>
+              response.ok ? response.json() : null
+            ),
           ]);
+
+        if (lockResult.status === "fulfilled") {
+          setPlanLock(lockResult.value || null);
+        }
 
         if (materialResult.status === "fulfilled") {
           setMaterials(materialResult.value?.data || []);
@@ -326,9 +349,20 @@ export default function StudyPlanDetailPage() {
   const insights = useMemo<SessionInsight[]>(() => {
     const originalQuizBySession = new Map<string, Quiz>();
     const retakeBySession = new Map<string, Quiz>();
+    const lessonLinks = lessonLinksFor(plan?.subject_id);
+    const lessonById = new Map(
+      buildLessonStatuses({
+        sessions,
+        quizzes,
+        attempts,
+        todayKey,
+        links: lessonLinks,
+        lock: planLock || undefined,
+      }).map((lesson) => [lesson.sessionId, lesson])
+    );
 
     for (const quiz of quizzes) {
-      if (!quiz.study_session_id) continue;
+      if (!quiz.study_session_id || quiz.is_final) continue;
 
       if (quiz.is_retake) {
         retakeBySession.set(quiz.study_session_id, quiz);
@@ -356,23 +390,11 @@ export default function StudyPlanDetailPage() {
         const attempt = quiz
           ? latestAttemptByQuiz.get(quiz.id) || null
           : null;
-        const score = Number(attempt?.score ?? 0);
-        const failed = attempt !== null && score < PASS_SCORE;
-
-        let pendingReviewId: string | null = null;
+        const lesson = lessonById.get(session.id)!;
         const retakeQuiz = retakeBySession.get(session.id);
-
-        // Bài kiểm tra lại chỉ được tạo khi dưới 80%: còn bài chưa đạt là còn buổi ôn.
-        if (retakeQuiz?.review_plan_id && retakeQuiz.review_status !== "completed") {
-          pendingReviewId = retakeQuiz.review_plan_id;
-        } else if (
-          failed &&
-          !retakeQuiz &&
-          attempt?.review_plan &&
-          attempt.review_plan.status !== "completed"
-        ) {
-          pendingReviewId = attempt.review_plan.id;
-        }
+        // Buổi ôn còn mở (kể cả đang chờ bài tổng hợp): theo điểm lần đầu < 80% (L2, L7)
+        const pendingReviewId =
+          lesson.review && lesson.review.status !== "completed" ? lesson.review.planId : null;
 
         const retakeAttempt = retakeQuiz ? latestAttemptByQuiz.get(retakeQuiz.id) || null : null;
         const latestAny = [attempt, retakeAttempt]
@@ -397,8 +419,9 @@ export default function StudyPlanDetailPage() {
           quizId: quiz?.id || null,
           currentScore,
           attempt,
-          passed: attempt !== null && score >= PASS_SCORE,
+          passed: lesson.firstScore !== null && isPass(lesson.firstScore),
           pendingReviewId,
+          lesson,
           reviewDate,
           doneReviewDate:
             retakeQuiz?.review_status === "completed" ? retakeQuiz.review_date || null : null,
@@ -417,7 +440,7 @@ export default function StudyPlanDetailPage() {
             : null,
         };
       });
-  }, [sessions, quizzes, attempts, topicById, todayKey, plan]);
+  }, [sessions, quizzes, attempts, topicById, todayKey, plan, planLock]);
 
   /* Buổi ôn lại đã có ngày (người học tự chọn sau bài kiểm tra dưới 80%) */
   const scheduledReviews = useMemo(
@@ -445,48 +468,22 @@ export default function StudyPlanDetailPage() {
 
     const todayLearning = insights.filter((insight) => insight.dateKey === todayKey);
     const isStudyDay = todayLearning.length > 0;
-    const overdueLearning = insights.filter(
-      (insight) => insight.dateKey < todayKey && insight.session.status !== "completed"
-    );
-    // Khẩn trước, cùng mức thì điểm thấp trước
-    const reviews = insights
-      .filter((insight) => insight.pendingReviewId && insight.urgency)
-      .sort(
-        (a, b) =>
-          a.urgency!.rank - b.urgency!.rank ||
-          (a.currentScore ?? 0) - (b.currentScore ?? 0)
-      );
-    // Đã có lịch và tới ngày (hoặc trễ, hoặc khẩn vì sát ngày thi)
-    const dueReviews = reviews.filter(
-      (insight) =>
-        insight.reviewDate &&
-        (insight.reviewDate <= todayKey || insight.urgency!.level === "urgent")
-    );
-    const unscheduled = reviews.filter((insight) => !insight.reviewDate);
-    const quizTasks: TodayTask[] = insights
-      .filter(
-        (insight) =>
-          insight.session.status === "in_progress" && insight.quizId && !insight.attempt
-      )
-      .map((insight) => ({
-        key: `quiz-${insight.session.id}`,
-        kind: "quiz",
-        insight,
-        overdue: false,
-      }));
-
-    const tasks: TodayTask[] = isStudyDay
-      ? [
-          ...overdueLearning.map((insight) => learn(insight, true)),
-          ...todayLearning.map((insight) => learn(insight, false)),
-          ...quizTasks,
-          ...dueReviews.map((insight) => review(insight)),
-        ]
-      : [
-          ...dueReviews.map((insight) => review(insight)),
-          ...quizTasks,
-          ...overdueLearning.map((insight) => learn(insight, true)),
-        ];
+    // Cùng danh sách với Tổng quan (buildTodayTasks, L7); buổi hôm nay đã xong vẫn hiện (đã tick)
+    const insightById = new Map(insights.map((insight) => [insight.session.id, insight]));
+    const shared = buildTodayTasks(
+      insights.map((insight) => insight.lesson),
+      todayKey
+    ).map((task): TodayTask => {
+      const insight = insightById.get(task.status.sessionId)!;
+      if (task.kind === "learn") return learn(insight, task.overdue);
+      if (task.kind === "quiz") return { key: `quiz-${insight.session.id}`, kind: "quiz", insight, overdue: task.overdue };
+      if (task.kind === "final") return { key: `review-${insight.session.id}`, kind: "review", insight, overdue: true };
+      return review(insight);
+    });
+    const doneToday = todayLearning
+      .filter((insight) => insight.session.status === "completed")
+      .map((insight) => learn(insight, false));
+    const tasks: TodayTask[] = [...shared, ...doneToday];
 
     const nextKey = isStudyDay
       ? null
@@ -494,7 +491,8 @@ export default function StudyPlanDetailPage() {
 
     return {
       tasks,
-      extras: unscheduled.map((insight) => review(insight, true)),
+      // Bài chưa chọn ngày ôn đã nằm trong danh sách chung
+      extras: [] as TodayTask[],
       isStudyDay,
       learningSessions: todayLearning,
       nextLearning: nextKey
@@ -595,6 +593,8 @@ export default function StudyPlanDetailPage() {
       ).length,
       chaptersNeedReview: chapterList.filter((chapter) => chapter.needsReview)
         .length,
+      // Đếm theo bài cho khớp các trang khác (L7): số bài còn buổi ôn
+      lessonsNeedReview: insights.filter((insight) => insight.pendingReviewId).length,
       firstDateKey: insights[0]?.dateKey || null,
     };
   }, [insights, topics]);
@@ -606,7 +606,8 @@ export default function StudyPlanDetailPage() {
       const done = insight.session.status === "completed";
       const attempt = insight.attempt;
       const percent = attempt ? attemptPercent(attempt) : null;
-      const band = percent !== null && percent < 80 ? scoreBand(percent) : null;
+      const level = percent !== null ? scoreLevel(percent) : null;
+      const band = level && level !== "pass" ? { weak: level === "weak" } : null;
       const reviewOn = insight.reviewDate || insight.doneReviewDate;
       entries.push({
         key: `learn-${insight.session.id}`,
@@ -614,11 +615,13 @@ export default function StudyPlanDetailPage() {
         dateKey: insight.dateKey,
         title: getTopicTitle(insight.topic),
         done,
+        // Màu dấu X: chỉ khi đã nộp bài kiểm tra gốc (L5)
+        result: done && attempt ? lessonCalendarResult(insight.lesson) : undefined,
         lines: [
           { text: tx("Học mới · {0} phút", [insight.session.duration_minutes]) },
           done && attempt
             ? {
-                text: `Quiz ${attempt.correct_count ?? 0}/${attempt.total_questions ?? 0} (${percent}%)${band ? ` · ${band.weak ? tx("Yếu") : tx("Cần củng cố")}` : tx(" · Đạt")}`,
+                text: `Quiz ${attempt.correct_count ?? 0}/${attempt.total_questions ?? 0} (${percent}%) · ${level ? levelLabel(level) : ""}`,
                 tone: band ? (band.weak ? "weak" : "mid") : undefined,
               }
             : { text: insight.session.status === "in_progress" ? tx("Đang học, chưa nộp bài kiểm tra") : tx("Chưa học") },
@@ -626,7 +629,12 @@ export default function StudyPlanDetailPage() {
         ],
         action: done
           ? { kind: "revisit", href: insight.links.revisit }
-          : { kind: "learn", href: insight.links.learn, locked: isLocked(insight.session) },
+          : {
+              kind: "learn",
+              href: insight.links.learn,
+              locked: isLocked(insight.session) || insight.lesson.next.locked,
+              lockReason: insight.lesson.next.lockReason,
+            },
       });
 
       const reviewKey = insight.reviewDate || insight.doneReviewDate;
@@ -643,7 +651,7 @@ export default function StudyPlanDetailPage() {
           lines: [
             { text: tx("Từ buổi {0} {1}", [weekdayLong(insight.dateKey), formatDayMonth(insight.dateKey)]) },
             {
-              text: `Quiz ${attempt.correct_count ?? 0}/${attempt.total_questions ?? 0} (${percent}%) · ${band?.weak ? tx("Yếu") : tx("Cần củng cố")}`,
+              text: `Quiz ${attempt.correct_count ?? 0}/${attempt.total_questions ?? 0} (${percent}%) · ${levelLabel(band?.weak ? "weak" : "mid")}`,
               tone: band?.weak ? "weak" : "mid",
             },
             {
@@ -658,7 +666,12 @@ export default function StudyPlanDetailPage() {
           ],
           action: reviewDone
             ? { kind: "revisit", href: insight.links.revisit }
-            : { kind: "review", href: insight.links.review },
+            : {
+                kind: "review",
+                href: insight.links.review,
+                locked: insight.lesson.next.locked,
+                lockReason: insight.lesson.next.lockReason,
+              },
         });
       }
     }
@@ -748,6 +761,26 @@ export default function StudyPlanDetailPage() {
   const featured =
     allTasks.find((task) => task.key === selectedTaskKey) || todayTask;
 
+  /* Mở việc: "ensure:<buổi>" = buổi chưa có quiz → tạo bù rồi mở bài (L1) */
+  const openTask = async (href: string) => {
+    if (!href.startsWith("ensure:")) {
+      router.push(href);
+      return;
+    }
+    setEnsureError("");
+    try {
+      const response = await fetch(`${API_URL}/api/study-sessions/${href.slice(7)}/ensure-quiz`, { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.quiz_id) throw new Error(data?.detail || tx("Chưa tạo được bài kiểm tra, hãy thử lại."));
+      router.push(`/quizzes/${data.quiz_id}`);
+    } catch (openError) {
+      setEnsureError(openError instanceof Error ? openError.message : tx("Chưa tạo được bài kiểm tra, hãy thử lại."));
+    }
+  };
+  const lockedLesson = planLock?.locked
+    ? insights.find((insight) => insight.session.id === planLock.origin_session_id) || null
+    : null;
+
   const renderTask = (task: TodayTask) =>
     featured && task.key === featured.key ? (
       <FeaturedTask
@@ -756,7 +789,7 @@ export default function StudyPlanDetailPage() {
         isToday={task.insight.dateKey === todayKey}
         examKey={examKey}
         todayKey={todayKey}
-        onOpen={(href) => router.push(href)}
+        onOpen={openTask}
       />
     ) : (
       <CompactTask
@@ -764,7 +797,7 @@ export default function StudyPlanDetailPage() {
         task={task}
         isToday={task.insight.dateKey === todayKey}
         onSelect={() => setSelectedTaskKey(task.key)}
-        onOpen={(href) => router.push(href)}
+        onOpen={openTask}
       />
     );
 
@@ -832,6 +865,41 @@ export default function StudyPlanDetailPage() {
           </Link>
         </div>
       </section>
+
+      {/* ===== Kế hoạch đang khoá chờ bài tổng hợp 20 câu (L4) ===== */}
+      {planLock?.locked && (
+        <section
+          role="alert"
+          className="grid grid-cols-1 items-center gap-3 rounded-[24px] border-2 border-[var(--sp-red)] bg-[var(--sp-red-bg)] px-5 py-4 shadow-[4px_4px_0_var(--sp-red-line)] sm:grid-cols-[1fr_220px]"
+        >
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 font-bold text-[var(--sp-red-dark)]">
+              <IconLock size={18} className="shrink-0" />
+              {tx("Kế hoạch đang tạm khoá")}
+            </p>
+            <p className="mt-1 text-sm text-[var(--sp-text-2)]">
+              {lockedLesson
+                ? tx("Bài kiểm tra lại của buổi {0} ({1}) chưa đạt 80%. Ôn lại buổi đó rồi làm bài tổng hợp 20 câu, xong sẽ mở khoá các buổi khác.", [
+                    lockedLesson.lesson.order,
+                    getTopicTitle(lockedLesson.topic),
+                  ])
+                : planLock.reason}
+            </p>
+          </div>
+          {lockedLesson && (
+            <Link href={lockedLesson.links.review} className="sp-btn sp-btn-primary w-full justify-center px-4 py-2.5 text-sm">
+              {tx("Ôn lại ngay")}
+              <IconArrowRight size={16} />
+            </Link>
+          )}
+        </section>
+      )}
+
+      {ensureError && (
+        <p role="alert" className="rounded-2xl border-2 border-[var(--sp-pink-line)] bg-white px-4 py-3 text-sm text-[var(--sp-pink-dark)]">
+          {ensureError}
+        </p>
+      )}
 
       {/* ===== Banner thống kê ===== */}
       <section className="relative overflow-hidden rounded-[28px] bg-[var(--sp-purple)] px-6 py-6 text-white sm:px-8">
@@ -901,10 +969,10 @@ export default function StudyPlanDetailPage() {
             </p>
             <div className="mt-1.5 flex flex-wrap gap-2">
               <span className="sp-chip bg-white/15 text-white">
-                {tx("{0} đã học", [stats.chaptersDone])}</span>
-              {stats.chaptersNeedReview > 0 && (
+                {tx("{0}/{1} bài đã học", [stats.completedSessions, stats.totalSessions])}</span>
+              {stats.lessonsNeedReview > 0 && (
                 <span className="sp-chip bg-[var(--sp-pink)]/30 text-[#ffd3e2]">
-                  {tx("{0} cần ôn lại", [stats.chaptersNeedReview])}</span>
+                  {tx("{0} bài cần ôn lại", [stats.lessonsNeedReview])}</span>
               )}
             </div>
           </BannerStat>
@@ -1192,7 +1260,17 @@ function UpcomingCard({
                             <span className="text-[var(--sp-pink-dark)]">{tx("↻ Ôn lại ·")} </span>
                             {getTopicTitle(insight.topic)}
                           </span>
-                          <span className="rounded-full bg-[var(--sp-pink)] px-2 py-0.5 text-[11.5px] font-extrabold text-white">{tx("Ôn")}</span>
+                          {/* Vào ôn được ngay, không cần đợi tới ngày đã chọn (L3) */}
+                          <Link
+                            href={insight.links.review}
+                            aria-disabled={insight.lesson.next.locked}
+                            title={insight.lesson.next.lockReason || tx("Vào ôn ngay")}
+                            className={`rounded-full bg-[var(--sp-pink)] px-2.5 py-0.5 text-[11.5px] font-extrabold text-white hover:bg-[var(--sp-pink-dark)] ${
+                              insight.lesson.next.locked ? "pointer-events-none opacity-50" : ""
+                            }`}
+                          >
+                            {tx("Vào ôn")}
+                          </Link>
                         </li>
                       ))}
                     </ul>
@@ -1276,11 +1354,19 @@ function getTaskAction(task: TodayTask) {
   const { insight } = task;
 
   if (task.kind === "review") {
+    // Một nút "việc tiếp theo" giống mọi trang: Chọn ngày ôn / Vào ôn / Làm bài kiểm tra lại / bài tổng hợp
+    const next = insight.lesson.next;
+    if (next.href && ["pick_date", "review", "retake", "final"].includes(next.kind)) {
+      return { href: next.href, label: next.label };
+    }
     return { href: insight.links.review, label: tx("Vào ôn") };
   }
 
   if (task.kind === "quiz") {
-    return { href: `/quizzes/${insight.quizId}`, label: tx("Làm bài kiểm tra") };
+    // Chưa có quiz → "ensure:<buổi>": trang tự tạo bù rồi mở (L1)
+    return insight.quizId
+      ? { href: `/quizzes/${insight.quizId}`, label: tx("Làm bài kiểm tra") }
+      : { href: `ensure:${insight.session.id}`, label: tx("Làm bài kiểm tra") };
   }
 
   const status = insight.session.status;
@@ -1314,6 +1400,23 @@ const TASK_STYLE: Record<
 
 function TaskReason({ task }: { task: TodayTask }) {
   const { insight } = task;
+
+  if (insight.lesson.next.locked) {
+    return (
+      <p className="mt-1.5 flex items-center gap-1.5 text-sm text-[var(--sp-red-dark)]">
+        <IconLock size={14} className="shrink-0" />
+        {tx("Tạm khoá: làm xong bài tổng hợp 20 câu để mở")}
+      </p>
+    );
+  }
+
+  if (insight.lesson.next.kind === "final") {
+    return (
+      <p className="mt-1.5 text-sm font-medium text-[var(--sp-red-dark)]">
+        {tx("Bài kiểm tra lại chưa đạt 80%: ôn lại rồi làm bài tổng hợp 20 câu để mở khoá kế hoạch.")}
+      </p>
+    );
+  }
 
   if (task.kind === "review") {
     return <ReviewOrigin insight={insight} withDateLink />;
@@ -1369,7 +1472,7 @@ function FeaturedTask({
   const { insight } = task;
   const style = TASK_STYLE[task.kind];
   const action = getTaskAction(task);
-  const locked = task.kind === "learn" && isLocked(insight.session);
+  const locked = (task.kind === "learn" && isLocked(insight.session)) || insight.lesson.next.locked;
   const isReview = task.kind === "review";
   const reviewStyle = isReview ? urgencyStyle(insight.urgency) : null;
 
@@ -1419,7 +1522,7 @@ function FeaturedTask({
           className="sp-btn sp-btn-primary shrink-0 px-6 py-3 text-[15px]"
         >
           {locked ? <IconLock size={17} /> : <IconPlay size={17} />}
-          {locked ? tx("Chưa mở khóa") : action.label}
+          {locked ? (insight.lesson.next.locked ? tx("Đang khoá") : tx("Chưa mở khóa")) : action.label}
         </button>
       </div>
 
@@ -1447,7 +1550,7 @@ function CompactTask({
   const { insight } = task;
   const style = TASK_STYLE[task.kind];
   const action = getTaskAction(task);
-  const locked = task.kind === "learn" && isLocked(insight.session);
+  const locked = (task.kind === "learn" && isLocked(insight.session)) || insight.lesson.next.locked;
   const done =
     task.kind === "learn" && insight.session.status === "completed";
   const reviewStyle = task.kind === "review" ? urgencyStyle(insight.urgency) : null;
@@ -1513,7 +1616,7 @@ function CompactTask({
         className="sp-btn sp-btn-secondary shrink-0 px-5 py-2.5 text-sm"
       >
         {locked && <IconLock size={15} />}
-        {locked ? tx("Chưa mở khóa") : action.label}
+        {locked ? (insight.lesson.next.locked ? tx("Đang khoá") : tx("Chưa mở khóa")) : action.label}
       </button>
     </article>
   );
@@ -1767,7 +1870,8 @@ function ReviewOrigin({
 }) {
   const attempt = insight.attempt;
   const percent = attempt ? attemptPercent(attempt) : null;
-  const band = percent !== null ? scoreBand(percent) : null;
+  const level = percent !== null ? scoreLevel(percent) : null;
+  const band = level && level !== "pass" ? { weak: level === "weak", label: levelLabel(level) } : null;
   return (
     <>
       <p className={compact ? "text-xs text-[var(--sp-muted)]" : "mt-1.5 text-sm text-[var(--sp-text-2)]"}>

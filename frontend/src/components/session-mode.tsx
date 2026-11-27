@@ -1,6 +1,7 @@
 "use client";
 
 import { tx } from "@/lib/i18n";
+import { scoreLevel } from "@/lib/score-rules";
 /*
  * Trang Tài liệu học tập mở theo 3 chế độ (từ lịch tháng):
  * - learn: học như bình thường (không có khối riêng);
@@ -124,7 +125,7 @@ export function SessionModeBanner({
           <li>
 
             {tx("Bài kiểm tra lại:")}{" "}
-            {percent !== null && percent < 50
+            {percent !== null && scoreLevel(percent) === "weak"
               ? tx("trắc nghiệm kết hợp điền khuyết (vì lần trước dưới 50%)")
               : tx("trắc nghiệm")}
 

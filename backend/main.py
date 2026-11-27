@@ -3,6 +3,7 @@ import os
 import tempfile
 import json
 import hashlib
+import threading
 import re
 
 from dotenv import load_dotenv
@@ -24,6 +25,7 @@ from document_analyzer import (
     summarize_outline_chapters,
 )
 from attempt_assessment import (
+    AI_ASSESSMENT_TAGS,
     ASSESSMENT_MODEL_TAG,
     build_attempt_assessment,
 )
@@ -35,6 +37,7 @@ from supabase_client import supabase
 from content_language import fill_blank_rule, language_rule, plan_language
 from auth import auth_middleware, current_user_id
 from ai_usage import record_document, set_usage_document
+from score_rules import PASS_SCORE, WEAK_BELOW, is_pass, mastery_for_score, review_tier
 from email_notifications import router as notifications_router, start_scheduler
 from mindmaps import router as mindmaps_router
 from flashcard_decks import router as flashcard_decks_router
@@ -1218,7 +1221,7 @@ class RetakeQuizGenerateRequest(BaseModel):
 
 def retake_mode_for_score(score) -> str:
     """Dưới 50% → kết hợp điền khuyết; 50-79% → chỉ trắc nghiệm."""
-    return "mixed" if float(score or 0) < 50 else "choice"
+    return "mixed" if float(score or 0) < WEAK_BELOW else "choice"
 
 
 RETAKE_MODE_LABELS = {
@@ -1650,12 +1653,7 @@ def _vn_date(value):
 
 
 def _review_level(score):
-    score = float(score or 0)
-    if score < 50:
-        return "intensive"
-    if score < 80:
-        return "relaxed"
-    return "none"
+    return review_tier(score)
 
 
 def _resolve_original_quiz(quiz_id):
@@ -1880,15 +1878,8 @@ def _finalize_retake(review_plan, retake_quiz_id, original_quiz_id):
     context = _session_day_context(session_id) if session_id else None
 
     if context and retake_quiz_id:
-        topic_title = re.sub(r"\s+", " ", str(context.get("topic_name") or "")).strip()
-        day_label = (
-            f"ngày {context['day_number']}" if context.get("day_number") else "bài học"
-        )
-        title = (
-            f"Kiểm tra lại {day_label}: {topic_title}" if topic_title
-            else f"Kiểm tra lại {day_label}"
-        )[:200]
-        title = title.replace("Kiểm tra lại ngày ", "Kiểm tra lại ngày học ", 1)
+        # Đánh số thống nhất theo buổi trong kế hoạch (L8): "Kiểm tra lại · Buổi N"
+        title = session_quiz_title("retake", _session_order_in_plan(session_id))
         (
             supabase.table("quizzes")
             .update({"title": title})
@@ -1928,6 +1919,254 @@ def _plan_review_date(review_plan):
         if isinstance(item, dict) and item.get("review_date"):
             return item["review_date"]
     return None
+
+
+# ==============================
+# BÀI ÔN TRƯỢT → KHOÁ KẾ HOẠCH + BÀI TỔNG HỢP 20 CÂU (L4)
+# ==============================
+# review_plans.status: pending → in_progress → final_required → completed (+ needs_attention)
+# Khi một review plan ở final_required, TOÀN BỘ kế hoạch đó bị khoá, trừ:
+#   - phần ôn lại của chính buổi đó (mode=review, câu hỏi lồng → practice-complete),
+#   - bài tổng hợp 20 câu của review plan đó,
+#   - xem lại kết quả cũ.
+
+ACTIVE_REVIEW_STATUSES = ["pending", "in_progress", "final_required"]
+FINAL_QUIZ_TIME_LIMIT = 30
+
+
+def _exam_plan_id_for_session(session) -> str | None:
+    topic_id = (session or {}).get("topic_id")
+    if not topic_id:
+        rows = (
+            supabase.table("study_sessions")
+            .select("topic_id")
+            .eq("id", str((session or {}).get("id")))
+            .eq("user_id", current_user_id())
+            .limit(1)
+            .execute()
+        ).data or []
+        topic_id = rows[0].get("topic_id") if rows else None
+    if not topic_id:
+        return None
+    rows = (
+        supabase.table("topics")
+        .select("exam_plan_id")
+        .eq("id", str(topic_id))
+        .eq("user_id", current_user_id())
+        .limit(1)
+        .execute()
+    ).data or []
+    return str(rows[0]["exam_plan_id"]) if rows and rows[0].get("exam_plan_id") else None
+
+
+def _origin_session_id(review_plan) -> str | None:
+    for item in (review_plan or {}).get("review_items") or []:
+        if isinstance(item, dict) and item.get("origin_session_id"):
+            return str(item["origin_session_id"])
+    return None
+
+
+def _exam_plan_id_for_review_plan(review_plan) -> str | None:
+    session_id = _origin_session_id(review_plan)
+    if session_id:
+        plan_id = _exam_plan_id_for_session({"id": session_id})
+        if plan_id:
+            return plan_id
+    for key in ("final_quiz_id", "retake_quiz_id"):
+        quiz_id = (review_plan or {}).get(key)
+        if quiz_id:
+            rows = (
+                supabase.table("quizzes")
+                .select("exam_plan_id")
+                .eq("id", str(quiz_id))
+                .eq("user_id", current_user_id())
+                .limit(1)
+                .execute()
+            ).data or []
+            if rows and rows[0].get("exam_plan_id"):
+                return str(rows[0]["exam_plan_id"])
+    return None
+
+
+def _final_lock_for_plan(exam_plan_id) -> dict | None:
+    """Review plan đang chờ bài tổng hợp (khoá kế hoạch), nếu có."""
+    if not exam_plan_id:
+        return None
+    try:
+        plans = (
+            supabase.table("review_plans")
+            .select("id, status, final_quiz_id, retake_quiz_id, review_items, review_study_completed_at")
+            .eq("user_id", current_user_id())
+            .eq("status", "final_required")
+            .execute()
+        ).data or []
+    except Exception as error:
+        # Chưa chạy SQL thêm cột final_quiz_id: coi như không khoá
+        print("Chưa đọc được trạng thái khoá kế hoạch:", str(error)[:200])
+        return None
+    for plan in plans:
+        if _exam_plan_id_for_review_plan(plan) == str(exam_plan_id):
+            origin = _origin_session_id(plan)
+            return {
+                "review_plan_id": str(plan["id"]),
+                "final_quiz_id": str(plan["final_quiz_id"]) if plan.get("final_quiz_id") else None,
+                "origin_session_id": origin,
+                "session_order": _session_order_in_plan(origin) if origin else None,
+                "review_done": bool(plan.get("review_study_completed_at")),
+            }
+    return None
+
+
+def final_lock_reason(lock: dict) -> str:
+    order = lock.get("session_order")
+    where = f"của buổi {order}" if order else "đang chờ"
+    return (
+        f"Kế hoạch đang tạm khoá: bài kiểm tra lại {where} chưa đạt 80%. "
+        "Hãy ôn lại buổi đó và làm bài tổng hợp 20 câu, xong sẽ mở khoá."
+    )
+
+
+def _raise_if_plan_locked(exam_plan_id, allow_session_id=None, allow_review_plan_id=None):
+    lock = _final_lock_for_plan(exam_plan_id)
+    if not lock:
+        return None
+    if allow_session_id and str(allow_session_id) == str(lock.get("origin_session_id")):
+        return lock
+    if allow_review_plan_id and str(allow_review_plan_id) == lock["review_plan_id"]:
+        return lock
+    raise HTTPException(status_code=403, detail=final_lock_reason(lock))
+
+
+_QUESTION_COPY_SKIP = {"id", "quiz_id", "created_at", "updated_at", "question_order"}
+
+
+_NEW_REVIEW_COLUMNS = ("needs_attention", "final_quiz_id")
+
+
+def _update_review_plan(review_plan_id, fields: dict):
+    """Cập nhật review plan; nếu Supabase chưa có cột mới (chưa chạy SQL) thì bỏ các cột đó."""
+    try:
+        return (
+            supabase.table("review_plans")
+            .update(fields)
+            .eq("id", str(review_plan_id))
+            .eq("user_id", current_user_id())
+            .execute()
+        )
+    except Exception as error:
+        if not any(column in str(error) for column in _NEW_REVIEW_COLUMNS):
+            raise
+        print("Chưa có cột needs_attention/final_quiz_id: hãy chạy backend/supabase_flow_l4.sql")
+        trimmed = {key: value for key, value in fields.items() if key not in _NEW_REVIEW_COLUMNS}
+        if not trimmed:
+            return None
+        return (
+            supabase.table("review_plans")
+            .update(trimmed)
+            .eq("id", str(review_plan_id))
+            .eq("user_id", current_user_id())
+            .execute()
+        )
+
+
+def _review_plan_by_final_quiz(quiz_id):
+    try:
+        rows = (
+            supabase.table("review_plans")
+            .select("id, status, retake_quiz_id, final_quiz_id, needs_attention, review_items")
+            .eq("final_quiz_id", str(quiz_id))
+            .eq("user_id", current_user_id())
+            .limit(1)
+            .execute()
+        ).data or []
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
+def _review_plan_by_id_safe(review_plan_id):
+    try:
+        rows = (
+            supabase.table("review_plans")
+            .select("id, final_quiz_id, needs_attention")
+            .eq("id", str(review_plan_id))
+            .eq("user_id", current_user_id())
+            .limit(1)
+            .execute()
+        ).data or []
+        return rows[0] if rows else None
+    except Exception:
+        return None
+
+
+def _create_final_quiz(review_plan, retake_quiz_id):
+    """
+    Bài tổng hợp 20 câu = 10 câu bài kiểm tra lại vừa làm + 10 câu quiz gốc.
+    Giữ nguyên câu hỏi và đáp án (không gọi AI), chỉ xáo thứ tự câu.
+    Không xáo thứ tự phương án để lời giải (có thể nhắc "đáp án A") vẫn đúng.
+    """
+    import random
+
+    original_quiz_id, _ = _resolve_original_quiz(retake_quiz_id)
+    question_rows = []
+    for quiz_id in (retake_quiz_id, original_quiz_id):
+        rows = (
+            supabase.table("quiz_questions")
+            .select("*")
+            .eq("quiz_id", str(quiz_id))
+            .eq("user_id", current_user_id())
+            .eq("status", "ready")
+            .order("question_order")
+            .execute()
+        ).data or []
+        question_rows.extend(rows[:10])
+
+    if not question_rows:
+        raise Exception("Không có câu hỏi để tạo bài tổng hợp.")
+
+    original_rows = (
+        supabase.table("quizzes")
+        .select("exam_plan_id, study_session_id")
+        .eq("id", str(original_quiz_id))
+        .limit(1)
+        .execute()
+    ).data or []
+    exam_plan_id = original_rows[0].get("exam_plan_id") if original_rows else None
+    session_id = (original_rows[0].get("study_session_id") if original_rows else None) or _origin_session_id(review_plan)
+
+    quiz = (
+        supabase.table("quizzes")
+        .insert({
+            "user_id": current_user_id(),
+            "exam_plan_id": exam_plan_id,
+            "study_session_id": None,
+            "title": session_quiz_title("final", _session_order_in_plan(session_id) if session_id else None),
+            "description": f"{len(question_rows)} câu: bài kiểm tra lại + bài kiểm tra gốc",
+            "source_mode": "textbook",
+            "time_limit_minutes": FINAL_QUIZ_TIME_LIMIT,
+            "status": "active",
+        })
+        .execute()
+    ).data[0]
+    final_quiz_id = str(quiz["id"])
+
+    random.shuffle(question_rows)
+    records = []
+    for order, row in enumerate(question_rows, start=1):
+        record = {key: value for key, value in row.items() if key not in _QUESTION_COPY_SKIP}
+        record.update({"quiz_id": final_quiz_id, "user_id": current_user_id(), "question_order": order, "status": "ready"})
+        records.append(record)
+
+    try:
+        saved = supabase.table("quiz_questions").insert(records).execute().data or []
+        if len(saved) != len(records):
+            raise Exception("Không lưu đủ câu hỏi bài tổng hợp.")
+    except Exception:
+        supabase.table("quiz_questions").delete().eq("quiz_id", final_quiz_id).execute()
+        supabase.table("quizzes").delete().eq("id", final_quiz_id).eq("user_id", current_user_id()).execute()
+        raise
+
+    return final_quiz_id
 
 
 PRACTICE_LOCK_REASON = (
@@ -1976,6 +2215,12 @@ def complete_session_practice(
 
         session = response.data[0]
 
+        # L4: kế hoạch đang chờ bài tổng hợp → chỉ buổi cần ôn lại được vào
+        plan_lock = _raise_if_plan_locked(
+            _exam_plan_id_for_session(session),
+            allow_session_id=session_id,
+        )
+
         # Mở bài kiểm tra lại (nếu có) của buổi học: mỗi lần làm lại
         # đều cần trả lời Tự kiểm tra nhanh trước.
         unlocked_retake_quiz_ids = []
@@ -1994,7 +2239,25 @@ def complete_session_practice(
             try:
                 retake_plan = _find_retake_plan_for_quiz(session_quiz["id"])
 
-                if retake_plan and retake_plan.get("status") != "in_progress":
+                if (
+                    plan_lock
+                    and retake_plan
+                    and str(retake_plan["id"]) == plan_lock["review_plan_id"]
+                ):
+                    # Ôn lại xong (đã trả lời câu hỏi lồng) → mở bài tổng hợp 20 câu
+                    (
+                        supabase.table("review_plans")
+                        .update({"review_study_completed_at": datetime.now(timezone.utc).isoformat()})
+                        .eq("id", str(retake_plan["id"]))
+                        .eq("user_id", current_user_id())
+                        .execute()
+                    )
+                    if plan_lock.get("final_quiz_id"):
+                        unlocked_retake_quiz_ids.append(plan_lock["final_quiz_id"])
+                    continue
+
+                # Chỉ mở bài kiểm tra lại đang chờ; không mở lại buổi ôn đã xong
+                if retake_plan and retake_plan.get("status") == "pending":
                     (
                         supabase.table("review_plans")
                         .update({"status": "in_progress"})
@@ -2002,8 +2265,9 @@ def complete_session_practice(
                         .eq("user_id", current_user_id())
                         .execute()
                     )
+                    retake_plan["status"] = "in_progress"
 
-                if retake_plan:
+                if retake_plan and retake_plan.get("status") == "in_progress":
                     unlocked_retake_quiz_ids.append(
                         str(retake_plan["retake_quiz_id"])
                     )
@@ -2174,8 +2438,12 @@ def ensure_retake_for_attempt(attempt_id: UUID):
         attempt = attempt_rows[0]
         score = float(attempt.get("score") or 0)
 
-        if score >= 80:
+        if is_pass(score):
             return {"message": "Bài đạt từ 80%, không cần kiểm tra lại.", "retake": None}
+
+        # Bài tổng hợp 20 câu không có bài kiểm tra lại (L4): trượt thì "cần chú ý"
+        if _review_plan_by_final_quiz(attempt["quiz_id"]):
+            return {"message": "Bài tổng hợp không có bài kiểm tra lại.", "retake": None}
 
         original_quiz_id, own_plan = _resolve_original_quiz(attempt["quiz_id"])
         plan = own_plan or _find_retake_plan_for_quiz(original_quiz_id)
@@ -2199,7 +2467,7 @@ def ensure_retake_for_attempt(attempt_id: UUID):
                         "user_id": current_user_id(),
                         "quiz_attempt_id": str(attempt_id),
                         "quiz_id": attempt["quiz_id"],
-                        "mastery_level": "not_mastered" if score < 50 else "needs_review",
+                        "mastery_level": mastery_for_score(score),
                         "summary": "Cần ôn lại bài học trước khi làm bài kiểm tra lại.",
                         "strengths": [],
                         "weak_areas": [],
@@ -3121,6 +3389,12 @@ def start_study_session(session_id: UUID):
                 "data": study_session,
                 "resumed": False
             }
+
+        # L4: kế hoạch đang chờ bài tổng hợp → chỉ mở buổi cần ôn lại
+        _raise_if_plan_locked(
+            _exam_plan_id_for_session(study_session),
+            allow_session_id=session_id,
+        )
 
         # 2. Kiểm tra ngày học và kế hoạch tương ứng
         scheduled_value = study_session.get("scheduled_start")
@@ -4847,7 +5121,7 @@ def start_quiz(quiz_id: UUID):
         # 1. Kiểm tra Quiz
         quiz_response = (
             supabase.table("quizzes")
-            .select("id, title, time_limit_minutes, study_session_id")
+            .select("id, title, time_limit_minutes, study_session_id, exam_plan_id")
             .eq("id", str(quiz_id))
             .eq("user_id", current_user_id())
             .eq("status", "active")
@@ -4887,6 +5161,12 @@ def start_quiz(quiz_id: UUID):
 
             session = session_response.data[0]
 
+            # L4: kế hoạch đang chờ bài tổng hợp → chỉ buổi cần ôn lại được làm bài
+            _raise_if_plan_locked(
+                quiz.get("exam_plan_id") or _exam_plan_id_for_session(session),
+                allow_session_id=study_session_id,
+            )
+
             # Quiz của buổi học mở khi buổi học đã bắt đầu.
             if session.get("status") not in QUIZ_OPEN_SESSION_STATUSES:
                 raise HTTPException(
@@ -4915,32 +5195,75 @@ def start_quiz(quiz_id: UUID):
                 )
 
         else:
-            # Quiz ôn tập lại: không áp dụng khóa tuần tự.
-            # Người học có thể làm ngay sau khi bài được tạo.
-            review_response = (
-                supabase.table("review_plans")
-                .select("id, status, review_study_seconds")
-                .eq("retake_quiz_id", str(quiz_id))
-                .eq("user_id", current_user_id())
-                .limit(1)
-                .execute()
-            )
+            # Bài tổng hợp 20 câu (L4): mở sau khi đã ôn lại, chỉ làm 1 lần
+            final_rows = []
+            try:
+                final_rows = (
+                    supabase.table("review_plans")
+                    .select("id, status, review_study_completed_at")
+                    .eq("final_quiz_id", str(quiz_id))
+                    .eq("user_id", current_user_id())
+                    .limit(1)
+                    .execute()
+                ).data or []
+            except Exception as final_error:
+                print("Chưa đọc được cột final_quiz_id:", str(final_error)[:200])
 
-            if not review_response.data:
-                raise HTTPException(
-                    status_code=403,
-                    detail=(
-                        "Quiz không được liên kết với "
-                        "kế hoạch ôn tập hợp lệ."
+            if final_rows:
+                final_plan = final_rows[0]
+                already_submitted = (
+                    supabase.table("quiz_attempts")
+                    .select("id")
+                    .eq("quiz_id", str(quiz_id))
+                    .eq("user_id", current_user_id())
+                    .eq("status", "submitted")
+                    .limit(1)
+                    .execute()
+                ).data
+                if already_submitted or final_plan.get("status") != "final_required":
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Bài tổng hợp chỉ làm 1 lần. Hãy xem lại kết quả của bài."
                     )
+                if not final_plan.get("review_study_completed_at"):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=(
+                            "Hãy ôn lại buổi học (Vào ôn, trả lời các câu hỏi nhanh) "
+                            "rồi mới làm bài tổng hợp 20 câu."
+                        )
+                    )
+            else:
+                # Quiz ôn tập lại: không áp dụng khóa tuần tự.
+                review_response = (
+                    supabase.table("review_plans")
+                    .select("id, status, review_study_seconds, review_items, retake_quiz_id")
+                    .eq("retake_quiz_id", str(quiz_id))
+                    .eq("user_id", current_user_id())
+                    .limit(1)
+                    .execute()
                 )
 
-            review_plan = review_response.data[0]
+                if not review_response.data:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=(
+                            "Quiz không được liên kết với "
+                            "kế hoạch ôn tập hợp lệ."
+                        )
+                    )
 
-            if review_plan.get("status") != "in_progress":
-                raise HTTPException(
-                    status_code=403,
-                    detail=RETAKE_LOCK_REASON
+                review_plan = review_response.data[0]
+
+                if review_plan.get("status") != "in_progress":
+                    raise HTTPException(
+                        status_code=403,
+                        detail=RETAKE_LOCK_REASON
+                    )
+
+                _raise_if_plan_locked(
+                    quiz.get("exam_plan_id") or _exam_plan_id_for_review_plan(review_plan),
+                    allow_review_plan_id=review_plan["id"],
                 )
 
         # 3. Kiểm tra Quiz có câu hỏi không
@@ -5050,11 +5373,17 @@ def get_review_material(review_plan_id: UUID):
 
         review_plan = review_response.data[0]
 
-        if review_plan["status"] not in ["pending", "in_progress"]:
+        if review_plan["status"] not in ACTIVE_REVIEW_STATUSES:
             raise HTTPException(
                 status_code=403,
                 detail="Kế hoạch ôn tập không còn hoạt động."
             )
+        # L4: kế hoạch đang chờ bài tổng hợp của buổi khác → khoá buổi ôn này
+        _raise_if_plan_locked(
+            _exam_plan_id_for_review_plan(review_plan),
+            allow_review_plan_id=review_plan_id,
+        )
+
 
         review_items = review_plan.get("review_items") or []
         retake_quiz_id = review_plan.get("retake_quiz_id")
@@ -5190,7 +5519,11 @@ def get_review_material(review_plan_id: UUID):
             "is_eligible_for_quiz": (
                 bool(retake_quiz_id)
                 and review_plan["status"] in ["pending", "in_progress"]
-            )
+            ),
+            # L4: bài ôn đã trượt → bài tiếp theo là bài tổng hợp 20 câu
+            "status": review_plan["status"],
+            "final_required": review_plan["status"] == "final_required",
+            "final_quiz_id": _final_quiz_id_of(review_plan_id) if review_plan["status"] == "final_required" else None,
         }
 
     except HTTPException:
@@ -5210,7 +5543,7 @@ def start_review_plan(review_plan_id: UUID):
         review_response = (
             supabase.table("review_plans")
             .select(
-                "id, status, retake_quiz_id, "
+                "id, status, review_items, retake_quiz_id, "
                 "review_study_started_at, review_study_seconds"
             )
             .eq("id", str(review_plan_id))
@@ -5227,11 +5560,17 @@ def start_review_plan(review_plan_id: UUID):
 
         review_plan = review_response.data[0]
 
-        if review_plan["status"] not in ["pending", "in_progress"]:
+        if review_plan["status"] not in ACTIVE_REVIEW_STATUSES:
             raise HTTPException(
                 status_code=403,
                 detail="Kế hoạch ôn tập không còn hoạt động."
             )
+        # L4: kế hoạch đang chờ bài tổng hợp của buổi khác → khoá buổi ôn này
+        _raise_if_plan_locked(
+            _exam_plan_id_for_review_plan(review_plan),
+            allow_review_plan_id=review_plan_id,
+        )
+
 
         now = datetime.now(timezone.utc).isoformat()
 
@@ -5300,7 +5639,7 @@ def record_review_activity(review_plan_id: UUID):
         review_response = (
             supabase.table("review_plans")
             .select(
-                "id, status, retake_quiz_id, "
+                "id, status, review_items, retake_quiz_id, "
                 "review_study_last_activity_at, "
                 "review_study_seconds, "
                 "review_study_completed_at"
@@ -5319,11 +5658,17 @@ def record_review_activity(review_plan_id: UUID):
 
         review_plan = review_response.data[0]
 
-        if review_plan["status"] not in ["pending", "in_progress"]:
+        if review_plan["status"] not in ACTIVE_REVIEW_STATUSES:
             raise HTTPException(
                 status_code=403,
                 detail="Kế hoạch ôn tập không còn hoạt động."
             )
+        # L4: kế hoạch đang chờ bài tổng hợp của buổi khác → khoá buổi ôn này
+        _raise_if_plan_locked(
+            _exam_plan_id_for_review_plan(review_plan),
+            allow_review_plan_id=review_plan_id,
+        )
+
 
         if not review_plan.get("retake_quiz_id"):
             raise HTTPException(
@@ -5748,6 +6093,174 @@ def get_quiz_attempt_answers(attempt_id: UUID):
             status_code=500,
             detail=f"Không thể tải câu trả lời đã lưu: {str(error)}"
         )
+
+
+# ==============================
+# MỖI BUỔI MỘT QUIZ GỐC (L1) + ĐÁNH SỐ "BUỔI N" (L8)
+# ==============================
+
+_ensure_quiz_locks: dict[str, "threading.Lock"] = {}
+_ensure_quiz_guard = threading.Lock()
+
+
+def _session_order_in_plan(session_id) -> int | None:
+    """Thứ tự buổi trong kế hoạch (1, 2, 3...) theo scheduled_start."""
+    rows = (
+        supabase.table("study_sessions")
+        .select("id, topic_id, scheduled_start, status")
+        .eq("id", str(session_id))
+        .eq("user_id", current_user_id())
+        .limit(1)
+        .execute()
+    ).data or []
+    if not rows:
+        return None
+    plan_sessions = sorted(
+        _load_plan_sessions(rows[0]),
+        key=lambda item: (str(item.get("scheduled_start") or ""), str(item.get("id"))),
+    )
+    for index, item in enumerate(plan_sessions, start=1):
+        if str(item.get("id")) == str(session_id):
+            return index
+    return None
+
+
+def session_quiz_title(kind: str, order: int | None) -> str:
+    """Một cách đặt tên duy nhất: "Bài kiểm tra · Buổi N", "Kiểm tra lại · Buổi N", "Bài tổng hợp · Buổi N"."""
+    label = {"original": "Bài kiểm tra", "retake": "Kiểm tra lại", "final": "Bài tổng hợp"}[kind]
+    return f"{label} · Buổi {order}" if order else label
+
+
+def _original_quiz_for_session(session_id):
+    rows = (
+        supabase.table("quizzes")
+        .select("id, title, status, created_at")
+        .eq("user_id", current_user_id())
+        .eq("study_session_id", str(session_id))
+        .eq("status", "active")
+        .order("created_at")
+        .limit(1)
+        .execute()
+    ).data or []
+    return rows[0] if rows else None
+
+
+def _material_for_session(session) -> str | None:
+    chunk_ids = [str(cid) for cid in (session.get("source_chunk_ids") or []) if cid]
+    if chunk_ids:
+        rows = (
+            supabase.table("material_chunks")
+            .select("material_id")
+            .in_("id", chunk_ids[:50])
+            .limit(1)
+            .execute()
+        ).data or []
+        if rows and rows[0].get("material_id"):
+            return str(rows[0]["material_id"])
+    topic_rows = (
+        supabase.table("topics")
+        .select("exam_plan_id")
+        .eq("id", str(session.get("topic_id")))
+        .eq("user_id", current_user_id())
+        .limit(1)
+        .execute()
+    ).data or []
+    exam_plan_id = topic_rows[0].get("exam_plan_id") if topic_rows else None
+    if not exam_plan_id:
+        return None
+    materials = (
+        supabase.table("study_materials")
+        .select("id")
+        .eq("user_id", current_user_id())
+        .eq("exam_plan_id", str(exam_plan_id))
+        .eq("material_type", "textbook")
+        .eq("processing_status", "processed")
+        .limit(1)
+        .execute()
+    ).data or []
+    return str(materials[0]["id"]) if materials else None
+
+
+def _final_quiz_id_of(review_plan_id):
+    try:
+        rows = (
+            supabase.table("review_plans")
+            .select("final_quiz_id")
+            .eq("id", str(review_plan_id))
+            .eq("user_id", current_user_id())
+            .limit(1)
+            .execute()
+        ).data or []
+        return str(rows[0]["final_quiz_id"]) if rows and rows[0].get("final_quiz_id") else None
+    except Exception:
+        return None
+
+
+@app.get("/api/exam-plans/{exam_plan_id}/lock")
+def get_plan_lock(exam_plan_id: UUID):
+    """Kế hoạch có đang khoá chờ bài tổng hợp 20 câu không (để hiện banner, ổ khoá)."""
+    lock = _final_lock_for_plan(str(exam_plan_id))
+    if not lock:
+        return {"locked": False}
+    return {"locked": True, "reason": final_lock_reason(lock), **lock}
+
+
+@app.post("/api/study-sessions/{session_id}/ensure-quiz")
+def ensure_session_quiz(session_id: UUID):
+    """
+    Bảo đảm buổi học có đúng 1 quiz gốc (10 câu). Đã có thì trả lại quiz đó;
+    chưa có (ví dụ tạo lỗi lúc lập kế hoạch) thì tạo bù bằng logic của /api/quizzes/generate.
+    """
+    key = f"{current_user_id()}:{session_id}"
+    with _ensure_quiz_guard:
+        lock = _ensure_quiz_locks.setdefault(key, threading.Lock())
+
+    with lock:
+        existing = _original_quiz_for_session(session_id)
+        if existing:
+            has_questions = (
+                supabase.table("quiz_questions")
+                .select("id")
+                .eq("quiz_id", str(existing["id"]))
+                .eq("user_id", current_user_id())
+                .limit(1)
+                .execute()
+            ).data
+            if has_questions:
+                return {"message": "Buổi học đã có bài kiểm tra.", "quiz_id": str(existing["id"]), "created": False}
+            # Quiz rỗng (lần tạo trước lỗi giữa chừng): generate_quiz sẽ xoá và tạo lại
+
+        session_rows = (
+            supabase.table("study_sessions")
+            .select("id, topic_id, scheduled_start, status, source_chunk_ids")
+            .eq("id", str(session_id))
+            .eq("user_id", current_user_id())
+            .limit(1)
+            .execute()
+        ).data or []
+        if not session_rows:
+            raise HTTPException(status_code=404, detail="Không tìm thấy buổi học.")
+
+        material_id = _material_for_session(session_rows[0])
+        if not material_id:
+            raise HTTPException(status_code=400, detail="Không tìm thấy tài liệu của buổi học để tạo bài kiểm tra.")
+
+        order = _session_order_in_plan(session_id)
+        created = generate_quiz(QuizGenerateRequest(
+            material_id=UUID(material_id),
+            study_session_id=session_id,
+            title=session_quiz_title("original", order),
+            description="Bài kiểm tra được tạo tự động từ nội dung bài học tương ứng.",
+            number_of_questions=10,
+            time_limit_minutes=15,
+        ))
+        quiz_id = (created or {}).get("quiz_id") or ((created or {}).get("data") or {}).get("id")
+        if not quiz_id:
+            again = _original_quiz_for_session(session_id)
+            quiz_id = again["id"] if again else None
+        if not quiz_id:
+            raise HTTPException(status_code=502, detail="Chưa tạo được bài kiểm tra, hãy thử lại.")
+        return {"message": "Đã tạo bài kiểm tra cho buổi học.", "quiz_id": str(quiz_id), "created": True}
 
 
 @app.post("/api/quizzes/generate")
@@ -6786,11 +7299,44 @@ def get_quizzes(exam_plan_id: UUID | None = None):
 
         review_plans = retake_response.data or []
 
+        # L4: bài tổng hợp 20 câu + cờ "cần chú ý" (cột mới, có thể chưa chạy SQL)
+        final_plan_map = {}
+        plan_extra = {}
+        try:
+            final_plans = (
+                supabase.table("review_plans")
+                .select(
+                    "id, retake_quiz_id, assessment_id, status, "
+                    "review_study_seconds, review_items, final_quiz_id"
+                )
+                .eq("user_id", current_user_id())
+                .in_("final_quiz_id", quiz_ids)
+                .execute()
+            ).data or []
+            final_plan_map = {str(plan["final_quiz_id"]): plan for plan in final_plans}
+            known_ids = {str(plan["id"]) for plan in review_plans}
+            review_plans = review_plans + [plan for plan in final_plans if str(plan["id"]) not in known_ids]
+            extra_ids = list({str(plan["id"]) for plan in review_plans})
+            if extra_ids:
+                plan_extra = {
+                    str(row["id"]): row
+                    for row in (
+                        supabase.table("review_plans")
+                        .select("id, final_quiz_id, needs_attention, review_study_completed_at")
+                        .eq("user_id", current_user_id())
+                        .in_("id", extra_ids)
+                        .execute()
+                    ).data or []
+                }
+        except Exception as final_error:
+            print("Chưa đọc được bài tổng hợp (chưa chạy SQL L4?):", str(final_error)[:200])
+
         review_plan_map = {
             str(plan["retake_quiz_id"]): plan
             for plan in review_plans
             if plan.get("retake_quiz_id")
         }
+        review_plan_map.update(final_plan_map)
 
         # 3. Lấy Quiz gốc từ các bài kiểm tra lại
         assessment_ids = list({
@@ -6946,6 +7492,14 @@ def get_quizzes(exam_plan_id: UUID | None = None):
             )
 
             quiz["is_retake"] = is_retake
+            # Bài tổng hợp 20 câu cũng là bài ôn của buổi (is_retake) nhưng đánh dấu riêng
+            quiz["is_final"] = quiz_id in final_plan_map
+            extra = plan_extra.get(str(review_plan["id"])) if review_plan else None
+            quiz["needs_attention"] = bool(extra and extra.get("needs_attention"))
+            quiz["review_done"] = bool(extra and extra.get("review_study_completed_at"))
+            quiz["final_quiz_id"] = (
+                str(extra["final_quiz_id"]) if extra and extra.get("final_quiz_id") else None
+            )
             quiz["review_plan_id"] = (
                 review_plan["id"]
                 if review_plan
@@ -7198,12 +7752,30 @@ def get_quizzes(exam_plan_id: UUID | None = None):
             )
 
         # 8. Xác định trạng thái khóa/mở Quiz
+        plan_locks: dict = {}
+
+        def plan_lock_of(plan_id):
+            key = str(plan_id or "")
+            if key not in plan_locks:
+                plan_locks[key] = _final_lock_for_plan(plan_id) if plan_id else None
+            return plan_locks[key]
+
         for quiz in quizzes:
             is_unlocked = False
             lock_reason = None
 
+            # 8.0. Bài tổng hợp 20 câu (L4): mở khi đang chờ và đã ôn lại xong
+            if quiz.get("is_final"):
+                if quiz.get("review_status") == "final_required":
+                    if quiz.get("review_done"):
+                        is_unlocked = True
+                    else:
+                        lock_reason = "Ôn lại bài (trả lời câu hỏi nhanh) để mở bài tổng hợp 20 câu."
+                else:
+                    lock_reason = "Bài tổng hợp chỉ làm một lần và đã nộp."
+
             # 8.1. Quiz ôn tập lại
-            if quiz.get("is_retake"):
+            elif quiz.get("is_retake"):
                 review_status = quiz.get("review_status")
                 review_seconds = int(
                     quiz.get("review_study_seconds") or 0
@@ -7239,6 +7811,16 @@ def get_quizzes(exam_plan_id: UUID | None = None):
 
                 else:
                     lock_reason = PRACTICE_LOCK_REASON
+
+            # 8.3. Kế hoạch đang khoá chờ bài tổng hợp: khoá mọi bài khác (L4)
+            plan_locked = False
+            if not quiz.get("is_final") and quiz.get("review_status") != "completed":
+                lock = plan_lock_of(quiz.get("exam_plan_id"))
+                if lock and str(lock.get("origin_session_id") or "") != str(quiz.get("study_session_id") or ""):
+                    plan_locked = True
+                    is_unlocked = False
+                    lock_reason = final_lock_reason(lock)
+            quiz["plan_locked"] = plan_locked
 
             quiz["is_unlocked"] = is_unlocked
             quiz["lock_reason"] = lock_reason
@@ -8314,13 +8896,8 @@ def submit_quiz_attempt(attempt_id: UUID):
                 str(session_error)
             )
 
-        # 10. Phân loại kết quả
-        if score > 80:
-            mastery_level = "mastered"
-        elif score >= 50:
-            mastery_level = "needs_review"
-        else:
-            mastery_level = "not_mastered"
+        # 10. Phân loại kết quả (ngưỡng chung: score_rules.py, đúng 80% là đạt)
+        mastery_level = mastery_for_score(score)
 
         # 11. Tạo đánh giá dự phòng
         assessment_data = {
@@ -8417,55 +8994,34 @@ def submit_quiz_attempt(attempt_id: UUID):
                 )
             })
 
-        # 11.3. Nhận xét dự phòng theo mức điểm
-        if score < 50:
+        # 11.3. Nhận xét dự phòng theo mức điểm (mọi mức đều có gợi ý)
+        if score < WEAK_BELOW:
             assessment_data["summary"] = (
-                "Bạn chưa đạt yêu cầu của bài kiểm tra. "
-                "Hãy ôn tập lại các kiến thức còn yếu trước khi kiểm tra lại."
+                "Bạn chưa nắm được phần lớn kiến thức của bài này. "
+                "Hãy ôn lại các nội dung đã trả lời sai trước khi làm bài kiểm tra lại."
             )
-
             assessment_data["recommendations"] = [
                 "Đọc lại các nội dung kiến thức đã trả lời sai.",
-                "Ôn tập các chủ đề còn yếu trong tài liệu.",
-                "Luyện tập lại trước khi thực hiện bài kiểm tra tiếp theo."
+                "Ôn lại bài học trong chế độ Vào ôn, trả lời các câu hỏi lồng.",
+                "Làm bài kiểm tra lại sau khi ôn xong."
             ]
-
-        elif score <= 70:
+        elif not is_pass(score):
             assessment_data["summary"] = (
-                "Bạn đã đạt yêu cầu bài kiểm tra. "
-                "Tuy nhiên, vẫn còn một số kiến thức cần củng cố thêm."
+                "Bạn đã nắm được một phần kiến thức, nhưng vẫn còn nội dung cần củng cố "
+                "trước khi đạt mức 80%."
             )
-
-            assessment_data["recommendations"] = (
-                [
-                    "Ôn lại những câu hỏi đã trả lời chưa chính xác.",
-                    "Củng cố các chủ đề còn hạn chế."
-                ]
-                if assessment_data["weak_areas"]
-                else []
-            )
-
-        elif score <= 80:
-            assessment_data["summary"] = (
-                "Bạn có kết quả học tập tốt và đã nắm được phần lớn "
-                "kiến thức. Hãy tiếp tục củng cố những nội dung còn thiếu."
-            )
-
-            assessment_data["recommendations"] = (
-                [
-                    "Ôn lại các kiến thức còn sai để nâng cao mức độ thành thạo."
-                ]
-                if assessment_data["weak_areas"]
-                else []
-            )
-
+            assessment_data["recommendations"] = [
+                "Ôn lại những câu hỏi đã trả lời chưa chính xác.",
+                "Làm bài kiểm tra lại sau khi ôn xong để đạt từ 80%."
+            ]
         else:
             assessment_data["summary"] = (
-                "Xuất sắc! Bạn đã nắm vững các kiến thức được đánh giá "
-                "trong bài kiểm tra."
+                "Bạn đã đạt yêu cầu của bài kiểm tra và nắm vững phần lớn kiến thức."
             )
-
-            assessment_data["recommendations"] = []
+            assessment_data["recommendations"] = [
+                "Giữ nhịp học: chuyển sang buổi học tiếp theo trong kế hoạch.",
+                "Xem lại nhanh các câu sai (nếu có) để không nhầm lại."
+            ]
 
         # 12. Gọi Groq để tạo đánh giá chi tiết
         used_ai_assessment = False
@@ -8501,10 +9057,10 @@ YÊU CẦU:
 8. Nếu không có câu sai, weak_areas phải là [].
 
 QUY TẮC ĐÁNH GIÁ:
-- Dưới 50 điểm: Chưa đạt, cần ôn tập và kiểm tra lại.
-- Từ 50 đến 70 điểm: Đạt, cần chỉ ra nội dung cải thiện.
-- Trên 70 đến 80 điểm: Kết quả tốt.
-- Trên 80 điểm: Xuất sắc, không cần đề xuất cải thiện.
+- Dưới 50 điểm: Yếu, cần ôn tập và kiểm tra lại.
+- Từ 50 đến 79 điểm: Cần củng cố, chỉ ra nội dung cần ôn trước khi kiểm tra lại.
+- Từ 80 điểm trở lên: Đạt. Khen cụ thể phần làm tốt và gợi ý học tiếp buổi kế tiếp,
+  không liệt kê điểm yếu.
 
 CHỈ TRẢ VỀ JSON HỢP LỆ, KHÔNG DÙNG MARKDOWN.
 
@@ -8678,11 +9234,25 @@ CẤU TRÚC:
             }
 
         
-        # 14. Kiểm tra bài hiện tại có phải Retake Quiz không
+        # 14. Bài vừa nộp là bài tổng hợp 20 câu / bài kiểm tra lại của một review plan?
         review_plan = None
+        final_plan = None
+        try:
+            final_rows = (
+                supabase.table("review_plans")
+                .select("id, status, retake_quiz_id, final_quiz_id, review_items")
+                .eq("user_id", current_user_id())
+                .eq("final_quiz_id", str(attempt["quiz_id"]))
+                .limit(1)
+                .execute()
+            ).data or []
+            final_plan = final_rows[0] if final_rows else None
+        except Exception as final_error:
+            print("Chưa đọc được cột final_quiz_id (chưa chạy SQL?):", str(final_error)[:200])
+
         existing_retake_response = (
             supabase.table("review_plans")
-            .select("id, status, retake_quiz_id")
+            .select("id, status, retake_quiz_id, review_items")
             .eq("user_id", current_user_id())
             .eq("retake_quiz_id", str(attempt["quiz_id"]))
             .limit(1)
@@ -8695,61 +9265,81 @@ CẤU TRÚC:
             else None
         )
 
-        if existing_retake_plan:
+        if final_plan:
+            # 14.0. Bài tổng hợp 20 câu: buổi ôn hoàn thành ở mọi mức điểm,
+            # dưới 80% thì gắn cờ "cần chú ý". Kế hoạch mở khoá.
+            review_plan = final_plan
+            _update_review_plan(final_plan["id"], {
+                "status": "completed",
+                "needs_attention": not is_pass(score),
+            })
+            review_plan["status"] = "completed"
+            review_plan["needs_attention"] = not is_pass(score)
+
+        elif existing_retake_plan:
             review_plan = existing_retake_plan
 
-            # 14.1. Đây là bài kiểm tra lại: dưới 80% thì khóa lại,
-            # người học phải ôn và trả lời Tự kiểm tra nhanh để làm lần tiếp.
-            if score < 80:
-                (
-                    supabase.table("review_plans")
-                    .update({
-                        "status": "pending",
-                        "review_study_started_at": None,
-                        "review_study_last_activity_at": None,
-                        "review_study_seconds": 0,
-                        "review_study_completed_at": None
-                    })
-                    .eq("id", existing_retake_plan["id"])
-                    .eq("user_id", current_user_id())
-                    .execute()
-                )
+            if is_pass(score):
+                _update_review_plan(existing_retake_plan["id"], {"status": "completed", "needs_attention": False})
+                review_plan["status"] = "completed"
 
-                print(
-                    "Retake Quiz chưa đạt 80%. Khóa lại cho tới khi "
-                    "người học trả lời Tự kiểm tra nhanh."
-                )
+            elif existing_retake_plan.get("status") not in ("final_required", "completed"):
+                # 14.1. Bài kiểm tra lại dưới 80%: KHÔNG lặp lại bài ôn nữa.
+                # Tạo bài tổng hợp 20 câu và khoá cả kế hoạch tới khi nộp bài đó.
+                final_quiz_id = None
+                try:
+                    final_quiz_id = _create_final_quiz(existing_retake_plan, attempt["quiz_id"])
+                    # Cần cột final_quiz_id (SQL L4): thiếu cột thì lỗi ở đây và rơi về cách cũ
+                    (
+                        supabase.table("review_plans")
+                        .update({
+                            "status": "final_required",
+                            "final_quiz_id": final_quiz_id,
+                            # Phải ôn lại (câu hỏi lồng) trước khi mở bài tổng hợp
+                            "review_study_started_at": None,
+                            "review_study_last_activity_at": None,
+                            "review_study_seconds": 0,
+                            "review_study_completed_at": None,
+                        })
+                        .eq("id", existing_retake_plan["id"])
+                        .eq("user_id", current_user_id())
+                        .execute()
+                    )
+                    review_plan["status"] = "final_required"
+                    review_plan["final_quiz_id"] = final_quiz_id
+                except Exception as final_error:
+                    # Chưa tạo được bài tổng hợp (ví dụ chưa chạy SQL): giữ cách cũ,
+                    # khoá bài kiểm tra lại tới khi ôn xong.
+                    print("Chưa tạo được bài tổng hợp 20 câu:", str(final_error)[:300])
+                    orphan_quiz_id = locals().get("final_quiz_id")
+                    if orphan_quiz_id:
+                        try:
+                            supabase.table("quiz_questions").delete().eq("quiz_id", str(orphan_quiz_id)).execute()
+                            supabase.table("quizzes").delete().eq("id", str(orphan_quiz_id)).eq("user_id", current_user_id()).execute()
+                        except Exception as cleanup_error:
+                            print("Không dọn được bài tổng hợp lỗi:", str(cleanup_error)[:200])
+                    (
+                        supabase.table("review_plans")
+                        .update({
+                            "status": "pending",
+                            "review_study_started_at": None,
+                            "review_study_last_activity_at": None,
+                            "review_study_seconds": 0,
+                            "review_study_completed_at": None,
+                        })
+                        .eq("id", existing_retake_plan["id"])
+                        .eq("user_id", current_user_id())
+                        .execute()
+                    )
+                    review_plan["status"] = "pending"
 
-            else:
-                (
-                    supabase.table("review_plans")
-                    .update({
-                        "status": "completed"
-                    })
-                    .eq("id", existing_retake_plan["id"])
-                    .eq("user_id", current_user_id())
-                    .execute()
-                )
-
-                print(
-                    "Đã hoàn thành kế hoạch ôn tập."
-                )
-
-        elif score < 80 and _find_retake_plan_for_quiz(attempt["quiz_id"]):
-            # 14.2a. Đã có bài "Kiểm tra lại ngày N" cho buổi này:
-            # dùng lại (chỉ 1 bài kiểm tra lại mỗi buổi) và khóa lại.
+        elif not is_pass(score) and _find_retake_plan_for_quiz(attempt["quiz_id"]):
+            # 14.2a. Quiz gốc đã có bài kiểm tra lại (quiz gốc chỉ tính lượt nộp đầu,
+            # /start đã chặn làm lại): giữ nguyên trạng thái buổi ôn.
             review_plan = _find_retake_plan_for_quiz(attempt["quiz_id"])
-            (
-                supabase.table("review_plans")
-                .update({"status": "pending"})
-                .eq("id", str(review_plan["id"]))
-                .eq("user_id", current_user_id())
-                .execute()
-            )
-            review_plan["status"] = "pending"
 
         elif assessment_persisted and (
-            assessment_data["weak_areas"] or score < 80
+            assessment_data["weak_areas"] or not is_pass(score)
         ):
             # 14.2. Tạo Review Plan khi có kiến thức yếu hoặc dưới 80%.
 
@@ -9173,7 +9763,7 @@ CẤU TRÚC:
                 )
 
                 # Tạo bài kiểm tra lại khi điểm dưới 80%.
-                if score < 80:
+                if not is_pass(score):
                     try:
                         retake_quiz = generate_retake_quiz(
                             UUID(str(review_plan["id"])),
@@ -9225,8 +9815,12 @@ CẤU TRÚC:
             "assessment_persisted": assessment_persisted,
             "assessment_save_error": assessment_save_error,
             "next_session_unlocked": True,
-            "requires_retake": score < 80,
-            "review_level": _review_level(score)
+            "requires_retake": not is_pass(score),
+            "review_level": _review_level(score),
+            # L4: bài ôn trượt → phải ôn lại + làm bài tổng hợp 20 câu
+            "final_required": bool(review_plan and review_plan.get("status") == "final_required"),
+            "final_quiz_id": (review_plan or {}).get("final_quiz_id"),
+            "needs_attention": bool((review_plan or {}).get("needs_attention"))
         }
 
     except HTTPException:
@@ -9616,38 +10210,31 @@ def get_quiz_attempt_result(attempt_id: UUID):
                 str(assessment_error)
             )
             score = float(attempt.get("score") or 0)
-            if score < 50:
+            fallback_mastery = mastery_for_score(score)
+            if score < WEAK_BELOW:
                 fallback_summary = (
-                    "Bạn chưa đạt 50%. Hãy ôn lại các phần trả lời sai "
-                    "trước khi làm bài kiểm tra lại."
+                    "Bạn chưa nắm được phần lớn kiến thức của bài này. Hãy ôn lại các phần "
+                    "trả lời sai trước khi làm bài kiểm tra lại."
                 )
                 fallback_recommendations = [
                     "Ôn lại toàn bộ nội dung trong các câu trả lời sai.",
-                    "Làm bài kiểm tra lại và đạt từ 50% để học tiếp."
+                    "Làm bài kiểm tra lại sau khi ôn xong."
                 ]
-                fallback_mastery = "not_mastered"
-            elif score < 70:
+            elif not is_pass(score):
                 fallback_summary = (
-                    "Bạn được phép học tiếp, nhưng vẫn cần củng cố "
-                    "các phần kiến thức còn yếu."
+                    "Bạn đã nắm được một phần kiến thức, nhưng vẫn cần củng cố "
+                    "trước khi đạt mức 80%."
                 )
                 fallback_recommendations = [
-                    "Ôn lại các câu trả lời chưa chính xác."
+                    "Ôn lại các câu trả lời chưa chính xác rồi làm bài kiểm tra lại."
                 ]
-                fallback_mastery = "needs_review"
-            elif score <= 80:
-                fallback_summary = (
-                    "Bạn đã đạt yêu cầu và có thể tiếp tục học ngày kế tiếp."
-                )
-                fallback_recommendations = [
-                    "Tiếp tục củng cố các phần kiến thức còn thiếu."
-                ]
-                fallback_mastery = "needs_review"
             else:
                 fallback_summary = (
-                    "Xuất sắc! Bạn đã nắm vững phần lớn kiến thức."
+                    "Bạn đã đạt yêu cầu và nắm vững phần lớn kiến thức."
                 )
-                fallback_recommendations = []
+                fallback_recommendations = [
+                    "Chuyển sang buổi học tiếp theo trong kế hoạch."
+                ]
                 fallback_mastery = "mastered"
 
             ai_assessment = {
@@ -9712,9 +10299,16 @@ def get_quiz_attempt_result(attempt_id: UUID):
         review_context = None
 
         try:
-            original_quiz_id, own_retake_plan = _resolve_original_quiz(
-                attempt["quiz_id"]
-            )
+            # Bài tổng hợp 20 câu (L4): ngữ cảnh là buổi học gốc của bài kiểm tra lại
+            final_plan = _review_plan_by_final_quiz(attempt["quiz_id"])
+            if final_plan and final_plan.get("retake_quiz_id"):
+                original_quiz_id, own_retake_plan = _resolve_original_quiz(
+                    final_plan["retake_quiz_id"]
+                )
+            else:
+                original_quiz_id, own_retake_plan = _resolve_original_quiz(
+                    attempt["quiz_id"]
+                )
             original_quiz_rows = (
                 supabase.table("quizzes")
                 .select("id, title, study_session_id")
@@ -9757,7 +10351,18 @@ def get_quiz_attempt_result(attempt_id: UUID):
                         "review_date": _plan_review_date(retake_plan),
                     }
 
-                review_context["is_retake"] = own_retake_plan is not None
+                plan_extra = _review_plan_by_id_safe(retake_plan["id"]) if retake_plan else None
+                if retake_info and plan_extra:
+                    retake_info["final_quiz_id"] = (
+                        str(plan_extra["final_quiz_id"]) if plan_extra.get("final_quiz_id") else None
+                    )
+                    retake_info["needs_attention"] = bool(plan_extra.get("needs_attention"))
+
+                review_context["is_retake"] = own_retake_plan is not None or bool(final_plan)
+                # "original" | "retake" | "final": trang kết quả hiển thị theo loại bài
+                review_context["attempt_kind"] = (
+                    "final" if final_plan else "retake" if own_retake_plan else "original"
+                )
                 review_context["original_quiz_id"] = original_quiz_id
                 review_context["retake"] = retake_info
                 review_context["review_level"] = _review_level(
@@ -9789,7 +10394,7 @@ def get_quiz_attempt_result(attempt_id: UUID):
             "review_plan": review_plan,
             "assessment_save_error": assessment_read_error,
             "next_session_unlocked": True,
-            "requires_retake": float(attempt.get("score") or 0) < 80
+            "requires_retake": not is_pass(attempt.get("score"))
         }
 
     except HTTPException:
@@ -9805,6 +10410,94 @@ def get_quiz_attempt_result(attempt_id: UUID):
 
 
 
+def _first_submitted_score(quiz_id):
+    rows = (
+        supabase.table("quiz_attempts")
+        .select("score, submitted_at")
+        .eq("quiz_id", str(quiz_id))
+        .eq("user_id", current_user_id())
+        .eq("status", "submitted")
+        .order("submitted_at")
+        .limit(1)
+        .execute()
+    ).data or []
+    return round(float(rows[0].get("score") or 0)) if rows else None
+
+
+def _assessment_extras(result) -> dict:
+    """Loại bài (gốc / kiểm tra lại / tổng hợp), điểm các lần trước, buổi học kế tiếp."""
+    quiz_id = str(result.get("quiz_id"))
+    quiz_rows = (
+        supabase.table("quizzes")
+        .select("id, study_session_id")
+        .eq("id", quiz_id)
+        .eq("user_id", current_user_id())
+        .limit(1)
+        .execute()
+    ).data or []
+    session_id = quiz_rows[0].get("study_session_id") if quiz_rows else None
+    kind = "original"
+    previous = []
+
+    if not session_id:
+        final_rows = []
+        try:
+            final_rows = (
+                supabase.table("review_plans")
+                .select("id, retake_quiz_id, review_items")
+                .eq("final_quiz_id", quiz_id)
+                .eq("user_id", current_user_id())
+                .limit(1)
+                .execute()
+            ).data or []
+        except Exception:
+            final_rows = []
+        if final_rows:
+            kind = "final"
+            retake_id = final_rows[0].get("retake_quiz_id")
+            original_id, _ = _resolve_original_quiz(retake_id) if retake_id else (None, None)
+            for label, qid in (("bài gốc", original_id), ("bài kiểm tra lại", retake_id)):
+                score = _first_submitted_score(qid) if qid else None
+                if score is not None:
+                    previous.append((label, score))
+            session_id = _origin_session_id(final_rows[0])
+        else:
+            original_id, plan = _resolve_original_quiz(quiz_id)
+            if plan:
+                kind = "retake"
+                score = _first_submitted_score(original_id)
+                if score is not None:
+                    previous.append(("bài gốc", score))
+                session_id = _origin_session_id(plan)
+
+    next_session = None
+    if session_id:
+        rows = (
+            supabase.table("study_sessions")
+            .select("id, topic_id, scheduled_start, status")
+            .eq("id", str(session_id))
+            .eq("user_id", current_user_id())
+            .limit(1)
+            .execute()
+        ).data or []
+        if rows:
+            ordered = sorted(_load_plan_sessions(rows[0]), key=lambda item: str(item.get("scheduled_start") or ""))
+            ids = [str(item["id"]) for item in ordered]
+            if str(session_id) in ids:
+                following = [item for item in ordered[ids.index(str(session_id)) + 1:] if item.get("status") != "completed"]
+                if following:
+                    topic = (
+                        supabase.table("topics").select("name").eq("id", str(following[0]["topic_id"])).limit(1).execute()
+                    ).data or []
+                    day = _vn_date(following[0].get("scheduled_start"))
+                    next_session = {
+                        "topic_name": topic[0]["name"] if topic else "buổi tiếp theo",
+                        "date": day.strftime("%d/%m") if day else "",
+                    }
+
+    return {"kind": kind, "previous_scores": previous, "next_session": next_session}
+
+
 @app.post("/api/quiz-attempts/{attempt_id}/assessment")
 def generate_attempt_assessment(attempt_id: UUID, force: bool = False):
     """
@@ -9815,8 +10508,13 @@ def generate_attempt_assessment(attempt_id: UUID, force: bool = False):
     result = get_quiz_attempt_result(attempt_id)
     current = result.get("ai_assessment") or {}
 
-    if current.get("ai_model") == ASSESSMENT_MODEL_TAG and not force:
+    if current.get("ai_model") in AI_ASSESSMENT_TAGS and not force:
         return {"message": "Đã có đánh giá.", "data": current}
+
+    try:
+        result["assessment_extras"] = _assessment_extras(result)
+    except Exception as extras_error:
+        print("Không lấy được bối cảnh đánh giá:", str(extras_error)[:200])
 
     try:
         quiz_rows = (
@@ -10085,25 +10783,23 @@ def get_quiz_attempts(quiz_id: UUID | None = None):
             if not assessment:
                 score = float(attempt.get("score") or 0)
 
-                if score > 80:
-                    mastery_level = "mastered"
+                mastery_level = mastery_for_score(score)
+                if mastery_level == "mastered":
                     summary = (
                         "Bạn đã nắm vững phần lớn kiến thức trong bài kiểm tra."
                     )
                     recommendations = [
-                        "Tiếp tục ôn tập để duy trì kết quả."
+                        "Chuyển sang buổi học tiếp theo trong kế hoạch."
                     ]
-                elif score >= 50:
-                    mastery_level = "needs_review"
+                elif mastery_level == "needs_review":
                     summary = (
-                        "Bạn đã đạt yêu cầu nhưng vẫn còn nội dung cần "
-                        "củng cố thêm."
+                        "Bạn đã nắm được một phần kiến thức nhưng vẫn còn nội dung cần "
+                        "củng cố trước khi đạt 80%."
                     )
                     recommendations = [
                         "Ôn lại các câu hỏi đã trả lời chưa chính xác."
                     ]
                 else:
-                    mastery_level = "not_mastered"
                     summary = (
                         "Bạn cần ôn lại các nội dung trong bài kiểm tra "
                         "trước khi học tiếp."

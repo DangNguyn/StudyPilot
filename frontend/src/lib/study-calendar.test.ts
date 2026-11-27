@@ -1,6 +1,6 @@
 // Chạy: node src/lib/study-calendar.test.ts
 import assert from "node:assert/strict";
-import { buildMonth, monthsBetween, type CalendarEntry } from "./study-calendar.ts";
+import { buildMonth, dayResult, monthsBetween, type CalendarEntry } from "./study-calendar.ts";
 
 const entry = (dateKey: string, kind: CalendarEntry["kind"], done: boolean, late = false): CalendarEntry => ({
   key: `${dateKey}-${kind}-${done}`,
@@ -49,5 +49,13 @@ const mixed = buildMonth("2026-11", [entry("2026-11-25", "review", false), entry
   .flat()
   .find((day) => day?.day === 25)!;
 assert.deepEqual(mixed.entries.map((e) => e.kind), ["learn", "review"]);
+
+// L5: màu dấu X của ngày, ưu tiên trạng thái nặng nhất
+const withResult = (result: CalendarEntry["result"]): CalendarEntry => ({ ...entry("2026-11-02", "learn", true), result });
+assert.equal(dayResult([withResult("passed")]), "passed");
+assert.equal(dayResult([withResult("passed"), withResult("needs_attention")]), "needs_attention");
+assert.equal(dayResult([withResult("needs_attention"), withResult("pending_review")]), "pending_review");
+assert.equal(dayResult([withResult("pending_review"), withResult("final_required")]), "final_required");
+assert.equal(dayResult([entry("2026-11-02", "learn", true)]), null);
 
 console.log("OK: study calendar");

@@ -3,6 +3,7 @@
 import { tx } from "@/lib/i18n";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   IconAlert,
   IconArrowRight,
@@ -79,14 +80,75 @@ const LETTERS = ["A", "B", "C", "D"];
 
 type Answer = { choice: number; correct: boolean };
 
+/* Bài kiểm tra gốc của TỪNG buổi trong ngày (mỗi buổi 1 quiz riêng) */
+export type SessionQuizLink = {
+  sessionId: string;
+  order: number;
+  topicName: string;
+  /* null: buổi chưa có quiz (tạo lỗi lúc lập kế hoạch) → bấm để tạo bù */
+  href: string | null;
+  done: boolean;
+};
+
 export type UnlockState = {
   state: "idle" | "saving" | "done" | "error";
   quizHref?: string;
   retakeHref?: string;
+  retakeLabel?: string;
   quizLabel?: string;
   title?: string;
   message?: string;
+  sessionQuizzes?: SessionQuizLink[];
 };
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+/* Một dòng: "Buổi N · chủ đề" bên trái, nút cùng bề rộng bên phải */
+function SessionQuizRow({ item }: { item: SessionQuizLink }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const ensureAndOpen = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/study-sessions/${item.sessionId}/ensure-quiz`, { method: "POST" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.quiz_id) throw new Error(result?.detail || tx("Chưa tạo được bài kiểm tra, hãy thử lại."));
+      router.push(`/quizzes/${result.quiz_id}`);
+    } catch (ensureError) {
+      setError(ensureError instanceof Error ? ensureError.message : tx("Chưa tạo được bài kiểm tra, hãy thử lại."));
+      setBusy(false);
+    }
+  };
+
+  const label = item.done
+    ? tx("Xem kết quả buổi {0}", [item.order])
+    : tx("Làm bài kiểm tra buổi {0}", [item.order]);
+  const buttonClass = `sp-btn ${item.done ? "sp-btn-secondary" : "sp-btn-primary"} w-full justify-center py-2 text-[13px]`;
+
+  return (
+    <li className="grid grid-cols-1 items-center gap-2 py-2 sm:grid-cols-[1fr_200px]">
+      <span className="min-w-0 text-[13px] font-semibold text-[var(--sp-ink)]">
+        <span className="font-black">{tx("Buổi {0}", [item.order])}</span>
+        {item.topicName ? <span className="text-[var(--sp-muted)]"> · {item.topicName}</span> : null}
+        {error ? <span className="block text-[12px] font-normal text-[var(--sp-pink-dark)]">{error}</span> : null}
+      </span>
+      {item.href ? (
+        <Link href={item.href} className={buttonClass}>
+          {label}
+          <IconArrowRight size={14} />
+        </Link>
+      ) : (
+        <button type="button" onClick={ensureAndOpen} disabled={busy} className={`${buttonClass} disabled:opacity-60`}>
+          {busy ? tx("Đang tạo bài kiểm tra…") : label}
+          {!busy && <IconArrowRight size={14} />}
+        </button>
+      )}
+    </li>
+  );
+}
 
 export default function PracticeQuizPanel({
   questions,
@@ -442,8 +504,10 @@ function UnlockBlock({
         <p className="flex items-center gap-2 text-sm font-bold text-emerald-800">
           <IconCheck size={16} />
           {unlock.title ? unlock.title : unlock.retakeHref
-            ? tx("Bài kiểm tra lại đã mở")
-            : unlock.quizLabel
+            ? unlock.retakeLabel ? tx("Bài tổng hợp đã mở") : tx("Bài kiểm tra lại đã mở")
+            : unlock.sessionQuizzes && unlock.sessionQuizzes.length > 1
+              ? tx("Mỗi buổi có một bài kiểm tra riêng")
+              : unlock.quizLabel
               ? tx("Bạn đã làm bài kiểm tra của buổi này")
               : tx("Bài kiểm tra hôm nay đã mở")}
         </p>
@@ -454,10 +518,17 @@ function UnlockBlock({
           >
             <IconRepeat size={14} />
 
-            {tx("Làm bài kiểm tra lại")}
+            {unlock.retakeLabel || tx("Làm bài kiểm tra lại")}
           </Link>
         )}
-        {!unlock.retakeHref && (!unlock.title || unlock.quizHref) && (
+        {!unlock.retakeHref && unlock.sessionQuizzes && unlock.sessionQuizzes.length > 0 && (
+          <ul className="mt-1.5 divide-y divide-emerald-200">
+            {unlock.sessionQuizzes.map((item) => (
+              <SessionQuizRow key={item.sessionId} item={item} />
+            ))}
+          </ul>
+        )}
+        {!unlock.retakeHref && !unlock.sessionQuizzes?.length && (!unlock.title || unlock.quizHref) && (
           <Link
             href={unlock.quizHref || "/quizzes"}
             className="sp-btn sp-btn-primary mt-2.5 w-full justify-center py-2 text-[13px]"

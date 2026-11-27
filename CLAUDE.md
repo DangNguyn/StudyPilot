@@ -80,3 +80,13 @@ cd frontend && node src/lib/study-calendar.test.ts   # kiểm thử .ts chạy t
 - ThreadPoolExecutor phải chạy task trong `contextvars.copy_context()` để giữ người dùng (xem document_analyzer.py, practice_questions.py).
 - Thông báo Gmail: cài đặt lưu theo user_id trong `notification_settings.json`; scheduler chạy cho từng người.
 - Hosting: thêm địa chỉ web vào `FRONTEND_ORIGINS` (CORS).
+
+## Luồng kiểm tra L1–L8 (27/11/2026, theo `phan-tich-luong-kiem-tra.md`)
+- Ngưỡng điểm chỉ lấy từ `backend/score_rules.py` và `frontend/src/lib/score-rules.ts`: < 50 Yếu, 50–79 Cần củng cố, ≥ 80 Đạt (đúng 80 là đạt), thêm "Cần chú ý" khi bài tổng hợp trượt. Không viết số 50/80 trực tiếp trong trang.
+- Trạng thái bài học dùng chung: `frontend/src/lib/lesson-status.ts` (`buildLessonStatuses`, `buildTodayTasks`, `lessonLinksFor`, `deriveLock`, `lessonCalendarResult`). Tổng quan, Kế hoạch, Đánh giá năng lực, Kiểm tra kiến thức đều đọc từ đây: cùng "Buổi N", điểm lần đầu / lần gần nhất, nhãn, nút "việc tiếp theo" và mục "Hôm nay".
+- Mỗi buổi 1 bài kiểm tra gốc; thiếu thì `POST /api/study-sessions/{id}/ensure-quiz` tạo bù (không chặn lúc tạo kế hoạch).
+- Kiểm tra lại < 80% → review plan `final_required`, cả kế hoạch khoá (`GET /api/exam-plans/{id}/lock`, `_raise_if_plan_locked`), tạo bài tổng hợp 20 câu (10 gốc + 10 kiểm tra lại, chỉ xáo thứ tự). Ôn lại xong (`practice-complete`) mới mở, làm 1 lần → `completed` (+ `needs_attention` nếu < 80%) và mở khoá.
+- Tên bài: "Bài kiểm tra · Buổi N", "Kiểm tra lại · Buổi N", "Bài tổng hợp · Buổi N". Giao diện tính số buổi từ lesson-status, không đọc từ tiêu đề cũ.
+- Mọi lượt nộp có nhận xét AI (Claude, lỗi thì Groq).
+- SQL cần chạy: `backend/supabase_flow_l4.sql`. Dọn dữ liệu mồ côi: `backend/cleanup_orphans.py` (mặc định chỉ liệt kê; `--apply` chỉ khi chủ dự án đồng ý).
+- Kiểm thử: `python test_flow_l4.py`, `python test_score_rules.py`, `node src/lib/lesson-status.test.ts`, `node src/lib/study-calendar.test.ts`.

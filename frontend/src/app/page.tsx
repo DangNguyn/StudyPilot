@@ -16,14 +16,21 @@ import {
   IconCheck,
   IconClock,
   IconFile,
+  IconLock,
   IconPen,
   IconPlay,
   IconPlus,
   IconRepeat,
 } from "@/components/icons";
+import {
+  buildLessonStatuses,
+  buildTodayTasks,
+  lessonLinksFor,
+  type LessonStatus,
+} from "@/lib/lesson-status";
+import { PASS_SCORE, WEAK_BELOW, isPass } from "@/lib/score-rules";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-const MASTERY_SCORE = 80;
 
 /* ================= Kiểu dữ liệu ================= */
 
@@ -58,10 +65,15 @@ type Quiz = {
   review_date?: string | null;
   is_unlocked?: boolean;
   time_limit_minutes?: number | null;
+  is_final?: boolean;
+  review_plan_id?: string | null;
+  needs_attention?: boolean;
+  review_done?: boolean;
+  final_quiz_id?: string | null;
 };
 
 type QuizAttempt = {
-  attempt_id?: string;
+  attempt_id: string;
   quiz_id: string;
   score: number;
   correct_count: number;
@@ -340,7 +352,6 @@ type Review = {
   text: string;
   label: string;
   href: string;
-  retake: Quiz | null;
 };
 
 type Lesson = {
@@ -351,6 +362,7 @@ type Lesson = {
   chapterKey: string;
   percent: number;
   review: Review;
+  status: LessonStatus;
 };
 
 type TodayItem = {
@@ -365,6 +377,8 @@ type TodayItem = {
   urgent: boolean;
   href: string;
   action: string;
+  /* Kế hoạch đang khoá chờ bài tổng hợp */
+  locked?: boolean;
 };
 
 type WeakItem = {
@@ -424,73 +438,75 @@ function buildView(data: Dashboard, todayKey: string) {
     return `${byChapter && chapter ? tx("Chương {0} · ", [chapter.no]) : ""}${nameOf(session)}`;
   };
 
-  // Điểm mới nhất của từng buổi học (bài gốc hoặc kiểm tra lại)
-  const quizById = new Map(data.quizzes.map((quiz) => [quiz.id, quiz]));
-  const latestBySession = new Map<string, { percent: number; at: string; attemptId?: string }>();
-  for (const attempt of data.attempts) {
-    const sessionId = quizById.get(attempt.quiz_id)?.study_session_id;
-    if (!sessionId) continue;
-    const percent = attempt.total_questions
-      ? Math.round((attempt.correct_count / attempt.total_questions) * 100)
-      : Math.round(Number(attempt.score || 0));
-    const at = attempt.submitted_at || "";
-    const current = latestBySession.get(sessionId);
-    if (!current || at > current.at) latestBySession.set(sessionId, { percent, at, attemptId: attempt.attempt_id });
-  }
+  // Trạng thái từng buổi: hàm dùng chung với Kế hoạch, Đánh giá năng lực, Kiểm tra kiến thức (L7)
+  const planSessionIds = new Set(planSessions.map((session) => session.id));
+  const links = lessonLinksFor(plan?.subject_id);
+  const statuses = buildLessonStatuses({
+    sessions: planSessions.map((session) => ({
+      id: session.id,
+      topic_id: session.topic_id,
+      scheduled_start: session.scheduled_start || "",
+      status: session.status || "scheduled",
+    })),
+    quizzes: data.quizzes.filter((quiz) => quiz.study_session_id && planSessionIds.has(quiz.study_session_id)),
+    attempts: data.attempts,
+    todayKey,
+    links,
+  });
+  const sessionById = new Map(planSessions.map((session) => [session.id, session]));
 
-  // Trạng thái bài ôn: cùng quy tắc với trang Đánh giá năng lực
-  const reviewFor = (sessionId: string): Review => {
-    const retake =
-      [...data.quizzes]
-        .reverse()
-        .find((quiz) => quiz.is_retake && quiz.study_session_id === sessionId && quiz.review_status !== "completed") || null;
-    if (!retake) {
-      return { dateKey: null, rank: 3, tone: "muted", text: tx("Chưa có bài ôn cho bài này"), label: tx("Xem lại bài"), href: materialsHref(sessionId, "revisit"), retake };
+  // Việc ôn của một bài, theo nút "việc tiếp theo" dùng chung
+  const reviewOf = (status: LessonStatus): Review => {
+    const next = status.next;
+    const href = next.href || links(status.sessionId).learn;
+    const dateKey = status.review?.reviewDate?.slice(0, 10) || null;
+    if (next.kind === "final") {
+      return { dateKey, rank: 0, tone: "red", text: tx("Cần làm bài tổng hợp 20 câu"), label: next.label, href };
     }
-    if (!retake.review_date) {
-      const attemptId = latestBySession.get(sessionId)?.attemptId;
+    if (next.kind === "pick_date") {
+      return { dateKey: null, rank: 1, tone: "pink", text: tx("Chưa chọn ngày ôn"), label: next.label, href };
+    }
+    if ((next.kind === "review" || next.kind === "retake") && dateKey) {
+      if (dateKey > todayKey) {
+        return { dateKey, rank: 2, tone: "amber", text: tx("Ôn {0}", [dayPhrase(dateKey, todayKey)]), label: next.label, href };
+      }
       return {
-        dateKey: null,
-        rank: 1,
-        tone: "pink",
-        text: tx("Chưa chọn ngày ôn"),
-        label: tx("Chọn ngày ôn"),
-        href: attemptId ? `/quiz-results/${attemptId}` : materialsHref(sessionId, "review"),
-        retake,
+        dateKey,
+        rank: 0,
+        tone: "red",
+        text: dateKey === todayKey ? tx("Ôn hôm nay") : tx("Quá hạn từ {0}", [dayMonth(dateKey)]),
+        label: next.label,
+        href,
       };
     }
-    const dateKey = retake.review_date.slice(0, 10);
-    const go = retake.is_unlocked
-      ? { label: tx("Làm bài ôn"), href: `/quizzes/${retake.id}` }
-      : { label: tx("Vào ôn"), href: materialsHref(sessionId, "review") };
-    if (dateKey > todayKey) return { dateKey, rank: 2, tone: "amber", text: tx("Ôn {0}", [dayPhrase(dateKey, todayKey)]), ...go, retake };
     return {
-      dateKey,
-      rank: 0,
-      tone: "red",
-      text: dateKey === todayKey ? tx("Ôn hôm nay") : tx("Quá hạn từ {0}", [dayMonth(dateKey)]),
-      ...go,
-      retake,
+      dateKey: null,
+      rank: 3,
+      tone: "muted",
+      text: status.level === "attention" ? tx("Đã ôn xong · Cần chú ý") : tx("Chưa có bài ôn cho bài này"),
+      label: next.label,
+      href,
     };
   };
 
-  const sessionById = new Map(planSessions.map((session) => [session.id, session]));
   const tested: Lesson[] = [];
-  for (const [sessionId, latest] of latestBySession) {
-    const session = sessionById.get(sessionId);
-    if (!session) continue;
+  for (const status of statuses) {
+    const session = sessionById.get(status.sessionId);
+    if (!session || status.currentScore === null) continue;
     tested.push({
-      sessionId,
+      sessionId: status.sessionId,
       session,
       name: nameOf(session),
       title: titleOf(session),
       chapterKey: chapterKeyOf(topicById.get(String(session.topic_id))),
-      percent: latest.percent,
-      review: reviewFor(sessionId),
+      percent: status.currentScore,
+      review: reviewOf(status),
+      status,
     });
   }
+  // Cần ôn thêm: điểm hiện tại chưa đạt, hoặc bài tổng hợp trượt (Cần chú ý)
   const weakLessons = tested
-    .filter((lesson) => lesson.percent < MASTERY_SCORE)
+    .filter((lesson) => !isPass(lesson.percent) || lesson.status.level === "attention")
     .sort((a, b) => a.review.rank - b.review.rank || a.percent - b.percent);
 
   // Cần ôn lại thêm: theo bài học (1 chương) hoặc theo chương
@@ -500,12 +516,12 @@ function buildView(data: Dashboard, todayKey: string) {
     const groups = chapters
       .map((chapter) => {
         const lessons = tested.filter((lesson) => lesson.chapterKey === chapter.key);
-        const weakOnes = lessons.filter((lesson) => lesson.percent < MASTERY_SCORE).sort((a, b) => a.percent - b.percent);
+        const weakOnes = weakLessons.filter((lesson) => lesson.chapterKey === chapter.key).sort((a, b) => a.percent - b.percent);
         const total = planSessions.filter((session) => chapterKeyOf(topicById.get(String(session.topic_id))) === chapter.key).length;
         const average = lessons.length ? Math.round(lessons.reduce((sum, lesson) => sum + lesson.percent, 0) / lessons.length) : null;
         return { chapter, weakOnes, total, average };
       })
-      .filter((group) => group.average !== null && group.average < MASTERY_SCORE && group.weakOnes.length > 0)
+      .filter((group) => group.average !== null && group.weakOnes.length > 0)
       .sort((a, b) => (a.average as number) - (b.average as number));
     weakCount = tx("{0} chương", [groups.length]);
     weak = groups.slice(0, 2).map(({ chapter, weakOnes, total, average }, index) => {
@@ -515,7 +531,7 @@ function buildView(data: Dashboard, todayKey: string) {
         kicker: tx("Chương {0} · Ưu tiên {1}", [chapter.no, index + 1]),
         title: chapter.title,
         percent: average as number,
-        text: tx("{0}/{1} bài dưới {2}% · yếu nhất: {3} ({4}%)", [weakOnes.length, total, MASTERY_SCORE, weakest.name, weakest.percent]),
+        text: tx("{0}/{1} bài dưới {2}% · yếu nhất: {3} ({4}%)", [weakOnes.length, total, PASS_SCORE, weakest.name, weakest.percent]),
         tone: weakest.review.tone,
         label: weakest.review.label,
         href: weakest.review.href,
@@ -525,69 +541,105 @@ function buildView(data: Dashboard, todayKey: string) {
     weakCount = tx("{0} bài", [weakLessons.length]);
     weak = weakLessons.slice(0, 3).map((lesson, index) => ({
       key: lesson.sessionId,
-      kicker: tx("Ưu tiên {0}", [index + 1]),
+      kicker: tx("Ưu tiên {0} · Buổi {1}", [index + 1, lesson.status.order]),
       title: lesson.title,
       percent: lesson.percent,
-      text: lesson.review.retake?.is_unlocked && lesson.review.rank === 0 ? tx("{0} · bài kiểm tra lại đã mở", [lesson.review.text]) : lesson.review.text,
+      text: `${lesson.status.levelLabel} · ${lesson.review.text}`,
       tone: lesson.review.tone,
       label: lesson.review.label,
       href: lesson.review.href,
     }));
   }
 
-  // Hôm nay: bài ôn đến hạn/quá hạn, bài chưa chọn ngày ôn, buổi học xếp hôm nay
+  // Hôm nay: cùng danh sách với trang Kế hoạch (buildTodayTasks), cộng buổi hôm nay đã xong
+  const scoreNote = (status: LessonStatus) =>
+    status.firstScore !== null && status.currentScore !== null && status.currentScore !== status.firstScore
+      ? tx("Lần đầu {0}% · Lần gần nhất {1}%", [status.firstScore, status.currentScore])
+      : tx("Lần trước {0}%", [status.currentScore ?? 0]);
   const today: TodayItem[] = [];
-  for (const lesson of weakLessons) {
-    const { review } = lesson;
-    if (review.rank === 0) {
-      const isRetake = Boolean(review.retake?.is_unlocked);
-      const when = review.dateKey === todayKey ? tx("hẹn hôm nay") : tx("quá hạn từ {0}", [dayMonth(review.dateKey as string)]);
+  for (const task of buildTodayTasks(statuses, todayKey)) {
+    const { status } = task;
+    const session = sessionById.get(status.sessionId);
+    const next = status.next;
+    const href = next.href || links(status.sessionId).learn;
+    const base = {
+      name: nameOf(session),
+      title: titleOf(session),
+      done: false,
+      href,
+      action: next.locked ? tx("Đang khoá") : next.label,
+      locked: next.locked,
+    };
+    if (task.kind === "learn" || task.kind === "quiz") {
       today.push({
-        key: `review-${lesson.sessionId}`,
+        ...base,
+        key: task.key,
+        kind: "lesson",
+        chip: task.overdue
+          ? tx("Học bù · trễ từ {0}", [dayMonth(status.dateKey)])
+          : task.kind === "quiz"
+            ? tx("Buổi {0} · Làm bài kiểm tra", [status.order])
+            : tx("Buổi {0} · Học mới", [status.order]),
+        note: next.locked
+          ? tx("Tạm khoá: làm xong bài tổng hợp 20 câu để mở")
+          : task.kind === "quiz"
+            ? tx("Đã học xong, còn bài kiểm tra cuối buổi")
+            : tx("Đọc tóm tắt, trả lời câu hỏi rồi làm bài kiểm tra"),
+        minutes: Number(session?.duration_minutes || 0),
+        urgent: task.overdue,
+      });
+    } else if (task.kind === "final") {
+      today.push({
+        ...base,
+        key: task.key,
+        kind: "retake",
+        chip: tx("Bài tổng hợp · Buổi {0}", [status.order]),
+        note: tx("Kiểm tra lại chưa đạt {0}% · ôn lại rồi làm bài 20 câu để mở khoá kế hoạch", [PASS_SCORE]),
+        minutes: 30,
+        urgent: true,
+      });
+    } else if (next.kind === "pick_date") {
+      today.push({
+        ...base,
+        key: task.key,
+        kind: "pick",
+        chip: tx("Chưa chọn ngày ôn"),
+        note: tx("{0} · chọn ngày để Pilot xếp lịch ôn", [scoreNote(status)]),
+        minutes: 0,
+        urgent: true,
+      });
+    } else {
+      const dateKey = status.review?.reviewDate?.slice(0, 10) || todayKey;
+      const when = dateKey === todayKey ? tx("hẹn hôm nay") : tx("quá hạn từ {0}", [dayMonth(dateKey)]);
+      const isRetake = next.kind === "retake";
+      today.push({
+        ...base,
+        key: task.key,
         kind: isRetake ? "retake" : "review",
-        name: lesson.name,
-        title: lesson.title,
         chip: `${isRetake ? tx("Kiểm tra lại") : tx("Ôn lại")} · ${when}`,
         note: isRetake
-          ? tx("Lần trước {0}% · làm đạt {1}% là xong phần này", [lesson.percent, MASTERY_SCORE])
-          : tx("Lần trước {0}% · ôn xong sẽ mở bài kiểm tra lại", [lesson.percent]),
-        minutes: Number((isRetake ? review.retake?.time_limit_minutes : lesson.session?.duration_minutes) || 15),
-        done: false,
+          ? tx("{0} · làm đạt {1}% là xong phần này", [scoreNote(status), PASS_SCORE])
+          : tx("{0} · ôn xong sẽ mở bài kiểm tra lại", [scoreNote(status)]),
+        minutes: Number((isRetake ? 15 : session?.duration_minutes) || 15),
         urgent: true,
-        href: review.href,
-        action: isRetake ? tx("Làm bài") : tx("Vào ôn"),
-      });
-    } else if (review.rank === 1) {
-      today.push({
-        key: `pick-${lesson.sessionId}`,
-        kind: "pick",
-        name: lesson.name,
-        title: lesson.title,
-        chip: tx("Chưa chọn ngày ôn"),
-        note: tx("Lần trước {0}% · chọn ngày để Pilot xếp lịch ôn", [lesson.percent]),
-        minutes: 0,
-        done: false,
-        urgent: true,
-        href: review.href,
-        action: tx("Chọn ngày"),
       });
     }
   }
-  for (const session of planSessions) {
-    if (!session.scheduled_start || toKey(session.scheduled_start) !== todayKey) continue;
-    const done = session.status === "completed";
+  for (const status of statuses) {
+    if (status.dateKey !== todayKey || status.sessionStatus !== "completed" || !status.firstAttemptId) continue;
+    const session = sessionById.get(status.sessionId);
     today.push({
-      key: session.id,
+      key: `done-${status.sessionId}`,
       kind: "lesson",
       name: nameOf(session),
       title: titleOf(session),
-      chip: done ? tx("Đã học") : tx("Học mới"),
-      note: done ? tx("Đã xong buổi học này") : tx("Đọc tóm tắt, trả lời câu hỏi rồi làm bài kiểm tra"),
-      minutes: Number(session.duration_minutes || 0),
-      done,
+      chip: tx("Buổi {0} · Đã học", [status.order]),
+      note: tx("Đã xong buổi học này"),
+      minutes: Number(session?.duration_minutes || 0),
+      done: true,
       urgent: false,
-      href: materialsHref(session.id),
-      action: done ? tx("Xem lại") : tx("Bắt đầu"),
+      href: links(status.sessionId).revisit,
+      action: tx("Xem lại"),
     });
   }
 
@@ -783,7 +835,7 @@ function TodayCard({
   minutesText: string;
   openCount: number;
 }) {
-  const firstOpen = view.today.findIndex((item) => !item.done);
+  const firstOpen = view.today.findIndex((item) => !item.done && !item.locked);
   const learnTotal = view.week.reduce((sum, day) => sum + day.learn, 0);
   const learnDone = view.week.reduce((sum, day) => sum + day.learnDone, 0);
   const reviewTotal = view.week.reduce((sum, day) => sum + day.reviews, 0);
@@ -850,15 +902,25 @@ function TodayCard({
                   <p className="mt-1 line-clamp-2 text-[15px] font-bold leading-snug text-[var(--sp-ink)] sm:text-[16px]">{item.title}</p>
                   <p className={`mt-0.5 text-[13px] font-semibold ${style.note}`}>{item.note}</p>
                 </div>
-                <Link
-                  href={item.href}
-                  className={`sp-btn col-span-2 h-[42px] w-full text-sm sm:col-span-1 ${
-                    item.done ? "sp-btn-secondary" : primary ? "sp-btn-primary !bg-[var(--sp-pink)]" : "sp-btn-secondary !text-[var(--sp-peri-dark)]"
-                  }`}
-                >
-                  {primary && !item.done && <IconPlay size={14} />}
-                  {item.action}
-                </Link>
+                {item.locked ? (
+                  <span
+                    aria-disabled
+                    className="sp-btn col-span-2 h-[42px] w-full cursor-not-allowed border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-surface-2)] text-sm text-[var(--sp-soft)] sm:col-span-1"
+                  >
+                    <IconLock size={14} />
+                    {item.action}
+                  </span>
+                ) : (
+                  <Link
+                    href={item.href}
+                    className={`sp-btn col-span-2 h-[42px] w-full text-sm sm:col-span-1 ${
+                      item.done ? "sp-btn-secondary" : primary ? "sp-btn-primary !bg-[var(--sp-pink)]" : "sp-btn-secondary !text-[var(--sp-peri-dark)]"
+                    }`}
+                  >
+                    {primary && !item.done && <IconPlay size={14} />}
+                    {item.action}
+                  </Link>
+                )}
               </li>
             );
           })}
@@ -1014,7 +1076,7 @@ function WeakCard({ view, loading }: { view: View; loading: boolean }) {
         <div className="mt-4 h-[84px] animate-pulse rounded-2xl bg-[var(--sp-surface-2)]" />
       ) : view.weak.length === 0 ? (
         <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-4 text-sm font-semibold text-emerald-800">
-          {tx("Chưa có phần nào dưới {0}%. Giữ phong độ nhé!", [MASTERY_SCORE])}</p>
+          {tx("Chưa có phần nào dưới {0}%. Giữ phong độ nhé!", [PASS_SCORE])}</p>
       ) : (
         <>
           <ul className="mt-4 space-y-3">
@@ -1025,7 +1087,7 @@ function WeakCard({ view, loading }: { view: View; loading: boolean }) {
                   index === 0 ? "border-[var(--sp-pink-line)] bg-[var(--sp-pink-bg)]" : "border-[var(--sp-lav-line)] bg-white"
                 }`}
               >
-                <span className={`text-[23px] font-black ${item.percent < 50 ? "text-[var(--sp-red)]" : "text-[#c98a00]"}`}>{item.percent}%</span>
+                <span className={`text-[23px] font-black ${item.percent < WEAK_BELOW ? "text-[var(--sp-red)]" : "text-[#c98a00]"}`}>{item.percent}%</span>
                 <div className="min-w-0">
                   <p className="text-[11.5px] font-extrabold uppercase tracking-wide text-[var(--sp-purple)]">{item.kicker}</p>
                   <p className="text-[14.5px] font-bold leading-snug text-[var(--sp-ink)]">{item.title}</p>

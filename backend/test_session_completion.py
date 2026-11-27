@@ -13,6 +13,10 @@ from uuid import UUID
 from fastapi import HTTPException
 
 import main
+from auth import _current_user
+
+# Backend lọc dữ liệu theo người đang đăng nhập (auth.py): giả lập người dùng "u1"
+_current_user.set({"id": "u1", "email": "u1@test"})
 
 
 class FakeQuery:

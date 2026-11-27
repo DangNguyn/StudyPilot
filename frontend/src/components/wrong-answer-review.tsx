@@ -1,6 +1,7 @@
 "use client";
 
 import { tx } from "@/lib/i18n";
+import { scoreLevel } from "@/lib/score-rules";
 import { useMemo, useState } from "react";
 import type { LessonPeekRequest } from "@/components/lesson-peek";
 import {
@@ -115,7 +116,8 @@ export function ScoreSummaryCard({
 }) {
   const groups = buildGroups(results);
   const wrongCount = results.filter((item) => !item.is_correct).length;
-  const tone = percent >= 80 ? "text-emerald-700" : percent >= 50 ? "text-[var(--sp-amber-dark)]" : "text-[var(--sp-pink-dark)]";
+  const level = scoreLevel(percent);
+  const tone = level === "pass" ? "text-emerald-700" : level === "mid" ? "text-[var(--sp-amber-dark)]" : "text-[var(--sp-pink-dark)]";
 
   return (
     <section className="sp-card p-5 sm:p-6">

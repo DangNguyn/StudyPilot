@@ -2,6 +2,7 @@
  * Tiến độ dùng cho Nhà của Pilot: số sao, chuỗi ngày học và điều kiện mở khoá đồ.
  * Hàm thuần (không gọi API) để chạy thử bằng node: node src/lib/pilot-progress.test.ts
  */
+import { PASS_SCORE } from "./score-rules.ts";
 
 export type ProgressInput = {
   /* Trạng thái các buổi học (chỉ đếm buổi "completed") */
@@ -45,7 +46,7 @@ export function studyStreak(dayKeys: Iterable<string>, todayKey: string) {
 export function pilotProgress({ sessionStatuses, attempts, todayKey }: ProgressInput): PilotProgress {
   const completedSessions = sessionStatuses.filter((status) => status === "completed").length;
   const scores = attempts.map((attempt) => Math.round(Number(attempt.score) || 0));
-  const goodQuizzes = scores.filter((score) => score >= 80).length;
+  const goodQuizzes = scores.filter((score) => score >= PASS_SCORE).length;
   const perfectQuizzes = scores.filter((score) => score >= 100).length;
   const dayKeys: string[] = [];
   for (const attempt of attempts) {

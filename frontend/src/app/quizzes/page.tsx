@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { SmartLoading } from "@/components/loading-play";
 import { getMainTopicTitle } from "@/lib/content-titles";
+import { buildLessonStatuses, lessonLinksFor } from "@/lib/lesson-status";
+import { isPass, levelLabel, scoreLevel } from "@/lib/score-rules";
 import {
   IconArrowRight,
   IconBolt,
@@ -55,7 +57,17 @@ interface Quiz {
   lock_reason?: string | null;
   question_count?: number;
   review_date?: string | null;
+  /* Bài tổng hợp 20 câu (L4) */
+  is_final?: boolean;
+  needs_attention?: boolean;
+  final_quiz_id?: string | null;
+  /* Kế hoạch đang khoá chờ bài tổng hợp của buổi khác */
+  plan_locked?: boolean;
+  /* Buổi N trong kế hoạch (tính ở trình duyệt, giống mọi trang) */
+  session_order?: number | null;
 }
+
+type PlanSession = { id: string; topic_id?: string | null; scheduled_start: string; status: string };
 
 interface QuizAttempt {
   attempt_id: string;
@@ -126,8 +138,9 @@ function getAttemptPercent(attempt: QuizAttempt) {
 }
 
 function scoreStyle(percent: number) {
-  if (percent >= 80) return { text: "text-emerald-700", bar: "bg-emerald-500" };
-  if (percent >= 50) return { text: "text-[var(--sp-amber-dark)]", bar: "bg-[#E6A23C]" };
+  const level = scoreLevel(percent);
+  if (level === "pass") return { text: "text-emerald-700", bar: "bg-emerald-500" };
+  if (level === "mid") return { text: "text-[var(--sp-amber-dark)]", bar: "bg-[#E6A23C]" };
   return { text: "text-[var(--sp-pink-dark)]", bar: "bg-[var(--sp-pink)]" };
 }
 
@@ -138,13 +151,14 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+/* Tên bài = tên bài học; loại bài + "Buổi N" nằm ở quizKind (một cách đánh số cho mọi trang, L8) */
 function quizTitle(quiz: Quiz) {
-  // Bài kiểm tra lại mới có sẵn tên "Kiểm tra lại ngày N: ..."
-  if (quiz.is_retake && /^kiểm tra lại/i.test(quiz.title || "")) {
-    return quiz.title.replace(/^Kiểm tra lại ngày (\d+)/i, tx("Kiểm tra lại ngày học $1"));
-  }
-  const title = getMainTopicTitle(quiz.topic_name || quiz.title);
-  return quiz.is_retake ? tx("Kiểm tra lại: {0}", [title]) : title;
+  return getMainTopicTitle(quiz.topic_name || quiz.title);
+}
+
+function quizKind(quiz: Quiz) {
+  const kind = quiz.is_final ? tx("Bài tổng hợp") : quiz.is_retake ? tx("Kiểm tra lại") : tx("Bài kiểm tra");
+  return quiz.session_order ? tx("{0} · Buổi {1}", [kind, quiz.session_order]) : kind;
 }
 
 /* ================= Trang ================= */
@@ -173,6 +187,7 @@ function QuizzesContent() {
   const [holdLoading, setHoldLoading] = useState(false);
   const [error, setError] = useState("");
   const [historyError, setHistoryError] = useState("");
+  const [planSessions, setPlanSessions] = useState<Record<string, PlanSession[]>>({});
 
   useEffect(() => {
     const fetchData = async () => {
@@ -182,7 +197,22 @@ function QuizzesContent() {
         if (!response.ok) {
           throw new Error(result.detail || tx("Không thể tải danh sách bài kiểm tra."));
         }
-        setQuizzes(result.data || []);
+        const loaded: Quiz[] = result.data || [];
+        setQuizzes(loaded);
+        // Buổi học của từng kế hoạch: để đánh số "Buổi N" giống trang Kế hoạch
+        const planIds = Array.from(new Set(loaded.map((quiz) => quiz.exam_plan_id).filter(Boolean))) as string[];
+        const entries = await Promise.all(
+          planIds.map(async (planId) => {
+            try {
+              const sessionResponse = await fetch(`${API_URL}/api/study-sessions?exam_plan_id=${planId}`);
+              const sessionResult = await sessionResponse.json();
+              return [planId, sessionResponse.ok ? sessionResult.data || [] : []] as const;
+            } catch {
+              return [planId, []] as const;
+            }
+          })
+        );
+        setPlanSessions(Object.fromEntries(entries));
       } catch (err) {
         setError(err instanceof Error ? err.message : tx("Đã xảy ra lỗi khi tải bài kiểm tra."));
       }
@@ -207,14 +237,30 @@ function QuizzesContent() {
   /* Gom bài kiểm tra theo môn (kế hoạch) */
   const subjects = useMemo<SubjectGroup[]>(() => {
     const groups = new Map<string, Quiz[]>();
+    const todayKey = vnDateKey(new Date().toISOString());
     for (const quiz of quizzes) {
-      const key = quiz.exam_plan_id || "unassigned";
-      groups.set(key, [...(groups.get(key) || []), quiz]);
+      // Bỏ quiz mồ côi (không thuộc kế hoạch/buổi học nào): không hiện "môn ma" (L8)
+      if (!quiz.exam_plan_id || !quiz.study_session_id) continue;
+      groups.set(quiz.exam_plan_id, [...(groups.get(quiz.exam_plan_id) || []), quiz]);
     }
 
-    return Array.from(groups.entries()).map(([planId, planQuizzes]) => {
-      const ids = new Set(planQuizzes.map((quiz) => quiz.id));
-      const planAttempts = attempts.filter((attempt) => ids.has(attempt.quiz_id));
+    return Array.from(groups.entries()).map(([planId, rawQuizzes]) => {
+      const ids = new Set(rawQuizzes.map((quiz) => quiz.id));
+      // Chỉ tính lượt đã nộp
+      const planAttempts = attempts.filter((attempt) => ids.has(attempt.quiz_id) && attempt.submitted_at);
+      const orderBySession = new Map(
+        buildLessonStatuses({
+          sessions: planSessions[planId] || [],
+          quizzes: rawQuizzes,
+          attempts: planAttempts,
+          todayKey,
+          links: lessonLinksFor(null),
+        }).map((status) => [status.sessionId, status.order])
+      );
+      const planQuizzes = rawQuizzes.map((quiz) => ({
+        ...quiz,
+        session_order: orderBySession.get(String(quiz.study_session_id)) ?? null,
+      }));
       const doneQuizIds = new Set(planAttempts.map((attempt) => attempt.quiz_id));
       const percents = planAttempts.map(getAttemptPercent);
       const pending = planQuizzes
@@ -230,7 +276,7 @@ function QuizzesContent() {
         name:
           planQuizzes[0]?.subject_name ||
           planQuizzes[0]?.plan_title ||
-          (planId === "unassigned" ? tx("Chưa liên kết môn học") : tx("Môn học")),
+          tx("Môn học"),
         planTitle: planQuizzes[0]?.plan_title || tx("Kế hoạch ôn tập"),
         quizzes: planQuizzes,
         attempts: planAttempts,
@@ -242,7 +288,7 @@ function QuizzesContent() {
           : null,
       };
     });
-  }, [quizzes, attempts]);
+  }, [quizzes, attempts, planSessions]);
 
   const subject = planParam ? subjects.find((item) => item.planId === planParam) : undefined;
 
@@ -276,7 +322,13 @@ function QuizzesContent() {
     );
   }
 
-  return <SubjectPicker subjects={subjects} attemptsCount={attempts.length} missingPlan={Boolean(planParam)} />;
+  return (
+    <SubjectPicker
+      subjects={subjects}
+      attemptsCount={subjects.reduce((sum, item) => sum + item.attempts.length, 0)}
+      missingPlan={Boolean(planParam)}
+    />
+  );
 }
 
 /* ================= Màn hình 1: chọn môn ================= */
@@ -396,7 +448,7 @@ function SubjectPicker({
                         {tx("Bài nên làm tiếp")}
                       </p>
                       <p className="mt-1 line-clamp-2 font-semibold text-[var(--sp-ink)]">
-                        {quizTitle(next)}
+                        {quizKind(next)}: {quizTitle(next)}
                       </p>
                     </>
                   ) : (
@@ -506,7 +558,8 @@ function chapterCode(chapter?: string | null) {
 
 function quizState(quiz: Quiz, latest: QuizAttempt | undefined): QuizState {
   if (!quiz.is_retake && latest) return "done";
-  if (quiz.is_retake && quiz.review_status === "completed") return "done";
+  // Bài kiểm tra lại đã nộp: xong (đạt → completed; trượt → chờ bài tổng hợp)
+  if (quiz.is_retake && (quiz.review_status === "completed" || (latest && quiz.review_status === "final_required"))) return "done";
   return canStartQuiz(quiz) ? "open" : "locked";
 }
 
@@ -515,7 +568,7 @@ type QuizGroup = "done" | "todo" | "review";
 /* Phân loại: đã hoàn thành (xem câu sai) · chưa làm/đang khoá (bài cuối buổi) · ôn tập (bài kiểm tra lại) */
 function quizGroup(quiz: Quiz, state: QuizState): QuizGroup {
   if (state === "done") return "done";
-  return quiz.is_retake ? "review" : "todo";
+  return quiz.is_retake || quiz.is_final ? "review" : "todo";
 }
 
 const GROUPS: Record<QuizGroup, { name: string; desc: string; icon: React.ReactNode; tone: string }> = {
@@ -540,10 +593,12 @@ const GROUPS: Record<QuizGroup, { name: string; desc: string; icon: React.ReactN
 };
 const GROUP_ORDER: QuizGroup[] = ["done", "todo", "review"];
 
-function scoreTone(percent: number) {
-  if (percent >= 80) return { box: "border-emerald-200 bg-emerald-50", text: "text-emerald-700", fill: "bg-emerald-600", label: tx("Đạt") };
-  if (percent >= 50) return { box: "border-[#f0d98a] bg-[var(--sp-amber-bg)]", text: "text-[var(--sp-amber-dark)]", fill: "bg-[#d99a1c]", label: tx("Cần củng cố") };
-  return { box: "border-[var(--sp-red-line)] bg-[var(--sp-red-bg)]", text: "text-[var(--sp-red-dark)]", fill: "bg-[var(--sp-red)]", label: tx("Cần ôn cấp tốc") };
+function scoreTone(percent: number, attention = false) {
+  if (attention) return { box: "border-[#fbbf77] bg-[#fff4e5]", text: "text-[#b45309]", fill: "bg-[#f59e0b]", label: levelLabel("attention") };
+  const level = scoreLevel(percent);
+  if (level === "pass") return { box: "border-emerald-200 bg-emerald-50", text: "text-emerald-700", fill: "bg-emerald-600", label: levelLabel("pass") };
+  if (level === "mid") return { box: "border-[#f0d98a] bg-[var(--sp-amber-bg)]", text: "text-[var(--sp-amber-dark)]", fill: "bg-[#d99a1c]", label: levelLabel("mid") };
+  return { box: "border-[var(--sp-red-line)] bg-[var(--sp-red-bg)]", text: "text-[var(--sp-red-dark)]", fill: "bg-[var(--sp-red)]", label: levelLabel("weak") };
 }
 
 function SubjectQuizzes({
@@ -861,18 +916,20 @@ function QuizCard({
             date: overview.previous.submitted_at,
           }
         : null;
-  const tone = scoreSource ? scoreTone(scoreSource.percent) : null;
+  const tone = scoreSource
+    ? scoreTone(scoreSource.percent, group === "done" && Boolean(quiz.is_final && quiz.needs_attention && !isPass(scoreSource.percent)))
+    : null;
 
   const reviewKey = vnDateKey(quiz.review_date);
   const kicker =
     group === "review"
-      ? tx("Ôn tập · {0}", [weekdayDate(reviewKey || studyKey)])
-      : tx("Bài kiểm tra · {0}", [weekdayDate(studyKey)]);
+      ? tx("{0} · {1}", [quizKind(quiz), weekdayDate(reviewKey || studyKey)])
+      : tx("{0} · {1}", [quizKind(quiz), weekdayDate(studyKey)]);
 
   const chips: { text: string; style: string; icon: React.ReactNode }[] = [];
   if (group === "done") {
     chips.push({ text: tx("Đã nộp {0}", [shortDate(latest?.submitted_at || studyKey)]), style: "bg-emerald-50 text-emerald-700", icon: <IconCheck size={13} /> });
-    if (quiz.is_retake) chips.push({ text: tx("Bài ôn tập"), style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]", icon: <IconRepeat size={13} /> });
+    if (quiz.is_retake || quiz.is_final) chips.push({ text: quiz.is_final ? tx("Bài tổng hợp") : tx("Bài ôn tập"), style: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]", icon: <IconRepeat size={13} /> });
   } else if (group === "todo") {
     chips.push(
       locked
@@ -1078,19 +1135,20 @@ function QuizCard({
             className={`sp-btn sp-btn-primary h-[42px] justify-center text-[13.5px] ${group === "review" ? "!bg-[var(--sp-pink)]" : ""}`}
           >
             <IconPlay size={16} />
-            {group === "review" ? tx("Làm bài ôn") : tx("Làm bài")}
+            {/* Cùng nhãn với mọi trang (L7) */}
+            {quiz.is_final ? tx("Làm bài tổng hợp") : quiz.is_retake ? tx("Làm bài kiểm tra lại") : tx("Làm bài kiểm tra")}
           </Link>
-        ) : group === "review" ? (
+        ) : group === "review" && !quiz.plan_locked ? (
           <Link href={lessonHref} className="sp-btn sp-btn-primary h-[42px] justify-center !bg-[var(--sp-pink)] text-[13.5px]">
             <IconRepeat size={16} />
 
-            {tx("Vào ôn")}
+            {quiz.is_final ? tx("Ôn lại ngay") : tx("Vào ôn")}
           </Link>
         ) : (
           <span className="sp-btn h-[42px] cursor-not-allowed justify-center border-2 border-dashed border-[var(--sp-lav-line)] bg-[var(--sp-surface-2)] text-[13.5px] text-[var(--sp-soft)]">
             <IconLock size={15} />
 
-            {tx("Chưa mở")}
+            {quiz.plan_locked ? tx("Đang khoá") : tx("Chưa mở")}
           </span>
         )}
         <Link href={lessonHref} className="sp-btn sp-btn-secondary h-[42px] justify-center text-[13.5px]">
@@ -1099,9 +1157,15 @@ function QuizCard({
         </Link>
         <p className="col-span-2 text-[12px] leading-5 text-[var(--sp-muted)]">
           {group === "done"
-            ? quiz.is_retake
-              ? tx("Đã đạt bài ôn tập.")
-              : scoreSource && scoreSource.percent < 80
+            ? quiz.is_final
+              ? scoreSource && isPass(scoreSource.percent)
+                ? tx("Đã đạt bài tổng hợp: buổi này đã hoàn thành.")
+                : tx("Buổi này đã xong nhưng được đánh dấu Cần chú ý trong Đánh giá năng lực.")
+              : quiz.is_retake
+              ? scoreSource && isPass(scoreSource.percent)
+                ? tx("Đã đạt bài ôn tập.")
+                : tx("Chưa đạt 80%: ôn lại rồi làm bài tổng hợp 20 câu.")
+              : scoreSource && !isPass(scoreSource.percent)
                 ? tx("Bài ôn tập của buổi này ở mục Ôn tập.")
                 : tx("Đạt từ 80%: buổi này đã hoàn thành.")
             : locked

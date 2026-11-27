@@ -1,6 +1,6 @@
 // Chạy: node src/lib/review-urgency.test.ts
 import assert from "node:assert/strict";
-import { getReviewUrgency, scoreBand } from "./review-urgency.ts";
+import { getReviewUrgency } from "./review-urgency.ts";
 
 const today = "2026-11-20";
 const exam = "2026-11-30";
@@ -29,7 +29,5 @@ assert.ok(at("2026-11-16", "2026-11-19").rank < at("2026-11-16", "2026-11-20").r
 assert.ok(at("2026-11-16", null).rank < at("2026-11-19", null).rank);
 
 // Mức điểm: đúng 50% thuộc nhóm giữa
-assert.equal(scoreBand(49).weak, true);
-assert.equal(scoreBand(50).weak, false);
 
 console.log("OK: review urgency");

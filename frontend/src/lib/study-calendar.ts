@@ -3,6 +3,8 @@
  */
 
 export type CalendarKind = "learn" | "review" | "exam";
+/* Kết quả của buổi trên lịch (L5): xanh / hồng (còn buổi ôn) / vàng (cần chú ý) / chờ bài tổng hợp */
+export type CalendarResult = "passed" | "pending_review" | "needs_attention" | "final_required";
 export type CalendarAction = "learn" | "review" | "revisit";
 
 export type CalendarEntry = {
@@ -13,9 +15,10 @@ export type CalendarEntry = {
   done: boolean;
   /* Buổi ôn đã qua ngày mà chưa làm */
   late?: boolean;
+  result?: CalendarResult;
   /* Mỗi phần tử là một dòng thông tin phụ */
   lines: { text: string; tone?: "weak" | "mid" }[];
-  action?: { kind: CalendarAction; href: string; locked?: boolean };
+  action?: { kind: CalendarAction; href: string; locked?: boolean; lockReason?: string | null };
 };
 
 export type CalendarDay = {
@@ -31,7 +34,24 @@ export type CalendarDay = {
   hasLate: boolean;
   /* Ngày đã qua còn buổi học chưa làm */
   missed: boolean;
+  /* Màu dấu X của ngày đã xong (ưu tiên: chờ tổng hợp > còn buổi ôn > cần chú ý > đạt) */
+  result: CalendarResult | null;
+  /* Có buổi đang chờ bài tổng hợp 20 câu */
+  finalRequired: boolean;
 };
+
+const RESULT_RANK: Record<CalendarResult, number> = {
+  final_required: 0,
+  pending_review: 1,
+  needs_attention: 2,
+  passed: 3,
+};
+
+export function dayResult(entries: CalendarEntry[]): CalendarResult | null {
+  const results = entries.filter((entry) => entry.kind !== "exam" && entry.result).map((entry) => entry.result!);
+  if (!results.length) return null;
+  return results.sort((a, b) => RESULT_RANK[a] - RESULT_RANK[b])[0];
+}
 
 const pad = (value: number) => String(value).padStart(2, "0");
 
@@ -89,6 +109,8 @@ export function buildMonth(
       missed:
         dateKey < todayKey &&
         work.some((entry) => entry.kind === "learn" && !entry.done),
+      result: dayResult(work),
+      finalRequired: work.some((entry) => entry.result === "final_required"),
     });
   }
   while (cells.length % 7) cells.push(null);

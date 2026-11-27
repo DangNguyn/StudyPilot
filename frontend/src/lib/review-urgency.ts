@@ -95,10 +95,3 @@ export function getReviewUrgency({
     label: ageDays === 0 ? tx("Chưa chọn lịch ôn") : tx("Chưa chọn lịch · {0} ngày", [ageDays]),
   };
 }
-
-/* Nhãn mức điểm: quyết định hình thức ôn lại theo đặc tả F6 */
-export function scoreBand(percent: number) {
-  return percent < 50
-    ? { weak: true, label: tx("Yếu, dưới 50%") }
-    : { weak: false, label: tx("Cần củng cố, 50–79%") };
-}

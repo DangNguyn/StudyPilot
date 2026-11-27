@@ -1,6 +1,7 @@
 "use client";
 
 import { currentLocale, tx } from "@/lib/i18n";
+import { isPass, scoreLevel } from "@/lib/score-rules";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { PilotMascot, SmartLoading } from "@/components/loading-play";
@@ -104,13 +105,18 @@ interface ReviewContext {
   today: string;
   week: WeekDay[];
   is_retake?: boolean;
+  /* "original" | "retake" | "final" (bài tổng hợp 20 câu) */
+  attempt_kind?: "original" | "retake" | "final";
   review_level?: "intensive" | "relaxed" | "none";
   retake?: {
     review_plan_id: string;
     quiz_id: string;
     title: string;
+    /* pending | in_progress | final_required | completed */
     status?: string | null;
     review_date?: string | null;
+    final_quiz_id?: string | null;
+    needs_attention?: boolean;
   } | null;
 }
 
@@ -227,7 +233,8 @@ export default function QuizResultPage() {
   /* Chưa có đánh giá của Claude → nhờ AI đánh giá theo mức điểm */
   useEffect(() => {
     if (!result) return;
-    if (result.ai_assessment?.ai_model === "Claude") {
+    // Nhận xét thật của AI (Claude, hoặc Groq khi Claude lỗi); "Fallback" là câu mẫu → nhờ AI đánh giá
+    if (["Claude", "Groq"].includes(String(result.ai_assessment?.ai_model || ""))) {
       setAiAssessment(result.ai_assessment);
       return;
     }
@@ -251,11 +258,11 @@ export default function QuizResultPage() {
   /* Lượt làm dưới 80% mà chưa có bài kiểm tra lại → tạo bù một lần */
   useEffect(() => {
     const context = result?.review_context;
-    if (!result || !context || context.retake || retakeState.state !== "idle") return;
+    if (!result || !context || context.retake || context.attempt_kind === "final" || retakeState.state !== "idle") return;
     const score = result.total_questions
       ? (result.correct_count / result.total_questions) * 100
       : Number(result.score || 0);
-    if (score >= 80) return;
+    if (isPass(score)) return;
 
     setRetakeState({ state: "creating" });
     fetch(`${API_URL}/api/quiz-attempts/${attemptId}/ensure-retake`, { method: "POST" })
@@ -321,7 +328,8 @@ export default function QuizResultPage() {
   }
 
   const context = result.review_context || null;
-  const levelKey = percent >= 80 ? "none" : percent >= 50 ? "relaxed" : "intensive";
+  const levelKey = ({ pass: "none", mid: "relaxed", weak: "intensive" } as const)[scoreLevel(percent)];
+  const isFinal = context?.attempt_kind === "final";
   const level = LEVELS[levelKey];
   const wrong = result.results.filter((item) => !item.is_correct);
   const assessment = aiAssessment || result.ai_assessment;
@@ -340,11 +348,18 @@ export default function QuizResultPage() {
   const retake = context?.retake || null;
   const reviewDatePassed = Boolean(reviewDate && context?.today && reviewDate < context.today);
   /* Chưa đạt 80% thì bắt buộc có ngày ôn sắp tới (quyết định 20/11/2026) */
+  /* Bài ôn đã trượt → kế hoạch khoá, phải ôn lại + làm bài tổng hợp 20 câu (không chọn ngày) */
+  const finalRequired = retake?.status === "final_required";
   const needsReviewDate =
-    levelKey !== "none" && Boolean(retake) && retake?.status !== "completed" && (!reviewDate || reviewDatePassed);
+    !isFinal &&
+    levelKey !== "none" &&
+    Boolean(retake) &&
+    !["completed", "final_required"].includes(String(retake?.status)) &&
+    (!reviewDate || reviewDatePassed);
   const materialsHref = context?.subject_id
     ? `/study-materials?subject=${encodeURIComponent(context.subject_id)}&session=${encodeURIComponent(context.study_session_id)}`
     : "/study-materials";
+  const reviewModeHref = context?.subject_id ? `${materialsHref}&mode=review` : materialsHref;
   const dayLabel = context?.day_number ? tx("ngày {0}", [context.day_number]) : tx("bài học");
   const mistakes: Mistake[] =
     (assessment?.recommendations || [])
@@ -419,13 +434,19 @@ export default function QuizResultPage() {
 
             {tx("Xem đánh giá điểm yếu")}
           </button>
-          {retake && retake.status === "in_progress" ? (
+          {finalRequired ? (
+            <Link href={reviewModeHref} className="sp-btn sp-btn-primary px-4 py-2.5 text-sm">
+              <IconRepeat size={16} />
+
+              {tx("Ôn lại và làm bài tổng hợp 20 câu")}
+            </Link>
+          ) : !isFinal && retake && retake.status === "in_progress" ? (
             <Link href={`/quizzes/${retake.quiz_id}`} className="sp-btn sp-btn-primary px-4 py-2.5 text-sm">
               <IconRepeat size={16} />
 
               {tx("Làm lại câu sai")}
             </Link>
-          ) : retake && retake.status !== "completed" ? (
+          ) : !isFinal && retake && retake.status !== "completed" ? (
             <Link href={materialsHref} className="sp-btn sp-btn-primary px-4 py-2.5 text-sm" title={tx("Trả lời Tự kiểm tra nhanh để mở bài kiểm tra lại")}>
               <IconRepeat size={16} />
 
@@ -440,6 +461,26 @@ export default function QuizResultPage() {
           )}
         </div>
       </section>
+
+      {/* Bài kiểm tra lại chưa đạt: kế hoạch tạm khoá tới khi làm bài tổng hợp */}
+      {finalRequired && !isFinal && (
+        <section
+          role="alert"
+          className="rounded-[24px] border-2 border-[var(--sp-red)] bg-[var(--sp-red-bg)] px-5 py-4 shadow-[4px_4px_0_var(--sp-red-line)]"
+        >
+          <p className="flex items-center gap-2 font-bold text-[var(--sp-red-dark)]">
+            <IconLock size={18} />
+            {tx("Kế hoạch đang tạm khoá: bài kiểm tra lại chưa đạt 80%")}
+          </p>
+          <p className="mt-1 text-sm text-[var(--sp-text-2)]">
+            {tx("Hãy ôn lại bài này ngay (trả lời các câu hỏi nhanh), rồi làm bài tổng hợp 20 câu gồm câu của bài gốc và bài kiểm tra lại. Làm xong, kế hoạch mở khoá.")}
+          </p>
+          <Link href={reviewModeHref} className="sp-btn sp-btn-primary mt-3 px-4 py-2.5 text-sm">
+            {tx("Ôn lại ngay")}
+            <IconArrowRight size={16} />
+          </Link>
+        </section>
+      )}
 
       {/* Dưới 80%: bắt buộc chọn ngày ôn lại; không chặn việc học bài tiếp theo */}
       {needsReviewDate && (
@@ -707,8 +748,30 @@ export default function QuizResultPage() {
         )}
       </section>
 
+      {/* Bài tổng hợp: buổi ôn hoàn thành ở mọi mức điểm, dưới 80% gắn cờ "cần chú ý" */}
+      {isFinal && (
+        <section
+          className={`flex flex-col items-center rounded-[24px] border-2 px-6 py-7 text-center ${
+            isPass(percent) ? "border-emerald-200 bg-emerald-50" : "border-[#fbbf77] bg-[#fff4e5]"
+          }`}
+        >
+          <p className={`text-lg font-bold ${isPass(percent) ? "text-emerald-800" : "text-[#b45309]"}`}>
+            {isPass(percent) ? tx("Buổi ôn đã hoàn thành") : tx("Buổi ôn hoàn thành · Cần chú ý")}
+          </p>
+          <p className="mt-1 max-w-xl text-sm text-[var(--sp-text-2)]">
+            {isPass(percent)
+              ? tx("Bạn đã nắm lại được phần này. Kế hoạch đã mở khoá, học tiếp bài theo lịch nhé.")
+              : tx("Phần này vẫn chưa vững nên được đánh dấu cần chú ý trong Đánh giá năng lực. Kế hoạch đã mở khoá; hãy xem lại các câu sai và ôn thêm trước ngày thi.")}
+          </p>
+          <Link href={materialsHref} className="sp-btn sp-btn-primary mt-4 px-5 py-2.5 text-sm">
+            {tx("Học bài tiếp theo")}
+            <IconArrowRight size={16} />
+          </Link>
+        </section>
+      )}
+
       {/* Lộ trình ôn lại */}
-      {levelKey !== "none" && context && (
+      {!isFinal && !finalRequired && levelKey !== "none" && context && (
         <RoadmapSection
           levelKey={levelKey}
           context={context}
@@ -723,7 +786,7 @@ export default function QuizResultPage() {
         />
       )}
 
-      {levelKey === "none" && (
+      {!isFinal && levelKey === "none" && (
         <section className="flex flex-col items-center rounded-[24px] bg-[var(--sp-purple)] px-6 py-7 text-center text-white">
           <Sparkle size={24} className="sp-twinkle text-[var(--sp-yellow)]" />
           <p className="mt-2 text-lg font-bold">{tx("Không cần ôn lại bài này")}</p>

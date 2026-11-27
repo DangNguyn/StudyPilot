@@ -27,6 +27,7 @@ import PracticeQuizPanel, {
   type DayPracticeQuestion,
   type PracticeHighlight,
   type PracticeQuestion,
+  type SessionQuizLink,
   type UnlockState,
 } from "@/components/practice-quiz-panel";
 import StudyTimer from "@/components/study-timer";
@@ -1070,6 +1071,8 @@ function MaterialReader({
     setUnlockByDay((state) => ({ ...state, [dateKey]: { state: "saving" } }));
     try {
       const retakeIds: string[] = [];
+      const openedIds: string[] = [];
+      let firstError: Error | null = null;
       for (const sessionId of sessionIds) {
         const response = await fetch(
           `${API_URL}/api/study-sessions/${sessionId}/practice-complete`,
@@ -1081,40 +1084,60 @@ function MaterialReader({
         );
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(result?.detail || tx("Không thể mở bài kiểm tra."));
+          // Kế hoạch đang khoá chờ bài tổng hợp: chỉ buổi cần ôn mở được, các buổi khác bỏ qua
+          firstError = firstError || new Error(result?.detail || tx("Không thể mở bài kiểm tra."));
+          continue;
         }
+        openedIds.push(sessionId);
         retakeIds.push(...(result?.unlocked_retake_quiz_ids || []));
       }
+      if (!openedIds.length && firstError) throw firstError;
       setSessions((current) =>
         current.map((session) =>
-          sessionIds.includes(session.id) && session.status === "scheduled"
+          openedIds.includes(session.id) && session.status === "scheduled"
             ? { ...session, status: "in_progress" }
             : session
         )
       );
 
       let quizHref = plan ? `/quizzes?plan=${encodeURIComponent(plan.id)}` : "/quizzes";
-      let quizLabel: string | undefined;
+      let retakeLabel: string | undefined;
+      const sessionQuizzes: SessionQuizLink[] = [];
       if (plan) {
-        const quizzes = await getJson<{ id: string; study_session_id?: string | null; is_retake?: boolean }>(
+        const quizzes = await getJson<{ id: string; study_session_id?: string | null; is_retake?: boolean; is_final?: boolean }>(
           `${API_URL}/api/quizzes?exam_plan_id=${plan.id}`
         ).catch(() => []);
-        const quiz = quizzes.find(
-          (item) => !item.is_retake && item.study_session_id && sessionIds.includes(item.study_session_id)
+        const attempts = await getJson<{ attempt_id: string; quiz_id: string; submitted_at?: string | null }>(
+          `${API_URL}/api/quiz-attempts`
+        ).catch(() => []);
+        // Mỗi buổi 1 bài kiểm tra gốc riêng, đánh số "Buổi N" theo thứ tự trong kế hoạch
+        const ordered = [...sessions].sort((a, b) =>
+          String(a.scheduled_start || "").localeCompare(String(b.scheduled_start || ""))
         );
-        if (quiz) {
-          quizHref = `/quizzes/${quiz.id}`;
-          // Bài kiểm tra chính chỉ làm 1 lần: nếu đã làm thì dẫn tới kết quả
-          const attempts = await getJson<{ attempt_id: string; quiz_id: string; submitted_at?: string | null }>(
-            `${API_URL}/api/quiz-attempts`
-          ).catch(() => []);
-          const done = attempts
-            .filter((item) => item.quiz_id === quiz.id)
-            .sort((a, b) => String(b.submitted_at || "").localeCompare(String(a.submitted_at || "")))[0];
-          if (done) {
-            quizHref = `/quiz-results/${done.attempt_id}`;
-            quizLabel = tx("Xem kết quả bài kiểm tra");
-          }
+        const seen = new Set<string>();
+        for (const part of day.parts) {
+          const sessionId = part.session.id;
+          if (seen.has(sessionId) || !openedIds.includes(sessionId)) continue;
+          seen.add(sessionId);
+          const quiz = quizzes.find((item) => !item.is_retake && item.study_session_id === sessionId);
+          // Bài kiểm tra gốc chỉ làm 1 lần: đã nộp thì dẫn tới kết quả
+          const done = quiz
+            ? attempts
+                .filter((item) => item.quiz_id === quiz.id && item.submitted_at)
+                .sort((a, b) => String(b.submitted_at || "").localeCompare(String(a.submitted_at || "")))[0]
+            : undefined;
+          sessionQuizzes.push({
+            sessionId,
+            order: ordered.findIndex((session) => session.id === sessionId) + 1,
+            topicName: part.topic?.name ? getMainTopicTitle(part.topic.name) : "",
+            href: done ? `/quiz-results/${done.attempt_id}` : quiz ? `/quizzes/${quiz.id}` : null,
+            done: Boolean(done),
+          });
+        }
+        sessionQuizzes.sort((a, b) => a.order - b.order);
+        if (sessionQuizzes.length === 1 && sessionQuizzes[0].href) quizHref = sessionQuizzes[0].href;
+        if (retakeIds[0] && quizzes.find((item) => item.id === retakeIds[0])?.is_final) {
+          retakeLabel = tx("Làm bài tổng hợp 20 câu");
         }
       }
       setUnlockByDay((state) => ({
@@ -1122,9 +1145,10 @@ function MaterialReader({
         [dateKey]: {
           state: "done",
           quizHref,
-          quizLabel,
-          // Vào học → bài kiểm tra gốc; Vào ôn (hoặc mở thường) → bài kiểm tra lại nếu có
+          sessionQuizzes,
+          // Vào học → bài kiểm tra gốc; Vào ôn (hoặc mở thường) → bài kiểm tra lại / bài tổng hợp nếu có
           retakeHref: focusMode !== "learn" && retakeIds[0] ? `/quizzes/${retakeIds[0]}` : undefined,
+          retakeLabel,
         },
       }));
     } catch (unlockError) {

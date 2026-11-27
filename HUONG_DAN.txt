@@ -1,0 +1,26 @@
+STUDYPILOT - ĐỢT 1 + 2 + 3 (bản đầy đủ) (luồng kiểm tra L1–L8)
+==============================================
+Zip này chứa ĐẦY ĐỦ file đã sửa của cả 3 đợt (backend + frontend).
+Nếu đã chép zip đợt 1 hoặc đợt 2 trước đó thì cứ chép đè bằng zip này.
+
+1) Giải nén vào thư mục gốc dự án StudyPilot (chỗ có 2 thư mục backend/ và frontend/), chọn "Ghi đè".
+
+2) Chạy SQL một lần trên Supabase (SQL Editor > New query):
+   - Mở file backend/supabase_flow_l4.sql, copy toàn bộ, dán vào ô trống (xoá hết chữ cũ trong ô), bấm Run.
+   - Chạy lại nhiều lần cũng không sao.
+
+3) Chạy kiểm tra (không bắt buộc):
+   cd backend
+   python test_score_rules.py
+   python test_flow_l4.py
+   cd ../frontend
+   node src/lib/lesson-status.test.ts
+   node src/lib/study-calendar.test.ts
+
+4) Khởi động lại backend (uvicorn) và frontend (npm run dev).
+
+Lưu ý:
+- backend/cleanup_orphans.py mặc định CHỈ LIỆT KÊ dữ liệu mồ côi, không xoá.
+  Muốn xoá thật thì hỏi lại trước khi chạy với --apply.
+- ANTHROPIC_API_KEY trong backend/.env đang báo 401: thay key mới, nếu không
+  phần nhận xét AI sẽ tự dùng Groq.

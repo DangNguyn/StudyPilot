@@ -15,6 +15,7 @@ import {
   monthsBetween,
   type CalendarDay,
   type CalendarEntry,
+  type CalendarResult,
 } from "@/lib/study-calendar";
 
 const WEEKDAYS = [tx("Thứ 2"), tx("Thứ 3"), tx("Thứ 4"), tx("Thứ 5"), tx("Thứ 6"), tx("Thứ 7"), "CN"];
@@ -36,19 +37,44 @@ const BAR = {
   exam: "bg-[var(--sp-purple-deep)]",
 };
 
-function DoneStamp({ small = false }: { small?: boolean }) {
+/* Màu dấu X theo kết quả ngày (L5) */
+const STAMP: Record<CalendarResult, { bg: string; stroke: string; label: string }> = {
+  passed: { bg: "#22c55e", stroke: "#065f46", label: tx("Đã xong · Đạt") },
+  pending_review: { bg: "var(--sp-pink)", stroke: "var(--sp-purple-deep)", label: tx("Đã xong · còn buổi ôn") },
+  needs_attention: { bg: "#f59e0b", stroke: "#7c2d12", label: tx("Đã xong · Cần chú ý") },
+  final_required: { bg: "var(--sp-red)", stroke: "var(--sp-purple-deep)", label: tx("Cần làm bài tổng hợp") },
+};
+
+function DoneStamp({ small = false, result = null }: { small?: boolean; result?: CalendarResult | null }) {
+  const tone = result ? STAMP[result] : null;
   return (
     <span
-      title={tx("Đã xong")}
-      className={`grid shrink-0 -rotate-12 place-items-center rounded-full border-2 border-[var(--sp-purple)] bg-[var(--sp-yellow)] shadow-[2px_2px_0_var(--sp-purple-deep)] ${
+      title={tone?.label || tx("Đã xong")}
+      className={`grid shrink-0 -rotate-12 place-items-center rounded-full border-2 border-[var(--sp-purple)] shadow-[2px_2px_0_var(--sp-purple-deep)] ${
         small ? "h-6 w-6" : "h-[34px] w-[34px]"
       }`}
+      style={{ background: tone?.bg || "var(--sp-yellow)" }}
     >
       <svg viewBox="0 0 16 16" className={small ? "h-3 w-3" : "h-4 w-4"} aria-hidden>
-        <path d="M3 3l10 10M13 3L3 13" stroke="var(--sp-purple)" strokeWidth="3" strokeLinecap="round" />
+        <path d="M3 3l10 10M13 3L3 13" stroke={tone?.stroke || "var(--sp-purple)"} strokeWidth="3" strokeLinecap="round" />
       </svg>
-      <span className="sr-only">{tx("Đã xong")}</span>
+      <span className="sr-only">{tone?.label || tx("Đã xong")}</span>
     </span>
+  );
+}
+
+/* Chú giải màu dưới lịch: mỗi ý một dòng ngang hàng */
+function CalendarLegend() {
+  const items: CalendarResult[] = ["passed", "pending_review", "needs_attention", "final_required"];
+  return (
+    <ul className="mt-4 grid grid-cols-1 gap-2 text-[12.5px] font-semibold text-[var(--sp-text-2)] sm:grid-cols-2 lg:grid-cols-4">
+      {items.map((item) => (
+        <li key={item} className="flex items-center gap-2">
+          <DoneStamp small result={item} />
+          <span>{STAMP[item].label}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -180,6 +206,7 @@ export default function StudyCalendar({
           )
         )}
       </div>
+      <CalendarLegend />
     </div>
   );
 }
@@ -284,6 +311,11 @@ function DayCell({
               {review}  {tx("buổi ôn")}{day.hasLate ? tx(" · trễ") : ""}
             </Tag>
           )}
+          {day.finalRequired && (
+            <Tag className="bg-[var(--sp-red)] text-white" dot="bg-white">
+              {tx("Bài tổng hợp")}
+            </Tag>
+          )}
           {day.missed && (
             <Tag className="bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]" dot="bg-[var(--sp-amber-dark)]">
 
@@ -300,8 +332,8 @@ function DayCell({
 
         {day.done && (
           <span className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2">
-            <span className="sm:hidden"><DoneStamp small /></span>
-            <span className="hidden sm:inline"><DoneStamp /></span>
+            <span className="sm:hidden"><DoneStamp small result={day.result} /></span>
+            <span className="hidden sm:inline"><DoneStamp result={day.result} /></span>
           </span>
         )}
       </div>
@@ -316,7 +348,7 @@ function Tag({ children, className, dot }: { children: React.ReactNode; classNam
     <>
       {/* Điện thoại: chỉ hiện chấm màu cho gọn */}
       <span aria-hidden className={`h-2 w-2 rounded-full sm:hidden ${dot}`} />
-      <span className={`hidden items-center gap-1.5 rounded-lg px-1.5 py-0.5 text-[11.5px] font-bold sm:flex ${className}`}>
+      <span className={`hidden max-w-full items-center gap-1.5 rounded-lg px-1.5 py-0.5 text-[11.5px] font-bold sm:flex ${className}`}>
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
         <span className="truncate whitespace-nowrap">{children}</span>
       </span>
@@ -406,7 +438,7 @@ function EntryRow({ entry }: { entry: CalendarEntry }) {
       </div>
       {entry.action && action ? (
         entry.action.locked ? (
-          <span className="sp-btn sp-btn-secondary w-[92px] cursor-not-allowed px-0 py-2 text-[12.5px] text-[var(--sp-soft)]" title={tx("Nộp bài kiểm tra của các ngày trước để mở")}>
+          <span className="sp-btn sp-btn-secondary w-[92px] cursor-not-allowed px-0 py-2 text-[12.5px] text-[var(--sp-soft)]" title={entry.action.lockReason || tx("Nộp bài kiểm tra của các ngày trước để mở")}>
             <IconLock size={13} />
 
             {tx("Khóa")}

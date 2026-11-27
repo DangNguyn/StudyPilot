@@ -1007,14 +1007,15 @@ export default function StudyPlansPage() {
       currentStep = tx("Tạo các bài kiểm tra");
       setSubmissionStep(tx("Đang tạo các bài kiểm tra liên kết..."));
 
-      const quizFailures: string[] = [];
+      // Buổi chưa tạo được bài kiểm tra: không chặn kế hoạch, sẽ tạo bù khi người học mở buổi (L1)
+      const quizFailures: number[] = [];
 
       for (let index = 0; index < sessionsData.length; index += 1) {
         const sessionRecord = sessionsData[index] as Record<string, unknown>;
         const sessionId = sessionRecord.id;
 
         if (typeof sessionId !== "string" || !sessionId) {
-          quizFailures.push(tx("Buổi học thứ {0} không có ID hợp lệ.", [index + 1]));
+          quizFailures.push(index + 1);
           continue;
         }
 
@@ -1023,7 +1024,6 @@ export default function StudyPlansPage() {
         );
 
         let quizCreated = false;
-        let lastQuizError = "";
 
         for (let attempt = 1; attempt <= 2 && !quizCreated; attempt += 1) {
           try {
@@ -1037,7 +1037,7 @@ export default function StudyPlansPage() {
                 body: JSON.stringify({
                   material_id: materialId,
                   study_session_id: sessionId,
-                  title: tx("Bài kiểm tra buổi học {0}", [index + 1]),
+                  title: tx("Bài kiểm tra · Buổi {0}", [index + 1]),
                   description:
                     tx("Bài kiểm tra được tạo tự động từ nội dung bài học tương ứng."),
                   number_of_questions: 10,
@@ -1051,24 +1051,14 @@ export default function StudyPlansPage() {
               tx("Không thể tạo bài kiểm tra cho buổi học thứ {0}.", [index + 1])
             );
             quizCreated = true;
-          } catch (error) {
-            lastQuizError =
-              error instanceof Error
-                ? error.message
-                : tx("Không thể tạo bài kiểm tra cho buổi học thứ {0}.", [index + 1]);
+          } catch {
+            // thử lại 1 lần; vẫn lỗi thì để tạo bù sau
           }
         }
 
         if (!quizCreated) {
-          quizFailures.push(lastQuizError);
+          quizFailures.push(index + 1);
         }
-      }
-
-      if (quizFailures.length > 0) {
-        throw new Error(
-          tx("Chưa tạo được {0}/{1} bài kiểm tra. ", [quizFailures.length, sessionsData.length]) +
-            quizFailures[0]
-        );
       }
 
       // 10. Cập nhật danh sách kế hoạch.
@@ -1085,7 +1075,13 @@ export default function StudyPlansPage() {
 
       // 13. Thông báo hoàn tất toàn bộ quy trình.
       setFeedback(
-        tx("Đã tạo xong kế hoạch ôn thi! AI đã xử lý tài liệu và tạo {0} buổi học.", [sessionsData.length]),
+        tx("Đã tạo xong kế hoạch ôn thi! AI đã xử lý tài liệu và tạo {0} buổi học.", [sessionsData.length]) +
+          (quizFailures.length > 0
+            ? " " +
+              tx("Bài kiểm tra của buổi {0} chưa tạo được, StudyPilot sẽ tự tạo khi bạn vào học buổi đó.", [
+                quizFailures.join(", "),
+              ])
+            : ""),
         "success"
       );
 

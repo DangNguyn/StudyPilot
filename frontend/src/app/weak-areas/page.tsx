@@ -22,12 +22,12 @@ import {
   IconTarget,
   Sparkle,
 } from "@/components/icons";
+import { buildLessonStatuses, lessonLinksFor, type LessonStatus } from "@/lib/lesson-status";
+import { PASS_SCORE, isPass, levelLabel, scoreLevel } from "@/lib/score-rules";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-const PASS_SCORE = 50;
-const MASTERY_SCORE = 80;
 
 /* ================= Kiểu dữ liệu ================= */
 
@@ -47,6 +47,9 @@ type LessonScore = {
   session: StudySession;
   topic: Topic | undefined;
   dayNumber: number;
+  /* Buổi N trong kế hoạch (dùng chung mọi trang) */
+  order: number;
+  status: LessonStatus | undefined;
   dateKey: string;
   main: AttemptRow | undefined;
   retake: AttemptRow | undefined;
@@ -83,6 +86,9 @@ type Quiz = {
   review_status?: string | null;
   review_date?: string | null;
   is_unlocked?: boolean;
+  is_final?: boolean;
+  needs_attention?: boolean;
+  final_quiz_id?: string | null;
 };
 
 type WeakAreaItem = {
@@ -181,7 +187,7 @@ function getLevel(percent: number | null) {
       text: "text-[var(--sp-muted)]",
     };
   }
-  if (percent >= MASTERY_SCORE) {
+  if (scoreLevel(percent) === "pass") {
     return {
       label: tx("Nắm vững"),
       chip: "bg-emerald-50 text-emerald-700",
@@ -189,16 +195,16 @@ function getLevel(percent: number | null) {
       text: "text-emerald-700",
     };
   }
-  if (percent >= PASS_SCORE) {
+  if (scoreLevel(percent) === "mid") {
     return {
-      label: tx("Cần cải thiện"),
+      label: levelLabel("mid"),
       chip: "bg-[var(--sp-amber-bg)] text-[var(--sp-amber-dark)]",
       bar: "bg-[#E6A23C]",
       text: "text-[var(--sp-amber-dark)]",
     };
   }
   return {
-    label: tx("Cần ôn lại"),
+    label: levelLabel("weak"),
     chip: "bg-[var(--sp-pink-bg)] text-[var(--sp-pink-dark)]",
     bar: "bg-[var(--sp-pink)]",
     text: "text-[var(--sp-pink-dark)]",
@@ -323,14 +329,15 @@ function WeakAreasPageContent() {
     const todayKey = toDateKey(new Date());
     const topicById = new Map(topics.map((topic) => [topic.id, topic]));
     const sessionById = new Map(sessions.map((session) => [session.id, session]));
-    const quizById = new Map(quizzes.map((quiz) => [quiz.id, quiz]));
+    // Bỏ quiz mồ côi (không thuộc buổi học nào) để số liệu khớp trang Kiểm tra kiến thức
+    const quizById = new Map(quizzes.filter((quiz) => quiz.study_session_id).map((quiz) => [quiz.id, quiz]));
 
     const chapterKeyOf = (topic: Topic | undefined) =>
       String(topic?.hierarchy || "").split(">")[0].trim() || topic?.id || "other";
 
     /* Lượt làm bài thuộc môn đang xem, cũ → mới */
     const planAttempts = attempts
-      .filter((attempt) => quizById.has(attempt.quiz_id))
+      .filter((attempt) => quizById.has(attempt.quiz_id) && attempt.submitted_at)
       .sort(
         (a, b) =>
           new Date(a.submitted_at || 0).getTime() -
@@ -354,7 +361,7 @@ function WeakAreasPageContent() {
         session,
         topic,
         chapterKey: chapterKeyOf(topic),
-        isRetake: Boolean(quiz?.is_retake),
+        isRetake: Boolean(quiz?.is_retake || quiz?.is_final),
         previousPercent,
       };
     });
@@ -410,7 +417,7 @@ function WeakAreasPageContent() {
 
       for (const row of chapter.attempts) {
         const review = row.attempt.review_plan;
-        if (review && review.status !== "completed" && row.percent < PASS_SCORE) {
+        if (review && review.status !== "completed" && !row.isRetake && !isPass(row.percent)) {
           chapter.pendingReviewId = review.id;
         }
       }
@@ -422,7 +429,7 @@ function WeakAreasPageContent() {
             quiz.review_status !== "completed" &&
             chapter.sessions.some((session) => session.id === quiz.study_session_id)
         );
-        if (retake?.review_plan_id && (chapter.current ?? 100) < PASS_SCORE) {
+        if (retake?.review_plan_id) {
           chapter.pendingReviewId = retake.review_plan_id;
         }
       }
@@ -435,10 +442,10 @@ function WeakAreasPageContent() {
     }
 
     const tested = chapters.filter((chapter) => chapter.current !== null);
-    const mastered = tested.filter((chapter) => (chapter.current ?? 0) >= MASTERY_SCORE);
+    const mastered = tested.filter((chapter) => (chapter.current ?? 0) >= PASS_SCORE);
     // Chương có lộ trình ôn tập đang chờ (đang khóa buổi học sau) được ưu tiên trước.
     const needWork = tested
-      .filter((chapter) => (chapter.current ?? 0) < MASTERY_SCORE)
+      .filter((chapter) => (chapter.current ?? 0) < PASS_SCORE)
       .sort(
         (a, b) =>
           Number(Boolean(b.pendingReviewId)) - Number(Boolean(a.pendingReviewId)) ||
@@ -485,13 +492,28 @@ function WeakAreasPageContent() {
         ? Math.floor((dayNumber - 1) / perWeek) + 1
         : Math.floor((new Date(`${dateKey}T00:00:00Z`).getTime() - firstMonday) / (7 * 86_400_000)) + 1;
 
+    const statusBySession = new Map(
+      buildLessonStatuses({
+        sessions: orderedSessions.map((session) => ({
+          id: session.id,
+          topic_id: session.topic_id,
+          scheduled_start: session.scheduled_start || "",
+          status: session.status,
+        })),
+        quizzes,
+        attempts: planAttempts.map((attempt) => ({ ...attempt, score: attempt.score ?? 0 })),
+        todayKey,
+        links: lessonLinksFor(plan?.subject_id),
+      }).map((status) => [status.sessionId, status])
+    );
     const weekMap = new Map<number, WeekScore>();
     for (const session of orderedSessions) {
       const dateKey = toDateKey(session.scheduled_start || new Date());
       const dayNumber = studyDates.indexOf(dateKey) + 1;
       const number = weekOf(dateKey, dayNumber);
       const sessionRows = rows.filter((row) => row.session?.id === session.id);
-      const main = [...sessionRows].reverse().find((row) => !row.isRetake);
+      // Lần đầu = lượt nộp đầu tiên của quiz gốc (quy tắc chung)
+      const main = sessionRows.find((row) => !row.isRetake);
       const retake = [...sessionRows].reverse().find((row) => row.isRetake);
       const latest = sessionRows[sessionRows.length - 1];
       const week = weekMap.get(number) || {
@@ -509,10 +531,12 @@ function WeakAreasPageContent() {
         session,
         topic: topicById.get(session.topic_id),
         dayNumber,
+        order: statusBySession.get(session.id)?.order ?? dayNumber,
+        status: statusBySession.get(session.id),
         dateKey,
         main,
         retake,
-        current: latest ? latest.percent : null,
+        current: statusBySession.get(session.id)?.currentScore ?? (latest ? latest.percent : null),
         latest,
       });
       weekMap.set(number, week);
@@ -594,7 +618,9 @@ function WeakAreasPageContent() {
   const chapterLessons = (chapter: ChapterStat) =>
     chapter.sessions.map((session) => lessonBySession.get(session.id)).filter((lesson): lesson is LessonScore => Boolean(lesson));
   const testedLessons = lessons.filter((lesson) => lesson.current !== null);
-  const weakLessons = testedLessons.filter((lesson) => (lesson.current as number) < MASTERY_SCORE);
+  const weakLessons = testedLessons.filter(
+    (lesson) => !isPass(lesson.current) || lesson.status?.level === "attention"
+  );
 
   const examKey = plan.exam_date ? toDateKey(plan.exam_date) : null;
   const daysLeft = examKey
@@ -605,33 +631,36 @@ function WeakAreasPageContent() {
   const lessonHref = (lesson: LessonScore, mode: "review" | "revisit") =>
     `/materials?subject=${encodeURIComponent(subject.id)}&session=${encodeURIComponent(lesson.session.id)}&mode=${mode}`;
 
-  /* Trạng thái bài ôn của một bài học: ngày ôn đã chọn + nút đi tiếp */
+  /* Trạng thái bài ôn của một bài học: cùng nút "việc tiếp theo" với mọi trang (L7) */
   const reviewFor = (lesson: LessonScore): ReviewInfo => {
-    const retake = [...quizzes]
-      .reverse()
-      .find((quiz) => quiz.is_retake && quiz.study_session_id === lesson.session.id && quiz.review_status !== "completed");
-    if (!retake) {
-      return { text: tx("Chưa có bài ôn cho bài này"), tone: "muted", rank: 3, primary: { label: tx("Xem lại bài"), href: lessonHref(lesson, "revisit") } };
+    const status = lesson.status;
+    const next = status?.next;
+    const href = next?.href || lessonHref(lesson, "revisit");
+    const key = status?.review?.reviewDate?.slice(0, 10) || null;
+    if (!status || !next) {
+      return { text: tx("Chưa có bài ôn cho bài này"), tone: "muted", rank: 3, primary: { label: tx("Xem lại"), href } };
     }
-    if (!retake.review_date) {
-      const attempt = (lesson.main || lesson.latest)?.attempt.attempt_id;
+    if (next.kind === "final") {
+      return { text: tx("Cần làm bài tổng hợp 20 câu"), tone: "red", rank: 0, primary: { label: next.label, href } };
+    }
+    if (next.kind === "pick_date") {
+      return { text: tx("Chưa chọn ngày ôn"), tone: "pink", rank: 1, primary: { label: next.label, href } };
+    }
+    if ((next.kind === "review" || next.kind === "retake") && key) {
+      const primary = { label: next.label, href };
+      if (key > todayKey) return { text: tx("Bài ôn hẹn ngày {0}", [formatDayMonth(key)]), tone: "amber", rank: 2, primary };
       return {
-        text: tx("Chưa chọn ngày ôn"),
-        tone: "pink",
-        rank: 1,
-        primary: { label: tx("Chọn ngày ôn"), href: attempt ? `/quiz-results/${attempt}` : lessonHref(lesson, "review") },
+        text: key === todayKey ? tx("Bài ôn đến hạn hôm nay") : tx("Bài ôn quá hạn từ {0}", [formatDayMonth(key)]),
+        tone: "red",
+        rank: 0,
+        primary,
       };
     }
-    const key = retake.review_date.slice(0, 10);
-    const primary = retake.is_unlocked
-      ? { label: tx("Làm bài ôn"), href: `/quizzes/${retake.id}` }
-      : { label: tx("Vào ôn"), href: lessonHref(lesson, "review") };
-    if (key > todayKey) return { text: tx("Bài ôn hẹn ngày {0}", [formatDayMonth(key)]), tone: "amber", rank: 2, primary };
     return {
-      text: key === todayKey ? tx("Bài ôn đến hạn hôm nay") : tx("Bài ôn quá hạn từ {0}", [formatDayMonth(key)]),
-      tone: "red",
-      rank: 0,
-      primary,
+      text: status.level === "attention" ? tx("Đã ôn xong · Cần chú ý") : tx("Chưa có bài ôn cho bài này"),
+      tone: "muted",
+      rank: 3,
+      primary: { label: next.label, href },
     };
   };
 
@@ -673,19 +702,19 @@ function WeakAreasPageContent() {
           (a, b) =>
             a.review.rank - b.review.rank ||
             (a.lesson.current as number) - (b.lesson.current as number) ||
-            a.lesson.dayNumber - b.lesson.dayNumber
+            a.lesson.order - b.lesson.order
         )
         .map(({ lesson, review }) => {
           const miss = missFor(lesson);
           return {
             key: lesson.session.id,
-            kicker: tx("Ngày học {0} · {1}", [lesson.dayNumber, formatDayMonth(lesson.dateKey)]),
+            kicker: tx("Buổi {0} · {1}", [lesson.order, formatDayMonth(lesson.dateKey)]),
             title: lessonName(lesson),
             score: lesson.current as number,
             lines: miss ? [{ label: tx("Sai nhiều ở"), value: miss }] : [],
             review,
             resultsHref: resultsHref(lesson),
-            stepLabel: tx("Ngày học {0}", [lesson.dayNumber]),
+            stepLabel: tx("Buổi {0}", [lesson.order]),
             stepText: lessonName(lesson),
           };
         });
@@ -697,15 +726,22 @@ function WeakAreasPageContent() {
   const nextChapter = analysis.nextLessonChapter || analysis.nextChapter;
   const learnStep = byChapter
     ? nextChapter && { label: nextChapter.code, text: nextChapter.shortTitle }
-    : nextLesson && { label: tx("Ngày học {0}", [nextLesson.dayNumber]), text: lessonName(nextLesson) };
+    : nextLesson && { label: tx("Buổi {0}", [nextLesson.order]), text: lessonName(nextLesson) };
   const reviewStep = shownWeak[0] && { label: shownWeak[0].stepLabel, text: shownWeak[0].stepText };
-  const shortStep = (label?: string) => (label ? label.replace(tx("Ngày học"), tx("Ngày")) : "—");
+  const shortStep = (label?: string) => label || "—";
 
   /* Tiếp tục luyện tập → Tài liệu học tập của môn này, mở đúng bài tiếp theo */
-  const continueHref = `/study-materials?subject=${encodeURIComponent(subject.id)}${
+  // Kế hoạch đang khoá chờ bài tổng hợp: nút chính đưa về buổi cần ôn (L4)
+  const lockedLesson = lessons.find((lesson) => lesson.status?.next.kind === "final");
+  const learnHref = `/study-materials?subject=${encodeURIComponent(subject.id)}${
     analysis.nextLesson ? `&session=${encodeURIComponent(analysis.nextLesson.id)}` : ""
   }`;
-  const continueLabel = learnStep ? tx("Tiếp tục luyện tập · {0}", [shortStep(learnStep.label)]) : tx("Tiếp tục luyện tập");
+  const continueHref = lockedLesson?.status?.next.href || learnHref;
+  const continueLabel = lockedLesson
+    ? tx("Ôn lại ngay · Buổi {0}", [lockedLesson.order])
+    : learnStep
+      ? tx("Tiếp tục luyện tập · {0}", [shortStep(learnStep.label)])
+      : tx("Tiếp tục luyện tập");
 
   const groupCards = byChapter && masteryView === "chapter"
     ? chapters
@@ -758,8 +794,8 @@ function WeakAreasPageContent() {
           </h1>
           <p className="mt-2 text-[15px] text-[var(--sp-muted)]">
             {rows.length > 0
-              ? tx("Tổng hợp từ {0} câu hỏi qua {1} lượt kiểm tra · cập nhật ngày {2}", [analysis.totalQuestions, rows.length, formatDate(analysis.lastUpdated)])
-              : tx("Chưa có lượt kiểm tra nào. Làm Quiz sau mỗi buổi học để xem đánh giá.")}
+              ? tx("Tổng hợp từ {0} câu hỏi qua {1} lần nộp bài · cập nhật ngày {2}", [analysis.totalQuestions, rows.length, formatDate(analysis.lastUpdated)])
+              : tx("Chưa nộp bài kiểm tra nào. Làm bài kiểm tra sau mỗi buổi học để xem đánh giá.")}
           </p>
         </div>
 
@@ -906,7 +942,7 @@ function WeakAreasPageContent() {
             <span className="flex items-center gap-1.5">
               <span className="h-3 border-l-2 border-dashed border-[var(--sp-text-2)]" />
 
-              {tx("Ngưỡng nắm vững")} {MASTERY_SCORE}%
+              {tx("Ngưỡng nắm vững")} {PASS_SCORE}%
             </span>
             <span>
               {byChapter && masteryView === "chapter" ? tx("Điểm chương") : tx("Điểm tuần")}  {tx("= trung bình điểm mới nhất của các bài đã kiểm tra")}
@@ -1199,7 +1235,7 @@ function ScoreBar({ percent, small }: { percent: number | null; small?: boolean 
       )}
       <span
         className="absolute -top-1 h-[calc(100%+8px)] border-l-2 border-dashed border-[var(--sp-text-2)]/50"
-        style={{ left: `${MASTERY_SCORE}%` }}
+        style={{ left: `${PASS_SCORE}%` }}
         aria-hidden="true"
       />
     </div>
@@ -1281,7 +1317,7 @@ function GroupCard({
               >
                 <div className="min-w-0">
                   <p className="text-[11.5px] font-extrabold uppercase tracking-wide text-[var(--sp-purple)]">
-                    {tx("Ngày học {0} · {1}", [lesson.dayNumber, formatDayMonth(lesson.dateKey)])}
+                    {tx("Buổi {0} · {1}", [lesson.order, formatDayMonth(lesson.dateKey)])}
                   </p>
                   <p className="mt-0.5 text-[14.5px] font-semibold leading-snug text-[var(--sp-ink)]">
                     {lesson.topic ? getMainTopicTitle(lesson.topic.name) : tx("Bài học")}

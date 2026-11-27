@@ -12,9 +12,14 @@ Claude chỉ chọn câu nào thuộc nhóm điểm yếu nào nên không thể
 from __future__ import annotations
 from content_language import language_rule
 
+import json
+import re
+
 from claude_client import generate_structured, is_claude_configured
 
 ASSESSMENT_MODEL_TAG = "Claude"
+# Đánh giá thật (không phải câu mẫu "Fallback"): Claude, hoặc Groq khi Claude lỗi
+AI_ASSESSMENT_TAGS = ("Claude", "Groq")
 
 ASSESSMENT_SCHEMA = {
     "type": "object",
@@ -89,12 +94,7 @@ YÊU CẦU:
 - Không bịa số trang, chương hay tên tài liệu; ứng dụng tự gắn vị trí từ dữ liệu."""
 
 
-def review_tier(score: float) -> str:
-    if score < 50:
-        return "intensive"
-    if score < 80:
-        return "relaxed"
-    return "none"
+from score_rules import review_tier  # noqa: E402  (ngưỡng chung: <50 / 50-79 / >=80)
 
 
 TIER_LIMITS = {
@@ -128,9 +128,6 @@ def _clamp(value, low, high):
 
 def build_attempt_assessment(result: dict, language: str = "vi") -> dict:
     """result: dữ liệu của GET /api/quiz-attempts/{id}/result."""
-    if not is_claude_configured():
-        raise RuntimeError("Chưa cấu hình ANTHROPIC_API_KEY để AI đánh giá bài làm.")
-
     total = int(result.get("total_questions") or 0)
     correct = int(result.get("correct_count") or 0)
     score = round(correct / total * 100) if total else round(float(result.get("score") or 0))
@@ -151,21 +148,18 @@ def build_attempt_assessment(result: dict, language: str = "vi") -> dict:
             f"Đoạn tài liệu liên quan: {snippet}"
         )
 
+    extras = result.get("assessment_extras") or {}
     prompt = (
         f"{language_rule(language)}\n\n"
         f"Bài học: {context.get('topic_name') or result.get('title')}\n"
+        f"Loại bài: {_kind_label(extras.get('kind'))}\n"
         f"Điểm: {score}% (đúng {correct}/{total} câu) → mức "
-        f"{'dưới 50%' if tier == 'intensive' else '50-79%' if tier == 'relaxed' else 'từ 80%'}\n\n"
+        f"{'dưới 50%' if tier == 'intensive' else '50-79%' if tier == 'relaxed' else 'từ 80%'}\n"
+        f"{_kind_instruction(extras, score)}\n\n"
         + "\n\n".join(lines)
     )
 
-    data = generate_structured(
-        tier="light",
-        system=ASSESSMENT_SYSTEM,
-        prompt=prompt,
-        input_schema=ASSESSMENT_SCHEMA,
-        max_tokens=4500,
-    )
+    data, model_tag = _generate_assessment(prompt)
 
     # Gắn vị trí thật (trang, chương, tài liệu) cho từng nhóm điểm yếu
     weak_areas = []
@@ -224,14 +218,102 @@ def build_attempt_assessment(result: dict, language: str = "vi") -> dict:
                 "text": text[:400],
             })
 
+    recommendations = [
+        str(item).strip() for item in data.get("recommendations") or [] if str(item).strip()
+    ][:4] or _default_recommendations(tier, extras)
+
     return {
         "mastery_level": "mastered" if tier == "none" else "needs_review" if tier == "relaxed" else "not_mastered",
         "summary": f"{str(data.get('verdict') or '').strip()} {str(data.get('summary') or '').strip()}".strip(),
         "verdict": str(data.get("verdict") or "").strip(),
         "strengths": [str(item).strip() for item in data.get("strengths") or [] if str(item).strip()][:3],
         "weak_areas": weak_areas,
-        "recommendations": [
-            str(item).strip() for item in data.get("recommendations") or [] if str(item).strip()
-        ][:4] + [study_plan] + ([{"kind": "mistakes", "items": mistakes}] if mistakes else []),
-        "ai_model": ASSESSMENT_MODEL_TAG,
+        "recommendations": recommendations
+        + [study_plan] + ([{"kind": "mistakes", "items": mistakes}] if mistakes else []),
+        "ai_model": model_tag,
     }
+
+
+def _kind_label(kind) -> str:
+    return {
+        "retake": "bài kiểm tra ôn tập (làm lại sau khi ôn)",
+        "final": "bài tổng hợp 20 câu (10 câu bài ôn + 10 câu bài gốc)",
+    }.get(kind, "bài kiểm tra cuối buổi học")
+
+
+def _kind_instruction(extras: dict, score: int) -> str:
+    kind = extras.get("kind")
+    lines = []
+    previous = extras.get("previous_scores") or []
+    if kind in ("retake", "final") and previous:
+        joined = ", ".join(f"{label} {value}%" for label, value in previous)
+        lines.append(
+            f"Điểm các lần trước: {joined}. Hãy so sánh: tiến bộ hay chưa, phần nào vẫn sai."
+        )
+    if kind == "final" and score < 80:
+        lines.append(
+            "Bài tổng hợp chưa đạt: phần này được gắn cờ CẦN CHÚ Ý. Nói rõ phần cần chú ý "
+            "và cách ôn lại trước ngày thi (không bắt làm lại bài này)."
+        )
+    next_session = extras.get("next_session")
+    if score >= 80 and next_session:
+        lines.append(
+            f"Buổi học kế tiếp: \"{next_session.get('topic_name')}\" ngày {next_session.get('date')}. "
+            "Trong recommendations, gợi ý học tiếp buổi này (nêu đúng tên và ngày)."
+        )
+    if score >= 80:
+        lines.append("recommendations phải có 1-3 gợi ý, không được để rỗng.")
+    return "\n".join(lines)
+
+
+def _default_recommendations(tier: str, extras: dict) -> list[str]:
+    next_session = extras.get("next_session")
+    if tier == "none":
+        items = ["Giữ nhịp học như hiện tại."]
+        if next_session:
+            items.insert(0, f"Học tiếp buổi \"{next_session.get('topic_name')}\" ngày {next_session.get('date')}.")
+        return items
+    if tier == "relaxed":
+        return ["Ôn lại các câu sai trong phần kết quả.", "Làm bài kiểm tra lại sau khi ôn xong."]
+    return [
+        "Đọc lại kỹ các phần đã trả lời sai.",
+        "Vào ôn và trả lời câu hỏi nhanh trước khi làm bài kiểm tra lại.",
+    ]
+
+
+def _parse_json_object(text: str) -> dict:
+    match = re.search(r"\{.*\}", text or "", re.S)
+    if not match:
+        raise ValueError("AI không trả về JSON.")
+    return json.loads(match.group(0))
+
+
+def _generate_assessment(prompt: str):
+    """Claude Haiku trước; lỗi hoặc chưa cấu hình thì rơi về Groq (giống các việc "light")."""
+    claude_error = None
+    if is_claude_configured():
+        try:
+            data = generate_structured(
+                tier="light",
+                system=ASSESSMENT_SYSTEM,
+                prompt=prompt,
+                input_schema=ASSESSMENT_SCHEMA,
+                max_tokens=4500,
+            )
+            return data, "Claude"
+        except Exception as error:
+            claude_error = error
+            print("Claude lỗi khi đánh giá bài làm, chuyển sang Groq:", str(error)[:200])
+
+    try:
+        from groq_client import generate_text
+
+        schema_hint = json.dumps(ASSESSMENT_SCHEMA["properties"], ensure_ascii=False)
+        text = generate_text(
+            f"{ASSESSMENT_SYSTEM}\n\nCHỈ TRẢ VỀ MỘT OBJECT JSON HỢP LỆ (không markdown) có đủ các khoá: "
+            f"{', '.join(ASSESSMENT_SCHEMA['required'])}. Cấu trúc: {schema_hint}\n\n{prompt}"
+        )
+        return _parse_json_object(text), "Groq"
+    except Exception as groq_error:
+        detail = f"Claude: {claude_error}; Groq: {groq_error}" if claude_error else str(groq_error)
+        raise RuntimeError(f"AI chưa đánh giá được bài làm ({detail}).")
